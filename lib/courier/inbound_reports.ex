@@ -71,6 +71,7 @@ defmodule Courier.InboundReports do
   import Ecto.Query
 
   alias Courier.Events
+  alias Courier.Outbox
   alias Courier.OutboxEvent
   alias Courier.Repo
   alias Courier.Suppression
@@ -265,8 +266,16 @@ defmodule Courier.InboundReports do
     end
   end
 
+  # **The write goes through `Courier.Outbox.insert/1`, not `Repo.insert/1`, and
+  # that is the only reason a bounce reaches the bus.** The outbox write and the
+  # relay job that publishes it are one transaction, so a suppression courier
+  # recorded cannot exist without something queued to announce it — the same
+  # defect `Courier.Outbox` documents, from the other writer. Enqueueing only from
+  # the send path would leave every bounce and complaint sitting in a durable row
+  # that nothing would ever read, which is precisely the state this repository was
+  # in.
   defp insert_event(attrs, counts) do
-    case %OutboxEvent{} |> OutboxEvent.changeset(attrs) |> Repo.insert() do
+    case Outbox.insert(OutboxEvent.changeset(%OutboxEvent{}, attrs)) do
       {:ok, _event} ->
         Map.update!(counts, :events, &(&1 + 1))
 

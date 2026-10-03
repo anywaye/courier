@@ -49,11 +49,48 @@ config :courier, :mailing,
 # SMTP front, and one adapter is one fewer credential path to keep out of logs.
 config :swoosh, api_client: false
 
-# Job queue. courier's only queue is the outbox relay (`ProcessOutboxWorker`);
-# nothing else is scheduled yet.
+# Job queue, and the crontab that is the FLOOR under it.
+#
+# The fast path is the write: `Courier.Outbox.insert/1` enqueues the relay in the
+# same transaction as the row, so a send's event is on the bus in milliseconds.
+# The crontab is what makes that fast path an optimisation rather than a
+# dependency — every row is unpublished until somebody publishes it, and anything
+# that can write a row without enqueueing (a repair, a future call site, a
+# restored backup) has to be recoverable without a code change.
+#
+# Every minute, for all three workers, and the reason differs per worker:
+#
+#   ProcessOutboxWorker    the outbox's own contract. Its fast path is one call
+#                          away from every writer, and a caller that forgets it
+#                          strands a row forever — which is the failure the outbox
+#                          pattern exists to prevent, reached from the other side.
+#   DispatchWebhooksWorker claims rows whose account courier cannot ask about,
+#                          and its own moduledoc has always said it runs on a
+#                          timer. A row can become eligible without any courier
+#                          write at all.
+#   DeliverWebhookWorker   a delivery becomes due BY THE CLOCK. `next_attempt_at`
+#                          is written by the failure that set it, five minutes
+#                          into the future, and nothing happens at that moment —
+#                          so there is no write to hang an enqueue on and a timer
+#                          is not a choice here, it is the only shape.
+#
+# One minute is the ceiling on how long an unpublished row can sit, which is also
+# the number an alert would use. `Oban.Cron` is part of the `oban` package (no
+# extra dependency, no table of its own), and `config/test.exs` sets
+# `testing: :manual`, under which Oban starts no plugins at all — so in the suite
+# this crontab is inert by construction and `Courier.OutboxEnqueueTest` starts
+# `Oban.Cron` itself to prove the path rather than reading this comment.
 config :courier, Oban,
   repo: Courier.Repo,
-  queues: [outbox: 10, webhooks: 5]
+  queues: [outbox: 10, webhooks: 5],
+  plugins: [
+    {Oban.Cron,
+     crontab: [
+       {"* * * * *", Courier.Workers.ProcessOutboxWorker},
+       {"* * * * *", Courier.Workers.DispatchWebhooksWorker},
+       {"* * * * *", Courier.Workers.DeliverWebhookWorker}
+     ]}
+  ]
 
 # Outbox relay tuning. Read at runtime, not compiled in, so a deployment can
 # change batch size without a rebuild.

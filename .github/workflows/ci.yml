@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1295
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1308
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -310,6 +310,36 @@ jobs:
       # carrying a stale one, because a reader who checks the updated one
       # concludes the other is fine.
       #
+      # REMEASURED on the tree carrying the queue's PRODUCER: whole 1301 ->
+      # 1314, floor 1295 -> 1308, database 682 -> 695, files 36 -> 38, no
+      # database unchanged at 619 across the same 27 files.
+      #
+      # **All 13 are in the database tier and the split is read off the case
+      # templates rather than guessed**, the same derivation the tier steps use:
+      # `test/courier/outbox_enqueue_test.exs` is a `Courier.DataCase` because
+      # every claim in it is a claim about a ROW — the `oban_jobs` row a send
+      # leaves, the row the crontab's plugin inserts, the `published_at` the loop
+      # writes — and `test/courier/outbox_enqueue_config_test.exs` is one because
+      # its subject is a transaction unwinding, which needs a swapped mail
+      # adapter and therefore owns that swap for the whole VM (`async: false`).
+      # Neither file touches a request, and that is the measurement behind not
+      # adjusting anything else: see the note on `TelemetryCanaryTest` below.
+      #
+      # **1314 is 619 + 695**, so the parts still sum to the whole.
+      #
+      # ON THE `TelemetryCanaryTest` FLAKE, MEASURED AND NOT ADJUSTED. This packet
+      # adds 13 tests to the tier that contains that file and the rate did not
+      # move: 2 failures in 16 database-tier runs WITH the two new files, 2 in 10
+      # runs with them REMOVED from the tier's own file list, and 0 in 10 more
+      # with them. So 4 in 26, with and without, and the failing assertion is the
+      # one AGENTS.md already documents (`request_spans/0` reads every
+      # `courier.web.request` span in a table shared by the whole VM). Neither new
+      # file drives a request — no endpoint, no `Plug.Conn`, no `ConnCase` — so
+      # they cannot add a span for it to read, which is why the floor above moved
+      # and nothing else did. Higher than the 1-in-8 recorded there for whole-
+      # suite `bin/prime` runs, and still this machine rather than CI: not
+      # adjusted, and not hidden either.
+      #
       # The previous values here were 1282 (619 + 663) on the tree carrying the
       # one-click unsubscribe, 1218 (623 + 595) on the tree carrying the door
       # opener, 1156 (577 + 579) on the tree carrying
@@ -361,7 +391,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 619
 
-      - name: tier — database (682 tests, 36 files)
+      - name: tier — database (695 tests, 38 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -385,7 +415,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 682
+          bin/assert-suite "$log" "database" 695
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -460,9 +490,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1301 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1314 passed | \`bin/assert-suite\` |"
             echo "| no database, 27 files | 619 passed | tier step |"
-            echo "| database, 36 files | 682 passed | tier step |"
+            echo "| database, 38 files | 695 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"

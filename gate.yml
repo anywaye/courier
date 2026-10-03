@@ -211,7 +211,22 @@ gate:
       # against a measured 1073, 672 against a measured 678, 722 against 728, 816
       # against 822, and 912 against 918. Every one of those is this rule: the
       # floor moves in the same commit that changes what courier verifies.
-      minimum: 1295
+      #
+      # **Remeasured on the tree carrying the queue's PRODUCER: 1314 whole-suite
+      # tests, so 1308 with the same margin of 6.** Before this packet courier had
+      # three Oban workers and nothing that ever put a job in the queue
+      # (`Oban.insert` appeared zero times in `lib/`), and 1301 of its tests were
+      # green while every send left a durable outbox row that nothing would ever
+      # publish — 1301 tests that drove `perform/1` and asserted nothing about who
+      # calls it. The 13 this packet adds are in the database tier, 682 -> 695 and
+      # its file count 36 -> 38, and the no-database tier is unchanged at 619
+      # across the same 27 files; **1314 is 619 + 695**, so the parts still sum to
+      # the whole.
+      #
+      # The floor is a DECREASE detector and these 13 are tests nobody had, so
+      # leaving it at 1295 would have been the same silence as every other packet
+      # that forgot. It moves here.
+      minimum: 1308
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

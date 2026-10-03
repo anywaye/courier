@@ -31,6 +31,8 @@ lib/courier/mailers/templates/        the bodies, compiled at build time
 lib/courier/deliver.ex                the send: preference, provider, outbox row
 lib/courier/events.ex                 the CloudEvents envelope and the catalog
 lib/courier/outbox_event.ex           one emission, and the envelope it publishes
+lib/courier/outbox.ex                 THE outbox WRITE: the row and the job that
+                                      publishes it, in one transaction
 lib/courier/notification_preference.ex         the row behind a user's answer
 lib/courier/notification_preferences.ex       read and write those answers
 lib/courier/inbound.ex                the behaviour: verify, then parse, then
@@ -851,6 +853,55 @@ rather than emitting what it cannot redact. A provider that adds an event type
 should produce a log line, not silence. The distinction that matters: a KNOWN
 value meaning "the provider does not know" (`Undetermined`) is classified, and an
 UNKNOWN value is a refusal.
+
+**An outbox row is written by `Courier.Outbox.insert/1` and by nothing else, and
+that function enqueues the relay in the caller's transaction.** courier had three
+Oban workers and no producer for 1301 green tests: `Oban.insert` appeared zero
+times in `lib/`, there was no cron plugin, and `Courier.Application` started Oban
+and left it empty, so a send wrote a durable row that nothing would ever publish.
+The gap was one layer out from every worker test, because a test that drives
+`perform/1` proves the consumer works and says nothing about who calls it.
+
+Four rules, and each is a place the obvious version is wrong:
+
+  * **The enqueue is inside the transaction, so the window is empty rather than
+    small.** Enqueueing after the COMMIT reintroduces "the state changed and
+    nobody was told" from the other side: the process dies between the two and the
+    row is unpublished forever with nothing in the database saying so.
+    `outbox_enqueue_config_test.exs` asserts the ROLLBACK as a pair — no row **and**
+    no job — because a job outliving its row is a relay that claims nothing and
+    reports success.
+  * **Both writers go through the one function.** `Courier.Deliver` and
+    `Courier.InboundReports` are the two places courier writes `outbox_events`, and
+    enqueueing from only the first would leave every bounce and complaint in the
+    same unreached state. There is no third one; add it here, not in a caller.
+  * **The job is unique on the EVENT id**, `period: :infinity, states: :incomplete`.
+    `fields: [:worker]` is the obvious key and it is wrong twice: Oban takes
+    `pg_advisory_xact_lock` around a unique insert and an xact lock is held to the
+    end of the transaction, so one key for the worker serialises every concurrent
+    send for the length of the provider's dial; and it strands every send past the
+    first until the next sweep. And `states:` is the **bare group** — `[:incomplete]`
+    reaches PostgreSQL as the literal state `"incomplete"` and the `oban_job_state`
+    enum refuses it (measured: 22P02), because `Oban.Job.cast_unique_group/1`
+    expands an atom and passes a list through.
+  * **The crontab in `config/config.exs` is the FLOOR, not a second design.** It is
+    mandatory rather than belt-and-braces for `DeliverWebhookWorker`, whose
+    deliveries become due by the *clock* — `next_attempt_at` is written five minutes
+    into the future by the failure that set it, so there is no write to hang an
+    enqueue on. `config/test.exs` sets `testing: :manual`, under which Oban starts no
+    plugins at all (`deps/oban/lib/oban/config.ex:108`), so the suite cannot observe
+    a timer; `Courier.OutboxEnqueueTest` therefore starts `Oban.Cron` itself, with
+    courier's own crontab out of application env, under its own instance name and
+    its own leader peer. Asserting the crontab is *configured* would be a comment
+    with a test's name on it.
+
+  One finding this packet deliberately did **not** fix, because fixing it would
+  mean inventing an event nobody has decided to emit: **nothing in courier writes an
+  account-scoped outbox event.** `DispatchWebhooksWorker` claims rows with an
+  `account_id`, both writers emit events for a *person* and set none, so that
+  crontab entry now runs every minute and correctly finds nothing. The fan-out has
+  no producer; this packet gave the consumer a clock, and the producer is a
+  decision.
 
 **A webhook signature is not courier's to invent.** PLAN.md §7 adopted [Standard
 Webhooks](https://www.standardwebhooks.com) and said "No custom scheme", which
