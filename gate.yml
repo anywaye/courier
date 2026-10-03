@@ -152,14 +152,65 @@ gate:
       # whole suite that is not the sum of its own tiers is a suite where a file
       # has been left out of both.
       #
-      # The previous value here was 1212 against a measured 1218, and the one
-      # before that 1150 against a measured 1156, remeasured on the MERGED tree
-      # after the inbound base and the event builders. The value before that was
-      # 1128 against a measured 1134, 1067 against a measured 1073, 672 against a
-      # measured 678, 722 against 728, 816 against 822, and 912 against 918. Every
-      # one of those is this rule: the floor moves in the same commit that changes
-      # what courier verifies.
-      minimum: 1276
+      # **Remeasured on the tree carrying the tenant identity: 1297 whole-suite
+      # tests, so 1291 with the same margin of 6.** This one is a CATCH-UP rather
+      # than a packet's own delta, and the distinction is the whole point of it:
+      # merge `4eb7585` added 15 tests and the floor here stayed at 1276, so for
+      # one merge the ratchet was slack by 15 rather than by 6. **Nothing turned
+      # red, and that is the finding.** `minimum` is a decrease-detector, so a
+      # floor BELOW the measurement is silence — the gate cannot see this class of
+      # drift at all, and the only thing that ever caught it was the rule being
+      # read by a person. The rule held on eleven previous raises and did not hold
+      # here; that is a convention with a 92% record, not a mechanism.
+      #
+      # **All 15 are in the database tier: 663 -> 678, and the no-database tier
+      # did not move at all.** The split is not a guess — it is read off the two
+      # files' case templates, which is the same derivation CI's own tier steps
+      # use. `test/courier/tenancy_test.exs` is a `Courier.DataCase` because its
+      # subject is the transaction that sets and discards the tenant identity,
+      # and `test/courier_web/plugs/tenant_identity_config_test.exs` is a
+      # `CourierWeb.ConnCase` because it drives real requests through the real
+      # endpoint. Both files assert over a live database, so both are
+      # `grep -rlE 'use (Courier\.DataCase|CourierWeb\.ConnCase)'`, and the
+      # database tier's file count went 33 -> 35 while the no-database tier's
+      # stayed at 27.
+      #
+      # **1297 is 619 + 678**, so the consistency restatement above still holds
+      # and no file has fallen outside both tiers. That is the check that had to be
+      # re-run rather than assumed: had either new file matched neither grep, the
+      # sum would have come out at 1282 while the whole suite reported 1297, and
+      # the 15 would have been in a tier nobody counts.
+      #
+      # **THE MEASUREMENT IS ONLY TRUSTWORTHY ON A FRESH DATABASE, and this is the
+      # first time that has been written down here at all** — across eleven
+      # previous raises of this floor, not one mentioned that the shared
+      # `courier_test` carries stale rows from earlier runs and produces 8 false
+      # failures in `test/courier_web/plugs/idempotency_test.exs`
+      # (`assert claims() == 0`, `left: 1, right: 0`). Those 8 reproduce on
+      # courier's master and are therefore not regressions; they are rows left
+      # behind by a run that was interrupted. The number above was taken with
+      # `MIX_TEST_PARTITION` naming a partition that did not exist, through
+      # `bin/prime` unmodified: `Result: 1297 passed`, exit 0, zero failures, 11
+      # migrations applied.
+      #
+      # **Had that run come out contaminated, the correct action was to leave this
+      # line at 1276 and report the contamination.** It is worth being concrete
+      # about why, because the reason is not tidiness. The contaminated run reports
+      # `1289/1297 passed` and `Failed: 8`; a reader who took the passed-count at
+      # face value would have written `1289 - 6 = 1283`, which is 8 BELOW the true
+      # floor — green forever, because this is a decrease detector, and
+      # indistinguishable from a ratchet nobody moved. A floor moved on a dirty
+      # measurement does not merely stay wrong; it reproduces this exact defect at
+      # a smaller scale and removes the last chance to notice.
+      #
+      # The previous value here was 1276 against a measured 1282, then 1212
+      # against a measured 1218, and the one before that 1150 against a measured
+      # 1156, remeasured on the MERGED tree after the inbound base and the event
+      # builders. The value before that was 1128 against a measured 1134, 1067
+      # against a measured 1073, 672 against a measured 678, 722 against 728, 816
+      # against 822, and 912 against 918. Every one of those is this rule: the
+      # floor moves in the same commit that changes what courier verifies.
+      minimum: 1291
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
