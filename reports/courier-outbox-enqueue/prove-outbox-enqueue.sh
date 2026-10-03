@@ -109,8 +109,8 @@ if [ "$EXPECT" = "enqueue" ]; then
 else
   check "oban jobs after one send" "0" \
     "$(printf '%s\n' "$out" | sed -n 's/^oban jobs after one send:  *//p')"
-  note "the send wrote a durable row and the queue is empty: $(printf '%s\n' "$out" | sed -n 's/^outbox rows after one send: //p') row, 0 jobs"
 fi
+note "the send wrote $(printf '%s\n' "$out" | sed -n 's/^outbox rows after one send: //p') row(s) and the queue holds $(printf '%s\n' "$out" | sed -n 's/^oban jobs after one send:  *//p') job(s)"
 
 # ---------------------------------------------------------------- the sweep arm
 head1 "arm: sweep — a row nobody enqueued, published by the crontab's job"

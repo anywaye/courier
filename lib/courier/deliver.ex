@@ -66,6 +66,7 @@ defmodule Courier.Deliver do
   alias Courier.Mailer
   alias Courier.Mailers
   alias Courier.NotificationPreferences
+  alias Courier.Outbox
   alias Courier.OutboxEvent
   alias Courier.Repo
   alias Courier.Suppressions
@@ -225,14 +226,22 @@ defmodule Courier.Deliver do
     end
   end
 
+  # **The row and the relay job are written by one call, in one transaction.**
+  # `Courier.Outbox.insert/1` is the whole outbox write path: it queues the
+  # publish as part of the insert, so a committed row always has something waiting
+  # to publish it and a rolled-back send leaves neither behind. See
+  # `Courier.Outbox` for why the alternative — insert here, enqueue on the way out
+  # — reintroduces the "the state changed and nobody was told" failure this table
+  # exists to make impossible.
   defp record(type, user_id, message_id, email) do
-    case %OutboxEvent{}
-         |> OutboxEvent.changeset(%{
-           type: Events.delivered_type(),
-           subject: message_id,
-           data: data(user_id, type, message_id, email)
-         })
-         |> Repo.insert() do
+    case Outbox.insert(
+           %OutboxEvent{}
+           |> OutboxEvent.changeset(%{
+             type: Events.delivered_type(),
+             subject: message_id,
+             data: data(user_id, type, message_id, email)
+           })
+         ) do
       {:ok, event} ->
         %{notification_type: type, message_id: message_id, event_id: event.id}
 

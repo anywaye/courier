@@ -75,11 +75,13 @@ defmodule Courier.Workers.DispatchWebhooksWorkerIdentityTest do
 
   setup do
     parent = self()
+
     handler = fn _event, _measurements, metadata, config ->
       observe_read(metadata.query, config.parent, config)
     end
 
-    :ok = :telemetry.attach_many(@handler, [[:courier, :repo, :query]], handler, %{parent: parent})
+    :ok =
+      :telemetry.attach_many(@handler, [[:courier, :repo, :query]], handler, %{parent: parent})
 
     on_exit(fn -> :telemetry.detach(@handler) end)
   end
