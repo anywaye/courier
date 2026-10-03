@@ -1,0 +1,177 @@
+
+================ 0. A NOSUPERUSER owner, exactly as kit's cluster creates one ================
+courier_queue_probe_role  rolsuper=false  rolbypassrls=false
+database courier_queue_probe owned by courier_queue_probe_role
+
+================ 1. courier's OWN migration set, run AS THAT OWNER ================
+PROBE MIGRATIONS=up
+PROBE CURRENT_ROLE=courier_queue_probe_role rolsuper=false rolbypassrls=false
+PASS: the migration ran as the NOSUPERUSER owner = courier_queue_probe_role
+
+================ 2. the catalog the migration left, read from pg_class and pg_policies ================
+idempotency_keys  relrowsecurity=true  relforcerowsecurity=true
+notification_preferences  relrowsecurity=true  relforcerowsecurity=true
+webhook_endpoints  relrowsecurity=true  relforcerowsecurity=true
+idempotency_keys  SELECT-policy -> courier_app,courier_queue_probe_role  USING (account_id = ( SELECT cafaye.current_account_id() AS current_account_id))
+notification_preferences  SELECT-policy -> courier_app,courier_queue_probe_role  USING (account_id = ( SELECT cafaye.current_account_id() AS current_account_id))
+webhook_endpoints  SELECT-policy -> courier_app,courier_queue_probe_role  USING (account_id = ( SELECT cafaye.current_account_id() AS current_account_id))
+PASS: webhook_endpoints is FORCE ROW LEVEL SECURITY = t
+PASS: the SELECT policy names courier_app AND the owner role that ran it = courier_app,courier_queue_probe_role
+
+================ 3. The fixture: two accounts, one endpoint and one outbox event each ================
+PROBE SEEDED_ACCOUNTS=2
+PROBE ENDPOINT_ROWS_VISIBLE_TO_OWNER_AFTER_SEED=0
+PROBE OUTBOX_ROWS_VISIBLE_TO_OWNER_AFTER_SEED=2
+PASS: webhook_endpoints holds two rows = 2
+PASS: outbox_events holds two rows = 2
+
+================ 4. THE MEASUREMENT — DispatchWebhooksWorker.perform/1, three ways ================
+
+================ --- arm: without --- ================
+PROBE == arm: without ==
+PROBE CURRENT_ROLE=courier_queue_probe_role rolsuper=false rolbypassrls=false
+PROBE IDENTITY_BEFORE=nil
+PROBE ENDPOINT_ROWS_VISIBLE=0
+PROBE DISPATCH_CALL=returned
+PROBE DISPATCH_RETURN={:ok, %{dispatched: 0}}
+PROBE DISPATCH_DELIVERY_ROWS=0
+PROBE DISPATCH_DELIVERY_ROWS_SUCCEEDED=0
+PROBE DISPATCH_DELIVERY_ROWS_EXHAUSTED=0
+PROBE DISPATCH_LOG_LINES=0
+PROBE DISPATCH_LOG=
+PROBE DELIVER_CALL=returned
+PROBE DELIVER_RETURN={:ok, %{failed: 0, sent: 0, delivered: 0}}
+PROBE DELIVER_DELIVERY_ROWS=0
+PROBE DELIVER_DELIVERY_ROWS_SUCCEEDED=0
+PROBE DELIVER_DELIVERY_ROWS_EXHAUSTED=0
+PROBE DELIVER_LOG_LINES=0
+PROBE DELIVER_LOG=
+PROBE ARM=without
+
+role:                              courier_queue_probe_role rolsuper=false rolbypassrls=false
+identity before perform/1:         nil
+webhook_endpoints visible to it:   0 of 2
+perform/1 called:                  returned
+perform/1 returned:                {:ok, %{dispatched: 0}}
+log lines emitted by perform/1:    0
+webhook_deliveries created:        0
+
+PASS: [without] perform/1 returned = returned
+FAIL: [without] the fan-out created 2 deliveries = '0', expected '2'
+PASS: [without] the role is the NOSUPERUSER owner = courier_queue_probe_role
+PASS: [without] the role does NOT bypass RLS = absent
+PASS: [without] the owner read 0 of 2 endpoint rows with no identity = 0
+PASS: [without] perform/1 logged nothing = 0
+
+================ --- arm: with --- ================
+PROBE == arm: with ==
+PROBE CURRENT_ROLE=courier_queue_probe_role rolsuper=false rolbypassrls=false
+PROBE IDENTITY_BEFORE=nil
+PROBE ENDPOINT_ROWS_VISIBLE=0
+PROBE DISPATCH_CALL=returned
+PROBE DISPATCH_RETURN={:ok, %{dispatched: 1}}
+PROBE DISPATCH_DELIVERY_ROWS=1
+PROBE DISPATCH_DELIVERY_ROWS_SUCCEEDED=0
+PROBE DISPATCH_DELIVERY_ROWS_EXHAUSTED=0
+PROBE DISPATCH_LOG_LINES=0
+PROBE DISPATCH_LOG=
+PROBE DELIVER_CALL=returned
+PROBE DELIVER_RETURN={:ok, %{failed: 0, sent: 0, delivered: 0}}
+PROBE DELIVER_DELIVERY_ROWS=0
+PROBE DELIVER_DELIVERY_ROWS_SUCCEEDED=0
+PROBE DELIVER_DELIVERY_ROWS_EXHAUSTED=0
+PROBE DELIVER_LOG_LINES=0
+PROBE DELIVER_LOG=
+PROBE ARM=with
+
+role:                              courier_queue_probe_role rolsuper=false rolbypassrls=false
+identity before perform/1:         nil
+webhook_endpoints visible to it:   0 of 2
+perform/1 called:                  returned
+perform/1 returned:                {:ok, %{dispatched: 1}}
+log lines emitted by perform/1:    0
+webhook_deliveries created:        1
+
+PASS: [with] perform/1 returned = returned
+FAIL: [with] the fan-out created 2 deliveries = '1', expected '2'
+
+================ --- arm: superuser --- ================
+PROBE == arm: superuser ==
+PROBE CURRENT_ROLE=postgres rolsuper=true rolbypassrls=true
+PROBE IDENTITY_BEFORE=nil
+PROBE ENDPOINT_ROWS_VISIBLE=2
+PROBE DISPATCH_CALL=returned
+PROBE DISPATCH_RETURN={:ok, %{dispatched: 2}}
+PROBE DISPATCH_DELIVERY_ROWS=2
+PROBE DISPATCH_DELIVERY_ROWS_SUCCEEDED=0
+PROBE DISPATCH_DELIVERY_ROWS_EXHAUSTED=0
+PROBE DISPATCH_LOG_LINES=0
+PROBE DISPATCH_LOG=
+PROBE DELIVER_CALL=returned
+PROBE DELIVER_RETURN={:ok, %{failed: 0, sent: 2, delivered: 2}}
+PROBE DELIVER_DELIVERY_ROWS=2
+PROBE DELIVER_DELIVERY_ROWS_SUCCEEDED=2
+PROBE DELIVER_DELIVERY_ROWS_EXHAUSTED=0
+PROBE DELIVER_LOG_LINES=0
+PROBE DELIVER_LOG=
+PROBE ARM=superuser
+
+role:                              postgres rolsuper=true rolbypassrls=true
+identity before perform/1:         nil
+webhook_endpoints visible to it:   2 of 2
+perform/1 called:                  returned
+perform/1 returned:                {:ok, %{dispatched: 2}}
+log lines emitted by perform/1:    0
+webhook_deliveries created:        2
+
+PASS: [superuser] perform/1 returned = returned
+PASS: [superuser] the fan-out created 2 deliveries = 2
+
+================ 5. THE SIBLING WORKER — MEASURED, NOT ASSERTED, NOT FIXED HERE ================
+DeliverWebhookWorker reads the same protected table from the same queue.
+These numbers are NOT in the tally above and assert nothing: the worker is
+outside this packet's fix, and the report says why its fix is a different
+shape rather than another with_account/3 call. Read them as the finding.
+
+arm without:
+  deliver/1 returned:               {:ok, %{failed: 0, sent: 0, delivered: 0}}
+  deliveries succeeded:             0
+  deliveries exhausted:             0
+  log lines emitted by deliver/1:   0
+arm with:
+  deliver/1 returned:               {:ok, %{failed: 0, sent: 0, delivered: 0}}
+  deliveries succeeded:             0
+  deliveries exhausted:             0
+  log lines emitted by deliver/1:   0
+arm superuser:
+  deliver/1 returned:               {:ok, %{failed: 0, sent: 2, delivered: 2}}
+  deliveries succeeded:             2
+  deliveries exhausted:             0
+  log lines emitted by deliver/1:   0
+
+================ RESULT ================
+passed: 13
+failed: 2
+
+================================================================================
+ WHAT PRODUCED THIS LOG
+================================================================================
+
+The fix in lib/courier/workers/dispatch_webhooks_worker.ex with the
+Courier.Tenancy.with_account/3 wrapper around WebhookEndpoints.enabled/1
+DELETED — the state this packet started from. Nothing else changed. The tree
+was restored afterwards with `git checkout HEAD -- <file>` and the byte
+comparison is in REPORT-courier-queue-identity-01.md section 5.
+
+The two FAILs above are the whole reason this file exists as a gate rather than
+a note. On this tree:
+
+  * this harness              13 passed,  2 failed   (exit 1)
+  * dispatch_webhooks_worker_identity_test.exs   1 passed, 3 failed
+  * dispatch_webhooks_worker_test.exs           17 passed, 0 FAILED
+
+The third line is the finding. The worker suite that has been green for the
+whole life of this defect stays green with the identity deleted, because
+config/test.exs connects as postgres and postgres is rolbypassrls=t. A suite
+that cannot fail is not evidence, and this is the measurement of that rather
+than an assertion about it.

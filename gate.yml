@@ -203,14 +203,15 @@ gate:
       # measurement does not merely stay wrong; it reproduces this exact defect at
       # a smaller scale and removes the last chance to notice.
       #
-      # The previous value here was 1276 against a measured 1282, then 1212
+      # The previous value here was 1285 against a measured 1291, then 1276
+      # against a measured 1282, then 1212
       # against a measured 1218, and the one before that 1150 against a measured
       # 1156, remeasured on the MERGED tree after the inbound base and the event
       # builders. The value before that was 1128 against a measured 1134, 1067
       # against a measured 1073, 672 against a measured 678, 722 against 728, 816
       # against 822, and 912 against 918. Every one of those is this rule: the
       # floor moves in the same commit that changes what courier verifies.
-      minimum: 1291
+      minimum: 1295
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
