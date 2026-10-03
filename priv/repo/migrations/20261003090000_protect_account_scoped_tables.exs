@@ -213,7 +213,7 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
     |> String.to_charlist()
     |> scan(:code, [], [])
     |> Enum.reverse()
-    |> Enum.map(&(&1 |> Enum.to_string() |> String.trim()))
+    |> Enum.map(&(&1 |> List.to_string() |> String.trim()))
     |> Enum.reject(&(&1 == ""))
   end
 
@@ -228,15 +228,57 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
 
   defp scan([?; | rest], :code, cur, acc), do: scan(rest, :code, [], push(cur, acc))
 
-  defp scan([?- = ?-, rest], :code, cur, acc) do
+  # A line comment. **This clause did not match a line comment as it was
+  # written.** `[?- = ?-, rest]` is a TWO-ELEMENT list pattern — element zero is
+  # constrained to `?-`, element one is bound to `rest` — not a cons. Measured:
+  #
+  #     scan(~c"-- a line comment\nnext\n") -> fell through to the catch-all
+  #     scan(~c"--")                     -> {:MATCHED_2, 45}
+  #
+  # so on a real comment it never ran (the `;` inside one would have ended the
+  # statement early), and on the one input it DID match — a list of exactly two
+  # dashes — it handed `until_newline/2` the integer `45` instead of a list and
+  # raised `CaseClauseError`. kit's substrate has 526 comment lines and 86
+  # semicolons, and one of them landed on the `--` that is the last two
+  # characters of the file.
+  #
+  # `?/` and `?*` in the clause below had the same shape for a different reason
+  # and were unreachable outright: `?/ = ?*` is `47 = 42`, so the compiler said
+  # "pattern cannot possibly match" every time this file was compiled — which
+  # nobody read, because nothing had ever compiled this file either. kit's
+  # substrate has no `/*` at all, so that clause is correct and unreachable.
+  defp scan([?-, ?- | rest], :code, cur, acc) do
     {skip, rest} = until_newline(rest, [])
-    scan(rest, :code, Enum.reverse(skip) ++ cur, acc)
+    # `--` and the newline are re-emitted, and both go in FRONT of the comment
+    # text: `X ++ cur` ends up as `... ++ Enum.reverse(X)`, and `skip` is
+    # already reversed, so `[?\n | skip] ++ ~c"--"` reverses to exactly
+    # `"--" ++ <the text> ++ "\n"`.
+    #
+    # BOTH were missing once. Emitting the comment bare left the first
+    # statement starting with substrate.sql's prose and Postgres answered
+    # `42601 syntax error at or near "kit"`; re-emitting `--` without the
+    # newline made every comment run on into the SQL after it, which is what
+    # `--` does by definition, and Postgres answered `42601 syntax error at
+    # near "returns"`. A line comment is only a line comment if the line ends.
+    scan(rest, :code, [?\n | skip] ++ ~c"--" ++ cur, acc)
   end
 
-  defp scan([?/ = ?*, rest], :code, cur, acc) do
-    {skip, rest} = until_close(rest, [])
-    scan(rest, :code, Enum.reverse(skip) ++ cur, acc)
-  end
+  # THERE IS NO `/*` BRANCH, and that is a decision rather than an omission.
+
+  # The version this file inherited had one, written `[?/ = ?*, rest]`, which
+  # is not a two-character match at all: it reads as "the head is `?/`, and the
+  # head is also `?*`", and `?/` is 47 while `?*` is 42. The compiler reported
+  # `pattern cannot possibly match` on every compile. Nothing had ever compiled
+  # this migration, so nobody saw the warning the compiler was repeating.
+
+  # It was unreachable, so it was also untested, and kit's substrate contains
+  # **zero** `/*` (measured: `grep -c '/\*'` is 0). A branch that cannot execute
+  # is a branch nobody has run, and this file's own rule is that the splitter is
+  # not allowed to be clever. Deleting it is safe *because* `substrate/0` now
+  # pins the sha256: any substrate edit that introduced a `/*` fails the digest
+  # check before this code is ever reached, so the missing branch cannot become
+  # a silent mis-split — it becomes a migration that refuses to run and names
+  # the file.
 
   # A doubled quote is one quote, which is the only escape a single-quoted
   # string has in standard SQL and the one kit's `hint` messages rely on.
@@ -249,10 +291,26 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
       {:ok, tag, rest} ->
         {body, rest} = until_dollar(rest, tag, [])
 
+        # `tag` is the tag's INNER text, so the delimiter is `[?$ | tag]` — the
+        # opening `$` was consumed by this clause's head and has to be put back.
+        # The version this replaces emitted `Enum.reverse(tag)`, which is the
+        # delimiter MINUS one `$`: `$$` came out as `$` and `$caf$` came out as
+        # `$fac`, and **Postgres rejects both**. That failure was invisible
+        # while `until_dollar/3` could not find a closer, because it raised
+        # first; fixing the search without fixing the reconstruction only moved
+        # the crash.
+        #
+        # Twice, and the order is the reverse accumulator's: `X ++ cur` puts `X`
+        # at the END of the finished statement, REVERSED, so each delimiter is
+        # handed over as `Enum.reverse/1` of itself. Output therefore reads
+        # `... cur ++ $caf$ ++ body ++ $caf$ ...`, with the opener landing right
+        # after the `as ` that introduced the body.
+        delimiter = [?$ | tag]
+
         scan(
           rest,
           :code,
-          Enum.reverse(tag) ++ Enum.reverse(body) ++ Enum.reverse(tag) ++ cur,
+          Enum.reverse(delimiter) ++ Enum.reverse(body) ++ Enum.reverse(delimiter) ++ cur,
           acc
         )
 
@@ -275,14 +333,62 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
 
   defp dollar_tag(_rest, _tag), do: :none
 
-  defp until_dollar([?$ | rest], tag, acc) do
-    case rest do
-      [^tag | tail] -> {Enum.reverse(acc), tail}
-      _ -> until_dollar(rest, tag, acc)
+  # FIND THE CLOSING DOLLAR QUOTE.
+  #
+  # `tag` is the tag's INNER text — `"caf$"` for `$caf$`, `"$"` for `$$` —
+  # because `scan/4` already consumed the opening `$`. So the closing
+  # delimiter is the literal sequence `[?$ | tag]`, and this walks forward one
+  # character at a time comparing that LIST against the tail.
+  #
+  # **The version this replaces could never find a closer, so it always ran to
+  # the end of the input and raised `FunctionClauseError` on `[]`.** It read
+  #
+  #     defp until_dollar([?$ | rest], tag, acc) do
+  #       case rest do
+  #         [^tag | tail] -> {Enum.reverse(acc), tail}
+  #         _ -> until_dollar(rest, tag, acc)
+  #       end
+  #     end
+  #
+  # and `^tag` puts the pinned charlist in the FIRST ELEMENT position, where it
+  # is compared against a single character. `^tag` is `~c"$"` — the list `[36]`
+  # — and the element it meets is the integer `36`. `[36] != 36`. Measured:
+  #
+  #     tag = ~c"$"
+  #     case ~c"$;\n" do [^tag | _] -> :matched; _ -> :no_match end
+  #     #=> :no_match
+  #
+  # so `scan/4` fell through both clauses of `until_dollar/3` on the closing
+  # delimiter, every `$$` in the file was swallowed, and the lexer died on EOF
+  # 38 characters into the FIRST dollar-quoted body — the `create role` block
+  # in `provision_login_role/0`, which is why the crash named that function and
+  # not the substrate it was supposed to be reading.
+  #
+  # The second half of the same bug was the `_` branch, which advanced `rest`
+  # and DROPPED the `$` it had just consumed, so even a working match would
+  # have silently deleted stray dollar signs from the emitted SQL.
+  defp until_dollar(rest, tag, acc) do
+    delimiter = [?$ | tag]
+
+    cond do
+      # The closing delimiter, matched as a PREFIX. `List.starts_with?/2` and not
+      # a pin: a pin compares the WHOLE remaining list against the delimiter, so
+      # `^delimiter` only ever matches when the file ends immediately after the
+      # closer — which is the one case where a dollar quote is not closed at all.
+      List.starts_with?(rest, delimiter) ->
+        {Enum.reverse(acc), Enum.drop(rest, length(delimiter))}
+
+      match?([_ | _], rest) ->
+        [char | tail] = rest
+        until_dollar(tail, tag, [char | acc])
+
+      true ->
+        raise ArgumentError,
+              "the substrate ended inside a dollar-quoted body (tag #{inspect(tag)}), " <>
+                "so the closing delimiter #{inspect(List.to_string(delimiter))} was never found. " <>
+                "A dollar quote opened in kit's file must close in kit's file."
     end
   end
-
-  defp until_dollar([char | rest], tag, acc), do: until_dollar(rest, tag, [char | acc])
 
   defp until_newline(rest, acc) do
     case rest do
@@ -292,21 +398,51 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
     end
   end
 
-  defp until_close(rest, acc) do
-    case rest do
-      [?/, ?*, tail] -> {Enum.reverse(acc), tail}
-      [char | tail] -> until_close(tail, [char | acc])
-      [] -> {Enum.reverse(acc), []}
-    end
-  end
-
   # kit's substrate, verbatim, at @substrate_sha. `$caf$` survives as written
   # because inside one quoted string the whole block reaches Postgres as ONE
   # statement over the simple protocol, and Postgres parses dollar quoting
   # correctly. Re-tagging the quotes to `$$` would work and would also be a
   # fork of the shared substrate, which is the thing kit's template means by
   # "a template that offers one is a template the weaker one gets chosen from".
+  #
+  # **AND THE SHA IS CHECKED, because a comment is not a claim.** The attribute
+  # was previously set and never read, which the compiler said out loud
+  # ("@substrate_sha was set but never used") and which meant the provenance
+  # claim in this file's own header was prose. It is now the thing that decides
+  # whether the migration runs at all: a hand-edited substrate, a kit upgrade
+  # that changes the file, or a bad copy fails here with the two digests named,
+  # instead of quietly installing policies from a file nobody has re-read.
+  #
+  # Measured on the file this branch carries:
+  #
+  #     git -C ../kit show 15cee0e1:templates/database/tenancy/substrate.sql \
+  #       | diff - priv/repo/substrate.sql
+  #     #=> (no output)
+  #     shasum -a 256  # both sides
+  #     #=> e2b4917be2a7f7c48964bd40fea0da93db503b4c736a42a44e44425cfbf7bf5e
   defp substrate do
-    Path.join(__DIR__, "../substrate.sql") |> File.read!()
+    path = Path.join(__DIR__, "../substrate.sql")
+    bytes = File.read!(path)
+    digest = Base.encode16(:crypto.hash(:sha256, bytes), case: :lower)
+    expected = "e2b4917be2a7f7c48964bd40fea0da93db503b4c736a42a44e44425cfbf7bf5e"
+
+    if digest != expected do
+      raise """
+      priv/repo/substrate.sql is not the substrate @substrate_sha claims.
+
+        @substrate_sha  #{@substrate_sha}
+        expected sha256 #{expected}
+        actual   sha256 #{digest}
+        file            #{path}
+
+      Either the copy drifted or the file is not kit's. Do not edit it to make
+      this pass — re-copy it:
+
+        git -C ../kit show #{@substrate_sha}:templates/database/tenancy/substrate.sql \
+          > #{path}
+      """
+    end
+
+    bytes
   end
 end
