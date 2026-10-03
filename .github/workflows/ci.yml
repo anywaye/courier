@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1291
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1295
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -292,6 +292,24 @@ jobs:
       # neither grep, the whole suite would have reported 1297 while the tiers
       # summed to 1282, and the missing 15 would have been in no tier at all.
       #
+      # **REMEASURED on the tree carrying `DispatchWebhooksWorker`'s identity, and
+      # all four are in the database tier: 678 -> 682, files 35 -> 36, whole
+      # 1297 -> 1301.** The file is
+      # `test/courier/workers/dispatch_webhooks_worker_identity_test.exs`, and it
+      # is a `Courier.DataCase` because its subject is the transaction the
+      # worker's read runs in — it cannot be a no-database test, and putting it
+      # in the other tier would make that tier's own claim ("these tests never
+      # touch `Courier.Repo`") false for the same reason the one-click
+      # unsubscribe moved `telemetry_canary_test.exs` out of it.
+      #
+      # **1301 is 619 + 682**, so the parts still sum to the whole.
+      #
+      # **The whole-suite floor is 1295 = a measured 1301 less the same margin
+      # of 6 `gate.yml` holds**, and `gate.yml`'s `minimum` moved with it for the
+      # reason given above: two files carrying one number is worse than one file
+      # carrying a stale one, because a reader who checks the updated one
+      # concludes the other is fine.
+      #
       # The previous values here were 1282 (619 + 663) on the tree carrying the
       # one-click unsubscribe, 1218 (623 + 595) on the tree carrying the door
       # opener, 1156 (577 + 579) on the tree carrying
@@ -343,7 +361,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 619
 
-      - name: tier — database (678 tests, 35 files)
+      - name: tier — database (682 tests, 36 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -367,7 +385,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 678
+          bin/assert-suite "$log" "database" 682
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -442,9 +460,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1297 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1301 passed | \`bin/assert-suite\` |"
             echo "| no database, 27 files | 619 passed | tier step |"
-            echo "| database, 35 files | 678 passed | tier step |"
+            echo "| database, 36 files | 682 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"
