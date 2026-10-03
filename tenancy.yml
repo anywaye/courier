@@ -1,0 +1,485 @@
+# tenancy.yml — what courier declares about its own account boundary.
+#
+# Checked by cafaye/core's contract harness, from the fleet root:
+#
+#     /Users/kaka/Code/any/moon/cafaye/core/harness/bin/tenancy-check .
+#
+# `identity/tenancy.yml` is the reference shape and was read in full before this
+# file was written. Two things are carried over deliberately and one is not.
+#
+# TWO WARNINGS ARE THE CORRECT ANSWER FOR AN ELIXIR SERVICE, and they are named
+# here rather than left for a reader to wonder about.
+# `tenancy.scope-key-unused` fires because `harness/tenancy_check.py`'s scanner
+# recognises SQL — `select … from`, `update … set`, `delete from` — and an Ecto
+# query is none of those; `tenancy.enumeration-partial` then names every line in
+# the four sources below carrying `account_id` that the scanner could not tie to
+# a statement. Neither finding is courier's boundary being weak: it is core's
+# scanner reading a language it cannot classify, which is the exact condition
+# those two were given non-fatal severities for. What they cost is real and is
+# stated rather than assumed — **the checker cannot prove this enumeration is
+# closed**, so this file and `test/courier/**` are what hold it, and
+# `REPORT-courier-tenancy-declare.md` maps which holds what.
+#
+# CARRIED OVER: the `rls` block records what the DATABASE does, and identity's
+# header explains why its own `rls` block is the **substrate's** rather than its
+# own — `protect_table` generated every policy, so the block records five CALLS
+# rather than claiming policy courier wrote. **Courier has no substrate call at
+# all**, which is the same discipline pointed the other way: `databaseEnforced:
+# false` and an empty table list, with the migrations named as the sources the
+# checker read to be sure. The claim is not "courier's database enforces nothing"
+# — it is "there is no row-level-security DDL in these ten migrations", which is
+# a thing the checker can settle and this header states rather than asserts.
+#
+# NOT CARRIED OVER, and this is the finding rather than an oversight: the
+# `no-identity` arm of every entry point below is answered by a **refusal at the
+# door**, and `schemas/tenant-isolation.schema.json` says a refusal is not an
+# acceptable answer to a cross-tenant read. Courier's shape has no other answer.
+# Read the long comment above `entryPoints` before reading the three arms.
+version: 1
+service: courier
+
+# This service reads and writes other people's data: their webhook endpoints and
+# their sealed signing secrets, their users' notification answers, and their
+# idempotency claims. The table below the webhook fan-out is the sharpest one —
+# an endpoint's url is a place courier will sign and POST to — so `false` here
+# would be a lie rather than a declaration.
+accountScoped: true
+
+scope:
+  # The column every account-scoped statement in this service scopes by, and the
+  # spelling is the schema's, the migration's and `CourierWeb.Plugs.Principal`'s.
+  # Not `tenant_id`: that spelling is courier's OTEL **resource** attribute
+  # (`COURIER_TENANT_ID`), it is not on any row, and `Courier.Observability`'s
+  # allowlist refuses it as a span attribute — so the two vocabularies both
+  # exist in this tree and only one of them is a column.
+  key: account_id
+  # FOUR FILES, NOT A DIRECTORY, and the reason is a completeness obligation.
+  # These are the four files that carry an account-scoped **read** — a predicate
+  # or a `get_by` that filters a statement by the acting account — and naming
+  # anything wider would drag in `lib/courier_web/plugs/principal.ex`, whose six
+  # references to `account_id` are the door rather than a query, and the schema
+  # modules, whose references are column declarations.
+  #
+  # WHAT IS DELIBERATELY NOT HERE, named so it cannot be mistaken for an
+  # oversight. Each of these mentions `account_id` and none of them is an
+  # account-scoped read of a row:
+  #
+  #   lib/courier/idempotency_key.ex         `field :account_id` and the
+  #                                           `cast/unique_constraint` lists. The
+  #                                           unique index on
+  #                                           `(account_id, endpoint, idempotency_key)`
+  #                                           is what makes the claim atomic, and
+  #                                           `idempotency.ex` is the file that reads it.
+  #   lib/courier/outbox_event.ex            `put_change(:account_id, ...)` on an
+  #                                           insert. The schema says an insert is
+  #                                           absent from `entryPoints[].operation`
+  #                                           because it creates a row rather than
+  #                                           reaching one.
+  #   lib/courier/notification_preference.ex `field :account_id` plus the comment
+  #                                           explaining why it is NOT in the
+  #                                           request's `@fields`. Read by
+  #                                           `notification_preferences.ex`.
+  #   lib/courier/principal.ex,              the principal itself, and the door's
+  #   lib/courier/principal/**               resolution. `Principal` is how an
+  #                                           account gets onto the context at all.
+  #   lib/courier/suppressions.ex,           `email_suppressions` and
+  #   lib/courier/unsubscribe*.ex            `unsubscribe_tokens` have no
+  #                                           `account_id` column **by design** —
+  #                                           an address is an address. Those three
+  #                                           references are comments saying so, and
+  #                                           the design is load-bearing rather than
+  #                                           a gap: an unsubscribe has no principal
+  #                                           to record, and a stateful unsubscribe
+  #                                           row is the difference between
+  #                                           "stops product updates" and "cannot
+  #                                           reset their password". `POST
+  #                                           /v1/messages` consults both tables and
+  #                                           neither can be scoped by account.
+  #
+  # AND THE ONE QUERY THAT IS NOT SCOPED, which is here rather than left for a
+  # reader to find: `Courier.Idempotency.complete/4` and `release/1` reach a row
+  # by primary key alone (`Repo.get!(id)`, `where([k], k.id == ^id)`). Nothing
+  # hands either a foreign id — `CourierWeb.Plugs.Idempotency` passes the `id`
+  # out of the `claim/1` it just made for this principal, in the same request —
+  # so the boundary is real, and it is also **above the statement rather than in
+  # it**. See the comment on `idempotency-keys-fetch` below.
+  sources:
+    - lib/courier/idempotency.ex
+    - lib/courier/notification_preferences.ex
+    - lib/courier/webhook_endpoints.ex
+    - lib/courier/workers/dispatch_webhooks_worker.ex
+
+rls:
+  # False, and it is the honest answer rather than the convenient one. Every
+  # account-scoped statement in this service is an Ecto query that filters by
+  # `account_id` in Elixir; Postgres is told nothing, so a query that lost its
+  # predicate would return every account's rows with no database object standing
+  # in the way. `entryPoints[].enforced.line` is what holds that line instead,
+  # and `tenancy_check.py` checks each one still carries `account_id`.
+  #
+  # THIS IS NOT A GAP THAT WAS MISSED, it is a decision this repository already
+  # made about its own tables: `test/courier/backup_tables_test.exs` reads
+  # `information_schema` and asserts courier stores nothing outside Postgres
+  # except an in-database `bytea`, which is the same instinct from the other
+  # side — the boundary is the application, and the application's own tests are
+  # what hold it.
+  databaseEnforced: false
+  # `priv/repo/migrations`, all ten of them, and this list is the evidence for
+  # the `false` above rather than a formality: `read_ddl` reads every file here
+  # and reports a table as protected on `enable`/`force`/`create policy` alone.
+  # None of the ten mentions `row level security`, `create policy`, `force row
+  # level` or `security definer` — which is why `tenancy.rls-undeclared` and
+  # `tenancy.rls-unreadable` are both silent below. A `.exs` migration is a file
+  # this scanner cannot parse, so silence is reported rather than assumed: had
+  # one carried RLS DDL as a string, it would have been named here.
+  sources:
+    - priv/repo/migrations
+  # Empty **because** `databaseEnforced` is false. The schema refuses `false`
+  # with a populated list in both directions, and the reason is the one that
+  # applies here: a service that says its database does nothing and then lists
+  # tables it does something to is the same omission facing the other way.
+  tables: []
+
+# THE DECLARED ENUMERATION IS SEVEN ENTRY POINTS ACROSS FOUR TABLES, and the
+# third of those tables is one table (`webhook_endpoints`) reached four ways.
+#
+# WHAT IS NOT DECLARED, named here rather than left for a reader to infer:
+#
+#   * `POST /v1/messages` is an account-scoped OPERATION with no account-scoped
+#     READ. It reads `notification_preferences` by `user_id` through
+#     `enabled?/3`, which takes no account on purpose, and it reads
+#     `email_suppressions` by address in a table that has no `account_id`
+#     column. The account it writes goes onto the outbox row and the endpoint
+#     cannot leak from a send.
+#   * `Courier.NotificationPreferences.enabled?/3` is deliberately
+#     account-less — the unique index is on `(user_id, notification_type)`, one
+#     answer per person — so there is no predicate here to declare.
+#   * `Courier.OutboxEvent` and `Courier.WebhookDeliveries` are read by id and by
+#     dispatch state, never by a caller's account. `webhook-deliveries-dispatch`
+#     below is the fan-out **into** them and it is declared as `call`, which is
+#     the schema's word for a worker's scoping living above the statement.
+#   * `CourierWeb.Plugs.Principal` is where the account enters, and it is NOT an
+#     entry point — see the next paragraph, which is the most important comment
+#     in this file.
+#
+# THE `no-identity` ARM IS A REFUSAL, AND THAT IS A FINDING FOR CORE RATHER THAN
+# A DEFECT IN COURIER. Read what the schema asks for: "`no-identity` reads zero
+# rows". Read what courier can actually prove: a request with no bearer token is
+# stopped by `CourierWeb.Plugs.Principal` with 401 and **never reaches a
+# statement at all** (`assert conn.halted`,
+# `test/courier_web/controllers/webhook_endpoints_controller_test.exs:101`). There
+# is no query to answer with an empty result, because there is no query — and
+# unlike a 403-for-another-account, a 401 for no token leaks nothing at all: the
+# caller named no id, so nothing about any row was confirmed.
+#
+# The alternative was to leave every arm pointing at the library with a `nil`
+# account, which would have been a **false green**: `WebhookEndpoints.get(id,
+# nil)` does return `nil`, but only because `account_id` is `NOT NULL` and
+# `= NULL` matches nothing — not because a boundary refused it — and no such
+# call is driven anywhere in this suite. A test written to make the checker
+# green is exactly the thing this file exists to be unable to hide.
+#
+# So every `no-identity` arm below names the line that proves the pipeline
+# **halted**, which is a stronger claim than an empty result: the query was
+# never issued. The `expects` token is `halted` rather than `401` because `401`
+# does not satisfy the schema's own `expects` pattern and `halted` says the
+# thing that matters.
+#
+# THE OTHER TWO ARMS ARE THE ORDINARY SHAPE. `other-account` is a real, valid
+# credential for a different account and is answered as nonexistence — `nil`, `[]`,
+# `{:error, :not_found}`, or a 404 — never a 403, which would confirm the id
+# exists. `own-account` reads the row's **own value** back, never a liveness
+# token, because a service that returns nothing to everybody satisfies the two
+# denial arms for free.
+entryPoints:
+  # --------------------------------------------------------------------------
+  # webhook_endpoints, reached four ways. Three are declared at the query and
+  # one at its only caller, and the split is a fact about the code: `page/3` has
+  # no library-level cross-tenant test of its own — `webhook_endpoints_test.exs`
+  # has no `describe "page"` block — so its arms point at the controller test
+  # that drives it, which is where its only caller is.
+  # --------------------------------------------------------------------------
+  - id: webhook-endpoints-get
+    operation: select
+    subject: webhook_endpoints
+    enforced:
+      # `Repo.get_by/3` with `account_id:` as one of its keywords. It is a
+      # `query-filter` and not a `bind-parameter` because Elixir builds the
+      # `WHERE` from the keyword list rather than from a positional `$2` — the
+      # key is on the line, which is the whole of what
+      # `tenancy.scope-lost` checks.
+      mechanism: query-filter
+      file: lib/courier/webhook_endpoints.ex
+      line: 95
+    negative:
+      asserts: absent
+      cases:
+        - id: no-identity
+          asserts: absent
+          expects: halted
+          file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
+          line: 101
+        - id: other-account
+          asserts: absent
+          # The context's own test, and `nil` rather than an error: the answer to
+          # "do you have this?" for a row the caller cannot see is no.
+          expects: nil
+          file: test/courier/webhook_endpoints_test.exs
+          line: 176
+        - id: own-account
+          asserts: present
+          # The row's own id, read back through the same `get/2`.
+          expects: id
+          file: test/courier/webhook_endpoints_test.exs
+          line: 168
+
+  - id: webhook-endpoints-list
+    operation: select
+    subject: webhook_endpoints
+    enforced:
+      mechanism: query-filter
+      file: lib/courier/webhook_endpoints.ex
+      line: 110
+    negative:
+      asserts: absent
+      cases:
+        - id: no-identity
+          asserts: absent
+          expects: halted
+          file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
+          line: 101
+        - id: other-account
+          asserts: absent
+          expects: "[]"
+          file: test/courier/webhook_endpoints_test.exs
+          line: 211
+        - id: own-account
+          asserts: present
+          # Both of the account's ids and not the other account's, asserted as a
+          # list so the third row's absence is part of the claim.
+          expects: id
+          file: test/courier/webhook_endpoints_test.exs
+          line: 204
+
+  - id: webhook-endpoints-enabled
+    operation: select
+    subject: webhook_endpoints
+    enforced:
+      # The fan-out list, and the reason `(account_id, inserted_at) WHERE status
+      # = 'enabled'` exists.
+      mechanism: query-filter
+      file: lib/courier/webhook_endpoints.ex
+      line: 124
+    negative:
+      asserts: absent
+      cases:
+        - id: no-identity
+          asserts: absent
+          expects: halted
+          file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
+          line: 101
+        - id: other-account
+          asserts: absent
+          expects: "[]"
+          file: test/courier/webhook_endpoints_test.exs
+          line: 254
+        - id: own-account
+          asserts: present
+          expects: id
+          file: test/courier/webhook_endpoints_test.exs
+          line: 241
+
+  - id: webhook-endpoints-page
+    operation: select
+    subject: webhook_endpoints
+    enforced:
+      mechanism: query-filter
+      file: lib/courier/webhook_endpoints.ex
+      line: 156
+    negative:
+      asserts: absent
+      cases:
+        - id: no-identity
+          asserts: absent
+          expects: halted
+          file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
+          line: 101
+        # BOTH denial arms are at the controller, and that is the state of this
+        # surface rather than a preference: `GET /v1/webhook_endpoints` is
+        # `page/3`'s only caller and the suite pins the boundary over HTTP.
+        - id: other-account
+          asserts: absent
+          expects: "[]"
+          file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
+          line: 250
+        - id: own-account
+          asserts: present
+          expects: id
+          file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
+          line: 241
+
+  # --------------------------------------------------------------------------
+  # idempotency_keys — the table `(account_id, endpoint, idempotency_key)`.
+  # --------------------------------------------------------------------------
+  - id: idempotency-keys-fetch
+    operation: select
+    subject: idempotency_keys
+    enforced:
+      # `fetch/3` reads by `(account_id, endpoint, key)` and `expires_at`, and
+      # the account is the first term of the triple core names — which is why a
+      # second account presenting the same uuid gets a different claim rather
+      # than somebody else's answer. The unique index on those three columns is
+      # named at `lib/courier/idempotency.ex:72` and it is the same index
+      # `refusal/1` matches on by name.
+      mechanism: query-filter
+      file: lib/courier/idempotency.ex
+      line: 151
+    negative:
+      asserts: absent
+      cases:
+        # `POST /v1/messages` is the only route carrying `CourierWeb.Plugs.Idempotency`,
+        # and `:idempotent` is piped after `:authenticated` in
+        # `lib/courier_web/router.ex`, so a request with no bearer is stopped
+        # before a key is ever claimed.
+        - id: no-identity
+          asserts: absent
+          expects: unauthorized
+          file: test/courier_web/controllers/messages_controller_test.exs
+          line: 111
+        - id: other-account
+          asserts: absent
+          expects: nil
+          file: test/courier/idempotency_test.exs
+          line: 110
+        - id: own-account
+          asserts: present
+          expects: id
+          file: test/courier/idempotency_test.exs
+          line: 95
+
+  # --------------------------------------------------------------------------
+  # notification_preferences — and the one place courier's boundary is NOT a
+  # predicate on the query.
+  # --------------------------------------------------------------------------
+  - id: notification-preferences-list
+    operation: select
+    subject: notification_preferences
+    enforced:
+      # `repository-method`, and the choice is the finding. `list/2` reads by
+      # `user_id` alone — the unique index is `(user_id, notification_type)`, one
+      # answer per person rather than one per account — and `addressable/2`
+      # compares the account the caller is acting as against the `account_id`
+      # the stored row carries. The boundary is a comparison in Elixir, so a
+      # `query-filter` here would name a predicate this line does not have.
+      #
+      # The predicate being above the statement is also why the 404 is narrow:
+      # `nil` (a user nobody has written for) is `:ok`, because courier holds no
+      # foreign key to identity's users and cannot tell that user from one that
+      # does not exist. Only a row that EXISTS and belongs elsewhere is a 404.
+      mechanism: repository-method
+      file: lib/courier/notification_preferences.ex
+      line: 150
+    negative:
+      asserts: absent
+      cases:
+        - id: no-identity
+          asserts: absent
+          expects: halted
+          file: test/courier_web/controllers/notification_preferences_controller_test.exs
+          line: 94
+        - id: other-account
+          asserts: absent
+          expects: not_found
+          file: test/courier/notification_preferences_test.exs
+          line: 221
+        - id: own-account
+          asserts: present
+          expects: email_enabled
+          file: test/courier/notification_preferences_test.exs
+          line: 43
+
+  - id: notification-preferences-update
+    operation: update
+    subject: notification_preferences
+    enforced:
+      # The same line and the same `addressable/2`, called **first** — before the
+      # batch is even looked at. A 422 about the caller's own body leaks nothing,
+      # but answering one for a user the caller cannot see would confirm the user
+      # has preferences before the 404 gets a chance to withhold it.
+      mechanism: repository-method
+      file: lib/courier/notification_preferences.ex
+      line: 150
+    negative:
+      asserts: absent
+      cases:
+        - id: no-identity
+          asserts: absent
+          expects: halted
+          file: test/courier_web/controllers/notification_preferences_controller_test.exs
+          line: 94
+        # A DENIED WRITE IS NOT ASSERTED WITH AN ABSENCE TOKEN. `{:error,
+        # :not_found}` on its own would be `tenancy.denial-unpaired`: "matched
+        # nothing" is also what a write that found nothing to do returns. So this
+        # arm reads the victim's row back as its owner and asserts the value the
+        # refused write was trying to change is untouched.
+        - id: other-account
+          asserts: absent
+          expects: push_enabled
+          file: test/courier/notification_preferences_test.exs
+          line: 242
+        # The owner's own `PUT`, read back as the owner: `push_enabled` is still
+        # true because the other account's write was refused and this account's
+        # was not.
+        - id: own-account
+          asserts: present
+          expects: email_enabled
+          file: test/courier_web/controllers/notification_preferences_controller_test.exs
+          line: 177
+
+  # --------------------------------------------------------------------------
+  # the worker. `call`, which is the schema's word for a row reached with the
+  # scoping above the statement.
+  # --------------------------------------------------------------------------
+  - id: webhook-deliveries-dispatch
+    operation: call
+    subject: webhook_deliveries
+    enforced:
+      # `WebhookEndpoints.enabled(event.account_id)` — the EVENT names the
+      # account, so the fan-out list is one tenant's and the deliveries it
+      # creates all carry that tenant's endpoint. There is no caller's account in
+      # a worker, and there is no predicate to put one in: the row that decides
+      # which endpoints exist is the outbox event, and it is not caller-supplied.
+      mechanism: query-filter
+      file: lib/courier/workers/dispatch_webhooks_worker.ex
+      line: 80
+    negative:
+      asserts: absent
+      cases:
+        # A WORKER HAS NO REQUEST AND THEREFORE NO BEARER TOKEN, so its
+        # `no-identity` arm is not a 401 — it is the event that names no account
+        # at all. `Courier.Deliver` writes `email.delivered` with a `nil` account
+        # because a mail goes to a person and courier does not know which account
+        # that person is in; fanning those out to every account would be
+        # delivering one customer's mail events to another customer.
+        - id: no-identity
+          asserts: absent
+          expects: count
+          file: test/courier/workers/dispatch_webhooks_worker_test.exs
+          line: 123
+        # Another account's endpoints are not in this account's fan-out list,
+        # which is the whole of this edge's boundary.
+        - id: other-account
+          asserts: absent
+          expects: count
+          file: test/courier/workers/dispatch_webhooks_worker_test.exs
+          line: 78
+        # The account's own event produces its own deliveries. The cross
+        # direction — another account's EVENT against this account's endpoints —
+        # is the very next test, at line 87, and it is deliberately not named
+        # here because one arm is one assertion and the three arms above already
+        # spend their two directions.
+        - id: own-account
+          asserts: present
+          expects: count
+          file: test/courier/workers/dispatch_webhooks_worker_test.exs
+          line: 58
