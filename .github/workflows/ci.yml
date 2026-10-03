@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1276
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1291
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -265,7 +265,35 @@ jobs:
       # suite that is not the sum of its own tiers is a suite where a file has been
       # left out of both.
       #
-      # The previous values here were 1218 (623 + 595) on the tree carrying the door
+      # **REMEASURED on the tree carrying the tenant identity, and this one is a
+      # CATCH-UP rather than a packet's own delta.** Merge `4eb7585` added 15
+      # tests and none of the three floors below moved, so for one merge the whole
+      # suite was slack by 15 rather than by 6 and nothing turned red — because all
+      # three are decrease detectors and a floor under the measurement is silence.
+      # The whole-suite floor here is 1291 = a measured 1297 less the same margin
+      # of 6 `gate.yml` holds, and it is kept equal to `gate.yml`'s `minimum`
+      # rather than to the measured count: a floor that is right in one place and
+      # slack in another is worse than one that is uniformly slack, because a
+      # reader who checked the one that was updated concludes the rest are fine.
+      #
+      # **All 15 are in the database tier, and the no-database tier did not move.**
+      # The split is read off the case templates, which is the same derivation the
+      # two tier steps below use, so it cannot be a guess:
+      # `test/courier/tenancy_test.exs` is a `Courier.DataCase` (its subject is
+      # the transaction that sets and discards the tenant identity) and
+      # `test/courier_web/plugs/tenant_identity_config_test.exs` is a
+      # `CourierWeb.ConnCase` (it drives real requests through the real endpoint).
+      # The database tier is therefore 663 -> 678 and its file count 33 -> 35; the
+      # no-database tier is 619 across the same 27 files, re-measured rather than
+      # assumed — an unchanged floor that was never re-run is not evidence.
+      #
+      # **1297 is 619 + 678**, so the parts still sum to the whole. That is the
+      # check that had to be re-run and not assumed: had either new file matched
+      # neither grep, the whole suite would have reported 1297 while the tiers
+      # summed to 1282, and the missing 15 would have been in no tier at all.
+      #
+      # The previous values here were 1282 (619 + 663) on the tree carrying the
+      # one-click unsubscribe, 1218 (623 + 595) on the tree carrying the door
       # opener, 1156 (577 + 579) on the tree carrying
       # `config/kamal-backup.yml`, and 1134 (561 + 573) on the tree carrying the
       # inbound provider surface, and before that 1073 (535 + 538), measured on the
@@ -315,7 +343,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 619
 
-      - name: tier — database (663 tests, 33 files)
+      - name: tier — database (678 tests, 35 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -339,7 +367,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 663
+          bin/assert-suite "$log" "database" 678
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -414,9 +442,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1282 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1297 passed | \`bin/assert-suite\` |"
             echo "| no database, 27 files | 619 passed | tier step |"
-            echo "| database, 33 files | 663 passed | tier step |"
+            echo "| database, 35 files | 678 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"
