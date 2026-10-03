@@ -1,0 +1,34 @@
+created courier_outbox_probe
+expectation: a job in the queue = enqueue
+
+================ the source: who calls Oban.insert ================
+  Oban.insert in lib/: 0
+  cron configuration in lib/ and config/: 1
+
+================ arm: enqueue — Courier.Deliver end to end, then read oban_jobs ================
+  | outbox rows after one send: 1
+  | oban jobs after one send:  0
+  | event_id the send returned:  70d3d404-4485-4d46-8593-c3424c4faeea
+  | job list: []
+  FAIL  oban jobs after one send = 0 (expected 1)
+  FAIL  the job's args name the row =  (expected true)
+  FAIL  the row is published by the queued job =  (expected true)
+  FAIL  envelopes handed to the publisher =  (expected 1)
+
+================ arm: sweep — a row nobody enqueued, published by the crontab's job ================
+  | row written with a plain Repo.insert/1: 483cf479-666f-4ccc-8c22-5c0754d9ddf1
+  | oban jobs before the sweep:          0
+  | the sweep's job: Courier.Workers.ProcessOutboxWorker %{} meta=%{cron: true, cron_expr: "* * * * *"}
+  | performed the sweep's job: %{published: 1}
+  | row published_at:          ~U[2026-10-03 21:13:48.087163Z]
+  | row published:             true
+  | published envelopes handed back: 1
+  ok    oban jobs before the sweep = 0
+  ok    the sweep's job publishes the stranded row = true
+  ok    envelopes handed to the publisher = 1
+
+================ tally ================
+  passes:        3
+  failures:      4
+  measurements:  0 (printed, deliberately not asserted on)
+  RESULT: RED
