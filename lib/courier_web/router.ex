@@ -29,8 +29,24 @@ defmodule CourierWeb.Router do
   # caller outright rather than defaulting to an account — see its moduledoc for
   # why a seam that authenticates nobody is the right default until identity's
   # JWT verifier lands.
+  #
+  # **The second plug is the database half of the same question, and the order is
+  # the mechanism.** `CourierWeb.Plugs.TenantIdentity` puts
+  # `conn.assigns.current_account` where Postgres can see it — `Principal` is what
+  # puts it on the `conn`, and without it `TenantIdentity` has nothing to write —
+  # so the row-level-security policies on `idempotency_keys`,
+  # `notification_preferences` and `webhook_endpoints` have an identity to key on.
+  # It is in THIS pipeline and not a second one because a pipeline somebody can
+  # list in either order is a pipeline that can be wrong in the order that matters:
+  # "the query ran before the identity was set" is one of the two ways this
+  # control fails, and the other is a connection that carries one account's
+  # identity into the next request.
+  #
+  # `Principal` halts a 401, so an unauthenticated request never opens the
+  # transaction `TenantIdentity` would have opened.
   pipeline :authenticated do
     plug CourierWeb.Plugs.Principal
+    plug CourierWeb.Plugs.TenantIdentity
   end
 
   # `Idempotency-Key`, on the mutating POSTs and nothing else. Core requires it on
@@ -82,6 +98,14 @@ defmodule CourierWeb.Router do
   # Probes. Deliberately outside /api and outside every other pipeline: they run
   # before routing, auth, and the rest of the platform exist, so they must not
   # depend on any of it. See CourierWeb.HealthController.
+  #
+  # **And they need no account, which is measured rather than assumed.** Readiness
+  # runs `SELECT 1` (`Courier.Health`), which is not one of the three protected
+  # tables, and liveness runs no query at all. Both answers are therefore
+  # unaffected by `cafaye.account_id` being unset — which matters more than it
+  # sounds: a readiness probe that needed a tenant identity would report courier
+  # not ready whenever the identity was wrong, so an orchestration fault would be
+  # reported as an outage and an outage would be restarted.
   scope "/", CourierWeb do
     pipe_through :api
 
@@ -162,6 +186,17 @@ defmodule CourierWeb.Router do
   #     JWT-authenticated: they are signed, per the sender's convention, and the
   #     receiver checks the signature before parsing."
   #
+  # **And it reaches no protected table, so it needs no identity.** That is the
+  # deliberate half of the decision and it is measured rather than assumed:
+  # `Courier.Inbound.handle/5` writes `email_suppressions` and `outbox_events`,
+  # and of those only `outbox_events` has an `account_id` — which the protection
+  # migration deliberately left unprotected, for the reason its moduledoc gives
+  # (`Courier.Deliver` records `email.delivered` for a *user* courier cannot place
+  # in an account, so `with check (account_id = current_account_id())` would refuse
+  # every such insert with `42501` and the relay would read zero rows). So there
+  # is no account on this path for `cafaye.begin_account/1` to be given, and
+  # giving one would be inventing a tenancy claim for a provider.
+  #
   # `:api` and nothing else: the `:accepts` plug is the 406 every operation in
   # `openapi.yaml` declares, and the other two things this route needs — the body
   # left unparsed and a bound on how much of it courier will buffer — are decisions
@@ -188,6 +223,38 @@ defmodule CourierWeb.Router do
   # rather than a presented secret, and it is 32 bytes of `:crypto.
   # strong_rand_bytes/1` stored as a digest. `CourierWeb.Plugs.Principal` behind
   # this route would 401 every mail client in the world.
+  #
+  # **THE TOKEN IS AN AUTHENTICATED IDENTITY THAT IS NOT AN ACCOUNT, and the
+  # answer is that this route reaches no protected table.** That is the hard case
+  # this packet had to decide, and the decision is measured rather than a
+  # preference between two shapes:
+  #
+  #   * `Courier.Unsubscribes.unsubscribe/1` reads `unsubscribe_tokens` and writes
+  #     `email_suppressions`. **Neither has an `account_id`** — measured from
+  #     `information_schema`, and the reason is in `Courier.Unsubscribes`' own
+  #     moduledoc: an unsubscribe is a row with **no `state`**, in a table that
+  #     records facts about a *mailbox* and belongs to whoever mailed it.
+  #     `notification_preferences` is the one table here that IS protected, and
+  #     this route deliberately does not write it — `Courier.Unsubscribes` records
+  #     the measured alternative: the wrong account claims the user, and the
+  #     account that actually owns them gets a 404 from a settings endpoint that
+  #     worked yesterday.
+  #   * So there is no account for `cafaye.begin_account/1` to be given here.
+  #     **Inventing one would be the failure, not the fix.** The token carries no
+  #     account; deriving one means the unsubscribe names an account, which is a
+  #     tenancy claim made on behalf of a person by whoever mailed them.
+  #   * And **exempting a table** would be worse than doing neither: the tables
+  #     this route touches are unprotected *because they hold no customer rows*,
+  #     which is core's honest zero and not a gap. Nothing is being exempted that
+  #     was ever protected, so there is no policy being loosened to keep this URL
+  #     working.
+  #
+  # The arrangement is therefore: `/v1/*` is identity-scoped by
+  # `CourierWeb.Plugs.TenantIdentity`; `/unsubscribe/:token`, `/inbound/resend`
+  # and the two probes reach no policy and so need no identity. If a future change
+  # makes one of them touch `notification_preferences` or `webhook_endpoints`,
+  # `reports/courier-row-level-security/prove-unauthenticated.sh` goes red on its
+  # table list rather than on a symptom somebody reports later.
   #
   # **Both verbs, on one path, and that is §3.2's own sentence**: "The target of
   # the POST action is the same as the one in the GET action for a manual
