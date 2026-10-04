@@ -86,7 +86,7 @@ defmodule Courier.Principal.Introspection.DocumentTest do
     test "a document with only `scope` parses the same way, and that is the whole point" do
       # identity emits BOTH names, byte for byte, because the fleet has not
       # agreed on one (MD7, open in the manager's DECISIONS.md): core's
-      # conventions require `scopes` and guard's verifier reads `scope`. So the
+      # conventions require `scopes` and gateway's verifier reads `scope`. So the
       # day one of them is removed, courier must not be the service that breaks.
       #
       # The claim is asserted in both directions on purpose: reading `scope` alone
@@ -230,7 +230,7 @@ defmodule Courier.Principal.Introspection.DocumentTest do
 
     test "a scope claim that is not a STRING is refused rather than read as nothing" do
       # The load-bearing half of the both-names rule. identity's own document says
-      # the value is a string and not an array because "guard's verifier refuses a
+      # the value is a string and not an array because "gateway's verifier refuses a
       # non-string claim" — so an array is a shape that exists in the wild, on
       # whichever side of MD7 loses the argument.
       #

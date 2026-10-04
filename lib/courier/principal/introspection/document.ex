@@ -46,7 +46,7 @@ defmodule Courier.Principal.Introspection.Document do
   ## `scopes` and `scope` are both read, because the fleet has not chosen
 
   MD7 in the manager's `DECISIONS.md` is open: core's conventions require
-  `scopes`, guard's verifier reads `scope`, and identity emits **both, byte for
+  `scopes`, gateway's verifier reads `scope`, and identity emits **both, byte for
   byte** so that whichever name wins is a one-line removal and no credential has
   to be reissued. courier therefore reads the union and assumes neither is the
   only one. A resolver that read one name would work perfectly until MD7 is ruled,
@@ -182,7 +182,7 @@ defmodule Courier.Principal.Introspection.Document do
   end
 
   # A space-separated STRING and not an array, because that is the one shape both
-  # sides can read: guard's verifier does `raw.split(/\\s+/)` and refuses a
+  # sides can read: gateway's verifier does `raw.split(/\\s+/)` and refuses a
   # non-string claim outright, and core's conventions name a string. An array
   # would be a token the gateway will not parse at all.
   defp claim(document, name) do
