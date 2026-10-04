@@ -1006,7 +1006,7 @@ came out of writing it, and each is a place the obvious version is wrong:
   * **Both scope claim names are read, and neither is assumed absent.** `scopes`
     and `scope` are emitted byte for byte because the fleet has not agreed on
     one (MD7, open in the manager's `DECISIONS.md`): core requires `scopes`,
-    guard reads `scope`. courier reads the union. A claim that is present and is
+    gateway reads `scope`. courier reads the union. A claim that is present and is
     **not a string** is `{:error, :unreadable}` rather than an empty set — the
     array is the shape a losing side of MD7 could adopt, and reading it as "no
     scopes" is the silent version of that bug. The clause order matters: `:error`
