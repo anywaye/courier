@@ -29,9 +29,30 @@ defmodule Courier.TelemetryCanaryTest do
     * a `record/2` guarded on `is_map(span)` when a span is a RECORD — a tuple —
       so nothing was recorded at all.
 
-  `Courier.TestSpans.rendered!/0` raises rather than returning an empty string, so
-  a suite in which courier exported nothing fails loudly instead of passing
-  quietly. That guard is the single place this is checked.
+  A fourth way was found in this file while this file was being fixed, and it was
+  the quietest of the four because it needed no broken SDK at all:
+
+    * the presence assertion was never wired up. This moduledoc used to name
+      `Courier.TestSpans.rendered!/0` as the guard and call it the single place the
+      check was made — and this file rendered through its own private helper, which
+      returns "" for an empty export. With `Courier.TestSpanExporter.export/4`
+      dropping every span, all ten tests here passed.
+
+  `Courier.TestSpans.render!/1` raises rather than returning an empty string, and
+  every helper below goes through it, so a suite in which courier exported nothing
+  fails loudly instead of passing quietly. That guard is the single place this is
+  checked — which is the sentence this file used to make about a guard it was not
+  calling.
+
+  ## What "this test's spans" means, since a narrower read is a vacuous one
+
+  Each test reads only the spans its own request produced: `setup` drains
+  `Courier.SpanCollector`, marks the exporter table, and the assertions read since
+  the mark. That is what makes the two tests in "a request PATH never reaches a
+  span" independent of each other and of the rest of the suite — see the measurement
+  in `setup`, which is why the arrangement is two steps and not one. The cost of
+  narrowing a read is that an empty result becomes possible where it was not before,
+  so it is paired with the presence assertion above rather than trusted.
 
   ## This file is a `Courier.DataCase`, and that arrived with the unsubscribe route
 
@@ -356,16 +377,29 @@ defmodule Courier.TelemetryCanaryTest do
     |> Enum.filter(&(&1.name == "courier.web.request"))
   end
 
+  # THIS file's spans as a string, GUARDED.
+  #
+  # The guard used to be missing, which is the defect this helper is here to close.
+  # The moduledoc above says `Courier.TestSpans.rendered!/0` "raises rather than
+  # returning an empty string" and calls that the single place it is checked — and
+  # this file never called it. It rendered through the private helper below, which
+  # returns "" for an empty export, so `assert_no_canary/0` below was satisfied by
+  # an empty string on every test in the file.
+  #
+  # Measured, not argued: with `Courier.TestSpanExporter.export/4` mutated to drop
+  # every span, all TEN tests in this file passed and the suite reported
+  # `Result: 10 passed` — a complete redaction suite that had exported nothing and
+  # proved nothing. `Courier.ObservabilityTest` caught the same mutation with eight
+  # failures, so the guard was alive in this repository; it was this file's copy of
+  # it that was not wired up.
+  #
+  # Which matters more here than anywhere else in the suite, because the previous
+  # commit made this file's read NARROWER (own spans only, via a watermark). A
+  # narrower read is a vacuous read unless something asserts that it read
+  # something, and at that point the only thing standing between "one span" and "no
+  # spans" was the absence of a crash.
   defp rendered_request_spans do
-    request_spans()
-    |> Enum.map_join("\n", fn span ->
-      pairs =
-        span.attributes
-        |> Enum.sort_by(fn {key, _value} -> to_string(key) end)
-        |> Enum.map_join(" ", fn {key, value} -> "#{key}=#{inspect(value)}" end)
-
-      "name=#{span.name} kind=#{span.kind} status=#{span.status} #{pairs}"
-    end)
+    Courier.TestSpans.render!(request_spans())
   end
 
   # `Phoenix.ConnTest.dispatch/5` rather than `@endpoint.call/3`, because

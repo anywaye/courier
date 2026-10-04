@@ -83,8 +83,17 @@ defmodule Courier.TestSpans do
   defdelegate finished_spans_since(mark), to: Courier.TestSpanExporter, as: :take_since
 
   @doc """
-  The finished spans rendered as one string: name, kind, status, and every
-  attribute's name AND value.
+  The whole export as one string, with a guard against an empty one.
+
+  Every caller is about to assert that something is ABSENT, and "absent" is true
+  of an empty export — so the guard is checked once, here, rather than repeated as a
+  presence assertion in twenty tests that a future refactor could drop.
+  """
+  def rendered!, do: render!(finished_spans())
+
+  @doc """
+  `spans` rendered as one string: name, kind, status, and every attribute's name AND
+  value.
 
   Rendered rather than compared key-by-key, and that is the whole design. A
   key-by-key assertion only catches a leak through a key the test already knew to
@@ -92,10 +101,13 @@ defmodule Courier.TestSpans do
   nobody predicted. The leak this file exists to prevent arrives as a new attribute
   name, and a test that asserts on the names it knows about goes green on the day
   the new name is added.
+
+  The argument, rather than the whole table, because a caller that has filtered —
+  by span name, or down to its own watermark — must be able to render and be
+  guarded over ITS OWN spans and not the suite's.
   """
-  def rendered do
-    finished_spans()
-    |> Enum.map_join("\n", fn span ->
+  def render(spans) do
+    Enum.map_join(spans, "\n", fn span ->
       pairs =
         span.attributes
         |> Enum.sort_by(fn {key, _value} -> to_string(key) end)
@@ -106,28 +118,51 @@ defmodule Courier.TestSpans do
   end
 
   @doc """
-  The whole export as one string, with a guard against an empty one.
+  `render/1`, and it refuses to render nothing.
 
-  Every caller is about to assert that something is ABSENT, and "absent" is true
-  of an empty export — so the guard is checked once, here, rather than repeated as a
-  presence assertion in twenty tests that a future refactor could drop.
+  THE PRESENCE ASSERTION, and it is the only one: a redaction test that asserts a
+  canary is ABSENT is satisfied by courier recording nothing at all, which is
+  indistinguishable from a working boundary and useless in production. Three
+  separate ways that happened in this repository while it was being written, each
+  leaving the suite green — see `Courier.TestSpanExporter`'s moduledoc.
+
+  `rendered!/0` is this over the whole table. `render!/1` is the same guard over
+  whatever a caller's own filter produced, and that second form is the one that was
+  MISSING: `Courier.TelemetryCanaryTest` cites `rendered!/0` in its moduledoc as
+  the guard on its own assertions and then renders through a private helper that
+  returns "" for an empty export. Measured, with `Courier.TestSpanExporter.export/4`
+  dropping every span: all ten canary tests passed, and `Courier.ObservabilityTest`
+  caught the same mutation with eight failures.
+
+  The message names BOTH causes because they are diagnosed in opposite directions,
+  and the span count is what tells them apart:
+
+    * courier exported nothing — the exporter is broken, telemetry is off, or the
+      request never reached `CourierWeb.Plugs.Telemetry`;
+    * the caller's filter hid everything — a name that has changed, or a watermark
+      whose window is empty.
   """
-  def rendered! do
-    rendered = rendered()
+  def render!(spans) do
+    case render(spans) do
+      "" ->
+        raise """
+        nothing to render (#{length(spans)} spans in), so every assertion about a canary \
+        being absent from that render would be vacuously true.
 
-    if rendered == "" do
-      raise """
-      nothing was exported, so every assertion about a canary being absent from the \
-      export would be vacuously true.
+        Two causes, diagnosed in opposite directions. If courier exported NOTHING, check \
+        that the request really reached `CourierWeb.Plugs.Telemetry`, that \
+        `Courier.Telemetry.enabled?/0` is true, and that `config/test.exs` still names \
+        `Courier.TestSpanExporter` as `config :courier, :otel_exporter`.
 
-      Check that the request really reached `CourierWeb.Plugs.Telemetry`, that \
-      `Courier.Telemetry.enabled?/0` is true, and that \
-      `config/test.exs` still names `Courier.TestSpanExporter` as \
-      `config :courier, :otel_exporter`.
-      """
+        If courier exported plenty and the CALLER'S FILTER hid it, the filter is the bug: \
+        a span name that has changed, or a watermark whose window is empty because \
+        `Courier.SpanCollector` was not drained before `Courier.TestSpanExporter.mark/0`. \
+        Print `Courier.TestSpanExporter.take/0` and count — the spans are there.
+        """
+
+      rendered ->
+        rendered
     end
-
-    rendered
   end
 
   @doc "The spans named `name`."
