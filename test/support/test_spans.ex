@@ -69,6 +69,20 @@ defmodule Courier.TestSpans do
   defdelegate finished_spans(), to: Courier.TestSpanExporter, as: :take
 
   @doc """
+  The spans the exporter received SINCE `mark`, oldest first.
+
+  The pair to `finished_spans/0` for a test that must not read anybody else's
+  evidence.
+
+  Read `Courier.TestSpanExporter.mark/0` before using this, and specifically the
+  part about what a watermark is NOT on its own: a span another test produced and
+  never flushed is INSERTED into the table after any mark taken now, so a caller
+  that marks and reads since the mark has to drain `Courier.SpanCollector` first or
+  it reads the backlog along with its own.
+  """
+  defdelegate finished_spans_since(mark), to: Courier.TestSpanExporter, as: :take_since
+
+  @doc """
   The finished spans rendered as one string: name, kind, status, and every
   attribute's name AND value.
 

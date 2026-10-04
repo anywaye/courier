@@ -69,15 +69,50 @@ defmodule Courier.TelemetryCanaryTest do
   # Short, and in no allowlist and in no expected output.
   @canary "CANARY-4e1b-DO-NOT-EXPORT"
 
+  # Where the per-test watermark lives. The PROCESS DICTIONARY, not an ExUnit
+  # context key, and that is a deliberate choice rather than a shortcut: `setup`
+  # runs in the same process as the test, the watermark is per-test state, and a
+  # context key would mean threading `context` through all ten test signatures to
+  # carry a value that only the two helpers below ever read.
+  @mark_key :courier_canary_mark
+
   setup do
-    # `clear/1`, and the reason it is safe HERE is ExUnit's scheduling rather than
-    # a convention: this module is `async: false`, and ExUnit runs every
-    # `async: false` module after the `async: true` ones, one at a time, with no
-    # overlap. So clearing the shared table cannot delete another test's evidence.
+    # THIS MODULE'S OWN SPANS, and it takes two steps IN THIS ORDER because either
+    # one alone still reads somebody else's evidence.
     #
-    # The name filter below is kept as well, because a test that only works when it
-    # happens to run alone is a test that will not.
-    Courier.TestSpanExporter.clear()
+    # `Courier.SpanCollector` is a BATCHER, not a per-request sink. A span ends
+    # into its queue and leaves the queue when something flushes it — and the only
+    # two things that flush it are this file's own `flush/0` and the collector's
+    # five-second timer. So a test in another module that drives a request and
+    # never flushes leaves its span SITTING IN THE QUEUE, and the next flush — the
+    # one this test's own `request/4` makes — exports it into the shared table.
+    #
+    # MEASURED, on `mix test --seed 885732`, red on the commit this file is on.
+    # At the setup of "an id in an unmatched path reaches nothing at all" the queue
+    # held SIXTEEN spans belonging to three earlier modules (`/inbound/resend`,
+    # `/readyz`, `/healthz`), the exporter table was empty before `clear/0` and
+    # empty after it, and the test's own flush exported all SEVENTEEN at once. So
+    # the assertion "a 404 produced a span with a route" was reading sixteen spans
+    # with routes that this test never made, and it failed on sixteen spans of
+    # evidence about requests made in other files. At the other nine setups the
+    # queue held zero, which is the whole of why the rate is about one run in ten
+    # rather than one in one hundred: it depends on whether the modules scheduled
+    # just before this one happened to leave a backlog.
+    #
+    # The `clear/0` that used to be here was reading the wrong table. Nothing ever
+    # landed after it — the measured row count was zero both before and after — so
+    # it was clearing faithfully and the leak was upstream of it, in a queue it
+    # cannot see.
+    #
+    # So: DRAIN FIRST, so the next thing to be exported is this test's own span,
+    # and only then MARK. The mark alone is not enough, and the same measurement
+    # says why: those sixteen foreign spans are inserted into the table AFTER any
+    # mark taken now, because being exported late is exactly what being stuck in a
+    # queue means. `mark/0` filters by when a span ARRIVED, not by which test made
+    # it, and the two only agree once the queue is empty.
+    Courier.SpanCollector.flush()
+
+    Process.put(@mark_key, Courier.TestSpanExporter.mark())
     :ok
   end
 
@@ -299,15 +334,25 @@ defmodule Courier.TelemetryCanaryTest do
     exported
   end
 
-  # THIS file's spans, and identified BY NAME as well as by the setup's `clear/1`.
+  # THIS file's spans, and by NOTHING ELSE: neither by name alone, nor by whatever
+  # the table happened to hold, nor by what the name filter is left holding after
+  # the next test's flush.
   #
-  # The name filter is what stops a span from an EARLIER TEST IN THIS FILE being
-  # read as this test's — which is not hypothetical: the "an id in an unmatched path"
-  # test asserts that no 404 span carries a route, and it failed against a span the
-  # "parameterised route" test above had exported, because both are
-  # `courier.web.request` and the filter cannot tell them apart.
+  # The name filter is kept because a span opened by something other than this
+  # file's requests can also be called `courier.web.request`, and a test that only
+  # works when it happens to run alone is a test that will not. It is not what makes
+  # the two path tests independent, though. Name alone could not: BOTH of them
+  # assert about `courier.web.request`, so "the parameterised route" test's span and
+  # the "an id in an unmatched path" test's span are indistinguishable to it. That
+  # is why the earlier version of this comment claimed the name filter had solved a
+  # failure it had not solved: the comment said the cross-test bleed "cannot [be
+  # told apart]", and then the filter was the only defence against it.
+  #
+  # What is left of that failure, and what it is now: `setup` drains the collector's
+  # queue and marks the table, so "since the mark" and "made by this test" are the
+  # same set. See the measurement in `setup`.
   defp request_spans do
-    Courier.TestSpans.finished_spans()
+    Courier.TestSpans.finished_spans_since(Process.get(@mark_key))
     |> Enum.filter(&(&1.name == "courier.web.request"))
   end
 
