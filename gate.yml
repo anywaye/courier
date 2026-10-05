@@ -235,7 +235,17 @@ gate:
       # than a files-on-disk claim. A floor that only ever moves when a test is
       # written is a floor that cannot see a test changing what it needs, and this
       # is the packet where that happened.
-      minimum: 1311
+      #
+      # AND IT MOVES A THIRD TIME for telemetry: 1311 -> 1343, against a measured
+      # 1343 with NO margin, because `test/courier/otel_export_test.exs` adds 26
+      # tests to the no-database tier and `telemetry_test.exs` gains one. The
+      # margin the paragraph above describes is deliberately absent here and
+      # should stay that way: this packet's suite count is measured and the floor
+      # sits AT it, so the next packet that adds tests goes red until it raises
+      # the number. That is the rule working, not a gap in it — and it is the
+      # FIRST time in this file's history that a floor has been set with zero
+      # headroom.
+      minimum: 1343
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

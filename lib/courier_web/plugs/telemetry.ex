@@ -205,10 +205,75 @@ defmodule CourierWeb.Plugs.Telemetry do
     :otel_propagator_text_map_composite.extract(
       %{},
       req_headers,
-      fn _key, carrier -> carrier end,
-      &get_header(&1, &2),
-      []
+      &header_names/1,
+      # Straight `&get_header/2`, with NO argument shuffle. The signature below is
+      # already (name, carrier), which is the SDK's order, so a capture that
+      # "fixed" it would invert it: `&get_header(&2, &1)` passes the carrier as
+      # the name, and `Enum.find/3` then raises Protocol.UndefinedError on a
+      # binary — inside baggage's extractor, which the composite propagator
+      # CATCHES. Measured, and it looks exactly like "no traceparent arrived".
+      &get_header/2,
+      propagators()
     )
+  end
+
+  @doc """
+  The propagators courier extracts inbound context with.
+
+  ## Why this is read from the application environment rather than written here
+
+  This function used to pass `[]` as the extractor list. That reads as "no
+  propagators configured", and it meant exactly that: the composite propagator
+  folds over an empty list, returns the context it was handed, and courier
+  extracted **nothing** from any inbound header. Every request started a new
+  trace — including requests carrying a perfectly valid `traceparent`.
+
+  So requirement "a valid inbound traceparent is CONTINUED" was not met by this
+  service at any point before this fix, and the existing propagation assertions
+  could not have caught it: they were asserting the shape of the header parser,
+  never that the parser was asked to parse anything.
+
+  It reads the same `:text_map_propagators` key `Courier.Telemetry.sdk_config/0`
+  installs — the two propagators the whole fleet uses — rather than naming them a
+  second time. A deployment that set `OTEL_TRACES_EXPORTER=none` and changed the
+  propagators would have its propagation follow, which is the point of there being
+  one setting.
+  """
+  def propagators do
+    Application.get_env(:opentelemetry, :text_map_propagators) || [:trace_context, :baggage]
+  end
+
+  # The composite propagator asks for the carrier's key NAMES before asking for
+  # any value, so both sides have to agree on casing. `Plug.Conn.req_headers`
+  # carries whatever case the client sent, and `TraceParent` is what at least one
+  # proxy in the wild emits.
+  defp header_names(req_headers) do
+    Enum.map(req_headers, fn {key, _value} -> String.downcase(key) end)
+  end
+
+  # `carrier_get() :: fun((Key, Carrier) -> Value | undefined)` — the SDK calls it
+  # NAME FIRST and the carrier second. Measured, because the reverse order is a
+  # silent `Enumerable.impl_for!` Protocol.UndefinedError inside
+  # `otel_propagator_baggage:extract/5` rather than a wrong value: the composite
+  # propagator CATCHES extractor exceptions and returns the context unchanged, so
+  # a mistyped getter looks exactly like "no traceparent was sent".
+  # It answers `undefined` and NOT `nil` for a header that is not present, and the
+  # SDK's own `default_carrier_get/2` does the same. This is the fifth defect and
+  # the subtlest: `Enum.find_value/2` answers `nil`, `otel_tracestate:decode_header/1`
+  # has a clause for `undefined` and none for `nil`, so it reached
+  # `string:lexemes_m(nil, …)`, raised — and the composite propagator CATCHES
+  # extractor exceptions and returns the context unchanged. So a missing
+  # `tracestate` silently discarded the `traceparent` beside it. Measured:
+  #
+  #     ** (FunctionClauseError) no function clause matching in :string.lexemes_m/3
+  #         # 1
+  #         nil
+  #     (opentelemetry_api 1.5.0) src/otel_tracestate.erl:104
+  defp get_header(name, req_headers) do
+    case Enum.find(req_headers, fn {key, _value} -> String.downcase(key) == name end) do
+      {_key, value} -> value
+      nil -> :undefined
+    end
   end
 
   defp finish_request(conn) do
@@ -249,10 +314,4 @@ defmodule CourierWeb.Plugs.Telemetry do
   end
 
   defp record_failure(_span, _status), do: :ok
-
-  defp get_header(req_headers, name) do
-    Enum.find_value(req_headers, fn {key, value} ->
-      if String.downcase(key) == name, do: value
-    end)
-  end
 end

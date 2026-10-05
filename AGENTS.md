@@ -48,7 +48,8 @@ lib/courier/nats_publisher/noop.ex    the stand-in that hands envelopes back
 lib/courier/observability.ex          the span-attribute ALLOWLIST, and the one
                                       record/2 every span in courier goes through
 lib/courier/span_collector.ex         the on-end processor, installed by hand
-                                      because the SDK's own is silently dropped
+                                      because the SDK's own is silently dropped,
+                                      and the export table the exporter reads
 lib/courier/telemetry.ex              the contract, the resource, and the SDK
                                       wiring the application controller reads
 lib/courier/principal.ex              the caller, the resolver behaviour, and the
@@ -155,6 +156,9 @@ test/courier/events_test.exs          the envelope against core's schema
 test/courier/nats_publisher_test.exs  the behaviour and the stand-in
 test/courier/observability_test.exs   the allowlist, asserted on directly
 test/courier/telemetry_test.exs       the contract, the resource, the wiring
+test/courier/otel_export_test.exs     THE PROOF THAT COURIER EXPORTS: the real
+                                      exporter, the real encoder, the real
+                                      pending table, and the six defects below
 test/courier/telemetry_canary_test.exs  THE PROOF: a canary in every field a
                                            caller controls, in nothing exported
 test/courier/secret_box_test.exs      a secret is not readable from its column
@@ -1239,6 +1243,89 @@ exporter implementing `export/3` where the callback is `export/4`; an `init/1`
 returning `:ok` where `{:ok, state}` was required; a `record/2` guarded on
 `is_map(span)` when a span is a record). `Courier.TestSpans.rendered!/0` raises
 rather than returning an empty string so that shape cannot recur silently.
+
+**Six defects meant courier exported NOTHING, and every telemetry test in this
+repository passed while that was true.** The fleet measured it on 2026-09-30. The
+reason the suite was blind is the whole shape of the problem:
+`telemetry_test.exs` asserts the rules, `observability_test.exs` asserts the
+allowlist, and `telemetry_canary_test.exs` asserts a canary is absent from an
+export — **and all three were green on a courier that never made a socket.** A
+canary's absence is satisfied by an absent span, so the one test whose subject is
+the export proved nothing about it. `test/courier/otel_export_test.exs` is the
+answer: it drives the REAL `:opentelemetry_exporter` and the REAL
+`:otel_otlp_traces` encoder over courier's REAL pending table and resource. No
+stand-in, because every defect below is a disagreement BETWEEN courier and a
+module that is not courier — and a hand-built exporter agrees with a hand-built
+caller by construction. Each was measured before it was fixed:
+
+  * **The exporter was never initialized.** `Courier.SpanCollector` called
+    `export(:traces, spans, resource, %{})`, and the fourth argument is an
+    `#state{}` RECORD. `%{}` matches none of `otel_exporter_traces_otlp:export/3`'s
+    three real clauses, so every flush took the catch-all and answered
+    `{:error, :unimplemented}` — forever, on a build whose startup line said
+    telemetry was on. `Courier.Telemetry.init_exporter/1` now builds that state,
+    and it is cached in `:persistent_term` because the exporter's state holds an
+    `httpc` profile named after the process that built it.
+  * **The spans were not in the shape the encoder reads.** `to_proto/2` wants an
+    ETS table keyed by `#span.instrumentation_scope` holding bare `#span{}`
+    records — which is exactly what `otel_batch_processor:new_export_table/1`
+    builds — and courier's queue is keyed by `:erlang.unique_integer()`. With a
+    real state, the export raised inside the exporter on courier's own queue key:
+    `FunctionClauseError` with `-576460752303345823` where a scope was wanted.
+  * **The resource was not a resource.** `otel_resource:attributes/1` matches an
+    `#opentelemetry_resource{}` record and answers `undefined` for anything else,
+    and attribute names are FLAT dotted strings. courier's
+    `%{service: %{name: "courier"}}` is not `"service.name"`, so it encoded as one
+    string-valued attribute and HyperDX's `service.name=courier` group did not
+    exist. `Courier.Telemetry.otel_resource/0` is the conversion, and `resource/0`
+    keeps its tested shape — a second function rather than a change, because the
+    nested map is what a human reads and the flat one is what the exporter encodes.
+  * **`extract/5` was passed an EMPTY extractor list**, which is not "use the
+    default" but "extract nothing". No inbound `traceparent` was ever parsed, so
+    every request started a new trace.
+  * **`get_header/2` answered `nil` for an absent header.** The SDK's own
+    `default_carrier_get/2` answers `undefined`, and `otel_tracestate:
+    decode_header/1` has a clause for `undefined` and none for `nil` — so it
+    reached `string:lexemes_m(nil, …)`, raised, and the composite propagator
+    **caught** it and returned the context unchanged. A `traceparent` with no
+    `tracestate` beside it was silently discarded, which is the overwhelmingly
+    common shape of the header.
+  * **The kill switch BOOTED courier instead of turning telemetry off.**
+    `sdk_config/0`'s disabled path set `span_processor: :otel_simple_processor`,
+    a bare atom, and `otel_configuration:processors/2` wraps that key's value in
+    a one-element list and maps `{Name, Opts}` PAIRS over it. So
+    `OTEL_SDK_DISABLED=true` was `Could not start application opentelemetry`. The
+    key is now OMITTED with `processors: []`, which is a true no-op.
+
+**Two of those were invisible for reasons worth keeping written down.** The
+extractor list and the `nil` getter BOTH fail silently, because
+`otel_propagator_text_map_composite:run_extractors/5` catches an extractor's
+exception and returns the context unchanged — so a broken getter is
+indistinguishable from "no traceparent was sent". And nothing caught the kill
+switch because `config/runtime.exs` guards the SDK block with
+`config_env() != :test`, so the disabled configuration was never evaluated against
+a running SDK. **An assertion about a configuration is not a boot**, and
+`telemetry_test.exs` asserted a keyword list for exactly as long as that sentence
+was untrue.
+
+**A refusal is now a REFUSAL rather than a crash, and the classification is
+asserted on the exporter's real return values.** The exporter answers a bare
+`error` ATOM (`otel_exporter_otlp:export_http/6` returns `ok | error`), and the
+old `case` had an arm for `{:error, reason}` and none for `error` — so a refused
+POST raised `CaseClauseError` and was swallowed by the catch-all as "the span
+exporter raised", making a refused POST and a broken exporter indistinguishable
+in the log. `Courier.SpanCollector.export_pending/1` classifies `:ok`, a bare
+`error`, `{:error, reason}` and a RAISE, re-queues on anything but `:ok`, and
+`last_failure/0` keeps the last reason readable — because "nothing to render (0
+spans in)" arriving from six test files at once is the shape these defects had,
+and the reason was visible only on one log line nobody was reading.
+
+**The drain is atomic, because `on_end/1` inserts from any request process.**
+`tab2list` followed by `delete_all_objects` dropped whatever landed between the
+two; `ets:take/2` per key does not. It is deliberately NOT `ets:take/2` with
+`[:reference]`, which answers a REFERENCE that neither `ets:tab2list/1` nor
+`ets:match_object/2` accepts (`ArgumentError: not an atom or a table identifier`,
+measured on OTP 29).
 
 **Metrics come from the collector's `spanmetrics` connector, not from courier.**
 `ls deps/opentelemetry/src | grep -c metric` is `0` — the Erlang SDK ships no

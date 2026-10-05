@@ -168,6 +168,87 @@ defmodule Courier.Telemetry do
   @doc "Forget the cached tracer. For a test that replaced the provider."
   def forget_tracer, do: :persistent_term.erase(@tracer_key)
 
+  @exporter_state_key {__MODULE__, :exporter_state}
+
+  @doc """
+  The exporter, INITIALIZED, and ready to be handed spans.
+
+  ## Why this exists at all
+
+  The Erlang SDK initializes an exporter by calling `Exporter.init(Config)` and
+  keeps the returned state, and `export/4` then takes that state as its fourth
+  argument. courier was calling
+
+      :opentelemetry_exporter.export(:traces, tab, resource, %{})
+
+  — passing `%{}` where the state belongs. That argument is an Erlang RECORD and
+  `otel_exporter_traces_otlp:export/3` pattern-matches four `#state{}` fields in
+  each of its three real clauses. `%{}` matches none of them, so every clause
+  fell through to the catch-all and the exporter answered `{:error,
+  :unimplemented}`, on every flush, for the life of the service.
+
+  This is not a hypothetical. `test/courier/otel_export_test.exs` drives the real
+  module and records the answer.
+
+  ## Why the endpoint is passed HERE rather than left to the environment
+
+  `:opentelemetry_exporter.init/1` reads `OTEL_EXPORTER_OTLP_ENDPOINT` from the
+  OS environment and gives it PRECEDENCE over the `endpoints:` option
+  (`otel_exporter_otlp:merge_with_environment/8` puts the environment's value into
+  `endpoints` unconditionally). So courier's own resolution is passed explicitly
+  and wins in every case courier's contract says it should: `COURIER_OTEL_ENDPOINT`
+  alone, and neither variable set.
+
+  The one case it does not cover is both variables set to DIFFERENT values, where
+  courier's documented precedence says the cafaye name wins and the exporter's
+  environment read wins. That is a contradiction between two upstream contracts
+  and it is reported rather than papered over — see the packet report. The
+  alternative was for courier to mutate its own process environment at boot,
+  which is worse: it makes a global, is a race, and is invisible in a diff that
+  says what courier reads.
+  """
+  def init_exporter(config \\ nil) do
+    case exporter() do
+      :opentelemetry_exporter ->
+        :opentelemetry_exporter.init(config || %{endpoints: [endpoint()]})
+
+      module ->
+        # `:otel_exporter` behaviour: `init/1` must answer `{:ok, state}` or
+        # `:ignore`, and there is no catch-all, so a bare `:ok` is a TryClauseError
+        # inside the SDK's gen_statem and the processor is dropped with a log at
+        # `info`. `Courier.TestSpanExporter` says so in its own moduledoc.
+        module.init(config || %{endpoints: [endpoint()]})
+    end
+  end
+
+  @doc """
+  The state from `init_exporter/1`, or `:not_initialized`.
+
+  Cached in `:persistent_term` because it is built once and read on every flush,
+  and because the exporter's state holds an `httpc` profile named after the
+  process that built it — so it belongs to the process that started it, not to
+  whichever one later wants to export.
+  """
+  def exporter_state do
+    case :persistent_term.get(@exporter_state_key, :not_initialized) do
+      :not_initialized ->
+        case init_exporter() do
+          {:ok, state} ->
+            :persistent_term.put(@exporter_state_key, state)
+            state
+
+          other ->
+            other
+        end
+
+      state ->
+        state
+    end
+  end
+
+  @doc "Forget the initialized exporter. For a test that changed the exporter."
+  def forget_exporter, do: :persistent_term.erase(@exporter_state_key)
+
   defp build_tracer do
     {module, record} = :otel_tracer_provider.get_tracer(service_name(), nil, nil)
     {tag, fields} = record |> Tuple.to_list() |> then(&{hd(&1), tl(&1)})
@@ -286,6 +367,56 @@ defmodule Courier.Telemetry do
   end
 
   @doc """
+  `resource/0` in the shape the OTLP EXPORTER accepts.
+
+  ## Why this is a second function and not a change to `resource/0`
+
+  `resource/0` is courier's declaration of identity and it is tested as a nested
+  map. It is what a human reads. This is what
+  `:opentelemetry_exporter` can encode, and the two differ in two ways that
+  between them dropped everything courier emitted:
+
+    * `otel_resource:attributes/1` matches an `#opentelemetry_resource{}` record
+      and returns `undefined` for anything else — so a plain map produced
+      `undefined` attributes and a resource with no `service.name` on it;
+    * OpenTelemetry attribute names are FLAT dotted strings. courier's
+      `%{service: %{name: "courier"}}` is not `"service.name"`, and even wrapped
+      in a record the exporter would have encoded the whole nested map as one
+      string-valued attribute. HyperDX groups by `service.name`, so the group
+      this packet exists to create would not have existed.
+
+  ## The name mapping, and why it is written out rather than derived
+
+  | courier | OpenTelemetry |
+  |---------|---------------|
+  | `service.name` | `service.name` |
+  | `service.version` | `service.version` |
+  | `deployment` | `deployment.environment` |
+  | `tenant_id` | `tenant_id` |
+
+  `deployment.environment` is the only one that moves, and it moves because that
+  is the name core's resource schema froze. Deriving it — joining a prefix onto
+  each key — would produce `service.name` and `tenant_id` correctly and
+  `deployment` incorrectly, so the one table above is the whole of the mapping.
+  """
+  def otel_resource do
+    %{service: service} = courier = resource()
+
+    :otel_resource.create(
+      Map.merge(
+        %{
+          "service.name" => service.name,
+          "service.version" => service.version
+        },
+        compact(%{
+          "deployment.environment" => Map.get(courier, :deployment),
+          "tenant_id" => Map.get(courier, :tenant_id)
+        })
+      )
+    )
+  end
+
+  @doc """
   The `:opentelemetry` application environment, as a keyword list.
 
   Returned rather than applied so `config/runtime.exs` can write
@@ -312,6 +443,33 @@ defmodule Courier.Telemetry do
     * `register_loaded_applications: false` and `create_application_tracers: false`
       — courier names its own tracer, so the SDK's per-application tracers are two
       mechanisms for one thing and every span would be recorded twice.
+
+    ## The DISABLED path is an EMPTY processor list, and that is the sixth defect
+
+    It used to be `:otel_simple_processor`, which reads like "export nowhere,
+    cheaply" and is a BARE ATOM. `otel_configuration:processors/2` maps over the
+    processor list expecting `{Name, Opts}` PAIRS and has no clause for a bare
+    atom, so a courier booted with `OTEL_SDK_DISABLED=true` did not boot at all:
+
+        [notice] Application opentelemetry exited: exited in: :opentelemetry_app.start(:normal, [])
+            ** (EXIT) an exception was raised:
+                ** (FunctionClauseError) no function clause matching in anonymous fn/1
+                   in :otel_configuration.processors/2
+                    (opentelemetry 1.7.0) src/otel_configuration.erl:179
+        ** (Mix) Could not start application opentelemetry
+
+    So the kill switch — the one setting whose whole job is to let somebody turn
+    telemetry OFF — took the release down instead, which is the failure mode this
+    module's own moduledoc says it exists to prevent. `[]` is a true no-op: no
+    processor is started, no queue exists, no dial happens, and every
+    `[:telemetry, :span]` call in the codebase stays valid because courier's own
+    `Courier.SpanCollector.on_end/1` is what installs the processor, not the SDK.
+
+    It is worth naming WHY nothing caught this: `config/runtime.exs` guards the
+    whole SDK block with `config_env() != :test`, so the disabled path was never
+    booted by the suite — `telemetry_test.exs` asserted the keyword list and
+    nothing ever evaluated it against a running SDK. An assertion about a
+    configuration is not a boot.
   """
   def sdk_config do
     if enabled?() do
@@ -331,7 +489,27 @@ defmodule Courier.Telemetry do
     else
       [
         text_map_propagators: [:trace_context, :baggage],
-        span_processor: :otel_simple_processor,
+        # `processors: []`, and `span_processor` OMITTED rather than set. Both
+        # halves are load-bearing, and the reasons are the same one:
+        # `otel_configuration:processors/2` takes `span_processor` first, wraps
+        # whatever it finds in a single-element list, and maps `{Name, Opts}` pairs
+        # over it — so ANY value for that key is either a pair (fine) or a crash.
+        # Measured on the two shapes this tried:
+        #
+        #     span_processor: :otel_simple_processor
+        #       ** (FunctionClauseError) ... :otel_configuration.processors/2
+        #           anonymous fn(:otel_simple_processor) ... otel_configuration.erl:179
+        #     span_processor: []
+        #       ** (FunctionClauseError) ... :otel_configuration.processors/2
+        #           anonymous fn([]) ... otel_configuration.erl:179
+        #
+        # Omitting the key entirely is the third option and the only one that
+        # boots: `transform/2` answers `undefined`, so the SDK falls through to
+        # `processors`, and an empty list there starts no processor at all. No
+        # queue, no dial, no process — and `Courier.SpanCollector.on_end/1`, which
+        # is what actually installs courier's processor, is a function on the
+        # tracer record rather than something the SDK starts, so it is unaffected.
+        processors: [],
         register_loaded_applications: false,
         create_application_tracers: false
       ]
@@ -416,6 +594,14 @@ defmodule Courier.Telemetry do
   defp maybe_put(attributes, _key, nil), do: attributes
   defp maybe_put(attributes, _key, ""), do: attributes
   defp maybe_put(attributes, key, value), do: Map.put(attributes, key, value)
+
+  # Drops the nil and the empty string, and nothing else. An attribute present
+  # with an empty value is an attribute an operator filters on and gets nothing
+  # back, and `service.name=""` is a second courier row in the store rather than a
+  # tidier name — see the tests in `telemetry_test.exs` that assert absence.
+  defp compact(map) do
+    :maps.filter(fn _key, value -> value not in [nil, ""] end, map)
+  end
 
   # An endpoint in a log line is a hostname and a port, or — for a bring-your-own
   # backend — an API KEY in the path or the query string. Redact the query and the
