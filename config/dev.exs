@@ -1,14 +1,46 @@
 import Config
 
-# Configure your database
+# TWO CREDENTIALS, IN THE SAME ORDER AND FOR THE SAME REASON AS
+# `config/test.exs` — that file is the one with the long argument, and this one
+# points at it rather than restating it.
+#
+#   * `Courier.Repo` connects as `courier_app`, the app login role kit provisions
+#     (`<service>_app`): it owns nothing, holds DML per table, and is a subject of
+#     every row-level-security policy. It cannot create a database or a table, so
+#     `mix ecto.setup` cannot run as it.
+#   * `Courier.OwnerRepo` is the owner, and it is used by `mix.exs`'s aliases for
+#     `ecto.create`/`ecto.migrate`/seeds and by nothing else. **It must never be
+#     the runtime credential**: a dev server running as the owner is a dev server
+#     where the account boundary is switched off.
+#
+# THE OWNER DEFAULT IS `postgres` because a developer's own postgres is a single
+# role and creating a database is the one thing a `NOSUPERUSER` owner cannot do.
+# `bin/dev`'s kit cluster provisions the owner as `courier` itself and the
+# database there already exists, so `COURIER_DB_OWNER_USER=courier` is right on it.
+dev_port = String.to_integer(System.get_env("COURIER_DEV_PG_PORT", "5432"))
+
 config :courier, Courier.Repo,
-  username: "postgres",
-  password: "postgres",
+  username: "courier_app",
+  # Set by whoever provisioned the cluster: kit's dev cluster gives every role the
+  # cluster password, and a local postgres is whatever `bin/gate-db` started.
+  password: System.get_env("COURIER_APP_DB_PASSWORD", "postgres"),
   hostname: "localhost",
+  port: dev_port,
   database: "courier_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
   pool_size: 10
+
+# Bootstrap only — see above.
+config :courier, Courier.OwnerRepo,
+  # `priv/repo/migrations`, NAMED because Ecto derives it from the module name
+  # instead — see `Courier.OwnerRepo` for what happens when it is left to guess.
+  priv: "priv/repo",
+  username: System.get_env("COURIER_DB_OWNER_USER", "postgres"),
+  password: System.get_env("COURIER_DB_OWNER_PASSWORD", "postgres"),
+  hostname: "localhost",
+  port: dev_port,
+  database: "courier_dev"
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

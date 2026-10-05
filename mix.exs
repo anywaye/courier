@@ -173,12 +173,40 @@ defmodule Courier.MixProject do
   #     $ mix setup
   #
   # See the documentation for `Mix` for more info on aliases.
+  # TWO CREDENTIALS, SO EVERY TASK THAT NEEDS PRIVILEGES NAMES THE ONE THAT HAS
+  # THEM. `Courier.Repo` is `courier_app` — the app login role, which owns nothing
+  # and cannot create a database or a table — and `Courier.OwnerRepo` is the
+  # owner. Each `ecto.*` task below says which.
+  #
+  # `-r Courier.OwnerRepo` is load-bearing on all of them, and the `test` alias is
+  # where it matters most: create and migrate run as the owner, then **the suite
+  # itself runs as `courier_app`**, because `test` starts the application and the
+  # application starts `Courier.Repo`. That is what makes a green suite evidence
+  # about the account boundary rather than about a superuser's exemptions.
+  #
+  # The version this replaces ran every one of these as `postgres`, which is a
+  # superuser, and a superuser bypasses RLS whatever `force row level security`
+  # says — see `Courier.Tenancy`'s moduledoc for the measurement.
   defp aliases do
     [
       setup: ["deps.get", "ecto.setup"],
-      "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
-      "ecto.reset": ["ecto.drop", "ecto.setup"],
-      test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      "ecto.setup": [
+        "ecto.create -r Courier.OwnerRepo",
+        "ecto.migrate -r Courier.OwnerRepo",
+        "run priv/repo/seeds.exs"
+      ],
+      "ecto.reset": ["ecto.drop -r Courier.OwnerRepo", "ecto.setup"],
+      # A developer typing `mix ecto.migrate` gets the OWNER because otherwise the
+      # obvious command is the one that fails with a permission error naming a
+      # role they have never heard of. There is deliberately no `ecto.migrate`
+      # alias: an alias of the same name as a Mix task recurses, and the fix for
+      # that is not worth the indirection.
+      "ecto.migrate.owner": ["ecto.migrate -r Courier.OwnerRepo"],
+      test: [
+        "ecto.create --quiet -r Courier.OwnerRepo",
+        "ecto.migrate --quiet -r Courier.OwnerRepo",
+        "test"
+      ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
     ]
   end

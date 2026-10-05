@@ -1,18 +1,72 @@
 import Config
 
-# Configure your database
+# TWO CREDENTIALS, AND THE ORDER THEY ARE WRITTEN IN IS THE POINT.
+#
+# THE FIRST IS THE RUNTIME CREDENTIAL, and it is `courier_app`: kit's app login
+# role, which owns nothing, holds DML per table and is a subject of every
+# row-level-security policy the substrate installed on `idempotency_keys`,
+# `notification_preferences` and `webhook_endpoints`. **Every test in this suite
+# therefore runs as a role the policies apply to**, which is the only way a suite
+# can prove the boundary is on rather than installed.
+#
+# It used to be `postgres`, a superuser, and a superuser bypasses RLS whatever
+# `force row level security` says — so a green suite could not tell an enforced
+# boundary from an inert one. `Courier.Tenancy`'s moduledoc carries the
+# measurement.
+#
+# THE SECOND IS THE BOOTSTRAP CREDENTIAL, and it is the only privileged one:
+# `courier_app` is `NOCREATEDB` and owns no table, so `mix ecto.create` and
+# `mix ecto.migrate` cannot run as it. `mix.exs`'s `test` alias points those two
+# tasks at `Courier.OwnerRepo` and nothing else, which is what keeps the owner out
+# of the run that matters.
+#
+# **THE OWNER CREDENTIAL MUST NEVER BE THE RUNTIME CREDENTIAL.** One repo key
+# with an override would make `COURIER_OWNER_DATABASE_URL=… mix test` run the
+# *tests* as the owner too, and the suite would go green with the boundary
+# switched off. Two modules make the phase a compile-time fact — see
+# `Courier.OwnerRepo`.
+#
+# WHY THE DEFAULT OWNER IS `postgres`, which is the superuser this packet is
+# removing from the runtime path: a developer's plain local postgres and CI's
+# `services: postgres` have EXACTLY ONE role, and creating the database is the
+# one job a `NOSUPERUSER` owner role cannot do. On a cluster kit provisioned
+# (`bin/dev`, `kit/templates/compose/postgres/initdb/10-cluster.sh`) the owner is
+# the service's own `courier` role and this default is wrong by design — set
+# `COURIER_DB_OWNER_USER`. Two variables, both optional, neither a secret worth
+# keeping: a test fixture and a local development password.
 #
 # The MIX_TEST_PARTITION environment variable can be used
 # to provide built-in test partitioning in CI environment.
 # Run `mix help test` for more information.
+port = String.to_integer(System.get_env("COURIER_TEST_PG_PORT", "5432"))
+database = "courier_test#{System.get_env("MIX_TEST_PARTITION")}"
+
 config :courier, Courier.Repo,
-  username: "postgres",
-  password: "postgres",
+  username: "courier_app",
+  # A fixture on the same terms as the `postgres` password this file committed
+  # before: `courier_app` is created by
+  # `priv/repo/migrations/20261003090000_protect_account_scoped_tables.exs`, which
+  # cannot set a password, so the password belongs to whoever provisioned the
+  # cluster. kit's dev cluster gives every role the cluster password; a plain
+  # local postgres is `bin/gate-db`'s, which is `postgres`.
+  password: System.get_env("COURIER_APP_DB_PASSWORD", "postgres"),
   hostname: "localhost",
-  port: String.to_integer(System.get_env("COURIER_TEST_PG_PORT", "5432")),
-  database: "courier_test#{System.get_env("MIX_TEST_PARTITION")}",
+  port: port,
+  database: database,
   pool: Ecto.Adapters.SQL.Sandbox,
   pool_size: System.schedulers_online() * 2
+
+# THE BOOTSTRAP CREDENTIAL. Never used by a test, by the endpoint, or by anything
+# the supervision tree starts — see the paragraph above.
+config :courier, Courier.OwnerRepo,
+  # `priv/repo/migrations`, NAMED because Ecto derives it from the module name
+  # instead — see `Courier.OwnerRepo` for what happens when it is left to guess.
+  priv: "priv/repo",
+  username: System.get_env("COURIER_DB_OWNER_USER", "postgres"),
+  password: System.get_env("COURIER_DB_OWNER_PASSWORD", "postgres"),
+  hostname: "localhost",
+  port: port,
+  database: database
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

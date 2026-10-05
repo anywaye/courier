@@ -221,11 +221,23 @@ services:
       # Over the compose network, by service name. The host mapping above is for the
       # developer and the host-side test suite.
       #
-      # The role is `courier`, NOT the cluster's admin: `10-cluster.sh` creates it
-      # as LOGIN NOSUPERUSER and owns `courier` with it, and the password is the
-      # cluster's because every role takes `POSTGRES_PASSWORD`. This is the only
-      # credential courier holds, and it is the one that is refused at the door of
-      # every other service's database.
+      # THE RUNTIME ROLE IS `courier_app`, AND THAT IS THE WHOLE OF THIS CHANGE.
+      # kit's `10-cluster.sh` provisions TWO logins per service: `courier`, which
+      # owns the database and runs migrations, and `courier_app`, which owns
+      # nothing and holds DML per table. This line used to name the former, so the
+      # application ran as the role that owns its own tables — and Postgres exempts
+      # an owner from its own row-level-security policies, so every policy in
+      # `20261003090000_protect_account_scoped_tables.exs` was inert in the dev
+      # stack. Naming `courier_app` is what makes the dev stack behave like the
+      # deployed one.
+      #
+      # It owns nothing, so it cannot run migrations, which is why the owner's DSN
+      # is a SEPARATE variable below rather than an option on this one.
+      #
+      # The password is the cluster's because every role takes `POSTGRES_PASSWORD`
+      # on a development machine (kit's own words: "Isolation is by PRIVILEGE and
+      # never by secret"). In production the two roles carry distinct passwords
+      # and nothing about the boundary changes.
       #
       # `application_name` is MISSING HERE, which on a shared cluster is the one
       # setting kit's `templates/database/contract.json` calls "THE ONE THAT IS
@@ -250,7 +262,16 @@ services:
       # is the real change and it is a separate one from moving onto the cluster:
       # a new `lib/courier/database.ex`, a `config/runtime.exs` edit on the
       # `:prod` branch that CI's boot contract exercises, and its own tests.
-      DATABASE_URL: ecto://courier:${KIT_POSTGRES_PASSWORD:-cafaye}@postgres:5432/courier
+      DATABASE_URL: ecto://courier_app:${KIT_POSTGRES_PASSWORD:-cafaye}@postgres:5432/courier
+
+      # THE OWNER, FOR MIGRATIONS ONLY. Read by `Courier.OwnerRepo` and by nothing
+      # else — the application never opens a connection with it, which is a
+      # property of `Courier.OwnerRepo` rather than a convention.
+      #
+      # It has to be a separate variable rather than a flag on `DATABASE_URL`
+      # because one variable cannot be two credentials, and the release reads
+      # `DATABASE_URL` to start `Courier.Repo`.
+      COURIER_OWNER_DATABASE_URL: ecto://courier:${KIT_POSTGRES_PASSWORD:-cafaye}@postgres:5432/courier
 
       # ---------------------------------------------------------------------
       # OBSERVABILITY, ON BY DEFAULT
