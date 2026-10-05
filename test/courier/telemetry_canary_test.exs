@@ -132,6 +132,7 @@ defmodule Courier.TelemetryCanaryTest do
     # queue means. `mark/0` filters by when a span ARRIVED, not by which test made
     # it, and the two only agree once the queue is empty.
     Courier.SpanCollector.flush()
+    Courier.SpanCollector.clear_failure()
 
     Process.put(@mark_key, Courier.TestSpanExporter.mark())
     :ok
@@ -350,9 +351,9 @@ defmodule Courier.TelemetryCanaryTest do
 
       #{exported}
       """
+    else
+      exported
     end
-
-    exported
   end
 
   # THIS file's spans, and by NOTHING ELSE: neither by name alone, nor by whatever

@@ -168,6 +168,87 @@ defmodule Courier.Telemetry do
   @doc "Forget the cached tracer. For a test that replaced the provider."
   def forget_tracer, do: :persistent_term.erase(@tracer_key)
 
+  @exporter_state_key {__MODULE__, :exporter_state}
+
+  @doc """
+  The exporter, INITIALIZED, and ready to be handed spans.
+
+  ## Why this exists at all
+
+  The Erlang SDK initializes an exporter by calling `Exporter.init(Config)` and
+  keeps the returned state, and `export/4` then takes that state as its fourth
+  argument. courier was calling
+
+      :opentelemetry_exporter.export(:traces, tab, resource, %{})
+
+  — passing `%{}` where the state belongs. That argument is an Erlang RECORD and
+  `otel_exporter_traces_otlp:export/3` pattern-matches four `#state{}` fields in
+  each of its three real clauses. `%{}` matches none of them, so every clause
+  fell through to the catch-all and the exporter answered `{:error,
+  :unimplemented}`, on every flush, for the life of the service.
+
+  This is not a hypothetical. `test/courier/otel_export_test.exs` drives the real
+  module and records the answer.
+
+  ## Why the endpoint is passed HERE rather than left to the environment
+
+  `:opentelemetry_exporter.init/1` reads `OTEL_EXPORTER_OTLP_ENDPOINT` from the
+  OS environment and gives it PRECEDENCE over the `endpoints:` option
+  (`otel_exporter_otlp:merge_with_environment/8` puts the environment's value into
+  `endpoints` unconditionally). So courier's own resolution is passed explicitly
+  and wins in every case courier's contract says it should: `COURIER_OTEL_ENDPOINT`
+  alone, and neither variable set.
+
+  The one case it does not cover is both variables set to DIFFERENT values, where
+  courier's documented precedence says the cafaye name wins and the exporter's
+  environment read wins. That is a contradiction between two upstream contracts
+  and it is reported rather than papered over — see the packet report. The
+  alternative was for courier to mutate its own process environment at boot,
+  which is worse: it makes a global, is a race, and is invisible in a diff that
+  says what courier reads.
+  """
+  def init_exporter(config \\ nil) do
+    case exporter() do
+      :opentelemetry_exporter ->
+        :opentelemetry_exporter.init(config || %{endpoints: [endpoint()]})
+
+      module ->
+        # `:otel_exporter` behaviour: `init/1` must answer `{:ok, state}` or
+        # `:ignore`, and there is no catch-all, so a bare `:ok` is a TryClauseError
+        # inside the SDK's gen_statem and the processor is dropped with a log at
+        # `info`. `Courier.TestSpanExporter` says so in its own moduledoc.
+        module.init(config || %{endpoints: [endpoint()]})
+    end
+  end
+
+  @doc """
+  The state from `init_exporter/1`, or `:not_initialized`.
+
+  Cached in `:persistent_term` because it is built once and read on every flush,
+  and because the exporter's state holds an `httpc` profile named after the
+  process that built it — so it belongs to the process that started it, not to
+  whichever one later wants to export.
+  """
+  def exporter_state do
+    case :persistent_term.get(@exporter_state_key, :not_initialized) do
+      :not_initialized ->
+        case init_exporter() do
+          {:ok, state} ->
+            :persistent_term.put(@exporter_state_key, state)
+            state
+
+          other ->
+            other
+        end
+
+      state ->
+        state
+    end
+  end
+
+  @doc "Forget the initialized exporter. For a test that changed the exporter."
+  def forget_exporter, do: :persistent_term.erase(@exporter_state_key)
+
   defp build_tracer do
     {module, record} = :otel_tracer_provider.get_tracer(service_name(), nil, nil)
     {tag, fields} = record |> Tuple.to_list() |> then(&{hd(&1), tl(&1)})
@@ -283,6 +364,56 @@ defmodule Courier.Telemetry do
     }
     |> maybe_put(:deployment, System.get_env("DEPLOYMENT_ENVIRONMENT"))
     |> maybe_put(:tenant_id, System.get_env(@tenant_variable))
+  end
+
+  @doc """
+  `resource/0` in the shape the OTLP EXPORTER accepts.
+
+  ## Why this is a second function and not a change to `resource/0`
+
+  `resource/0` is courier's declaration of identity and it is tested as a nested
+  map. It is what a human reads. This is what
+  `:opentelemetry_exporter` can encode, and the two differ in two ways that
+  between them dropped everything courier emitted:
+
+    * `otel_resource:attributes/1` matches an `#opentelemetry_resource{}` record
+      and returns `undefined` for anything else — so a plain map produced
+      `undefined` attributes and a resource with no `service.name` on it;
+    * OpenTelemetry attribute names are FLAT dotted strings. courier's
+      `%{service: %{name: "courier"}}` is not `"service.name"`, and even wrapped
+      in a record the exporter would have encoded the whole nested map as one
+      string-valued attribute. HyperDX groups by `service.name`, so the group
+      this packet exists to create would not have existed.
+
+  ## The name mapping, and why it is written out rather than derived
+
+  | courier | OpenTelemetry |
+  |---------|---------------|
+  | `service.name` | `service.name` |
+  | `service.version` | `service.version` |
+  | `deployment` | `deployment.environment` |
+  | `tenant_id` | `tenant_id` |
+
+  `deployment.environment` is the only one that moves, and it moves because that
+  is the name core's resource schema froze. Deriving it — joining a prefix onto
+  each key — would produce `service.name` and `tenant_id` correctly and
+  `deployment` incorrectly, so the one table above is the whole of the mapping.
+  """
+  def otel_resource do
+    %{service: service} = courier = resource()
+
+    :otel_resource.create(
+      Map.merge(
+        %{
+          "service.name" => service.name,
+          "service.version" => service.version
+        },
+        compact(%{
+          "deployment.environment" => Map.get(courier, :deployment),
+          "tenant_id" => Map.get(courier, :tenant_id)
+        })
+      )
+    )
   end
 
   @doc """
@@ -416,6 +547,14 @@ defmodule Courier.Telemetry do
   defp maybe_put(attributes, _key, nil), do: attributes
   defp maybe_put(attributes, _key, ""), do: attributes
   defp maybe_put(attributes, key, value), do: Map.put(attributes, key, value)
+
+  # Drops the nil and the empty string, and nothing else. An attribute present
+  # with an empty value is an attribute an operator filters on and gets nothing
+  # back, and `service.name=""` is a second courier row in the store rather than a
+  # tidier name — see the tests in `telemetry_test.exs` that assert absence.
+  defp compact(map) do
+    :maps.filter(fn _key, value -> value not in [nil, ""] end, map)
+  end
 
   # An endpoint in a log line is a hostname and a port, or — for a bring-your-own
   # backend — an API KEY in the path or the query string. Redact the query and the

@@ -50,6 +50,22 @@ defmodule Courier.TestSpanExporter do
   @impl true
   def init(_config), do: {:ok, %{}}
 
+  # One row, in whichever of the two shapes the table holds.
+  #
+  # The SDK's own export table is `duplicate_bag` with
+  # `{keypos, #span.instrumentation_scope}`, and `ets:tab2list/1` on a table with
+  # a `keypos` returns the OBJECT — the bare `#span{}` — with the key left in
+  # place at its own field position. The shape courier's queue used was a `set`
+  # keyed by `:erlang.unique_integer()`, where the same call returns
+  # `{span_id, span}` pairs.
+  #
+  # Matching only the second shape raised FunctionClauseError inside this exporter
+  # the moment courier started building the table the REAL exporter reads, and the
+  # symptom was the whole canary suite reporting "nothing to render (0 spans in)":
+  # the spans were there and the exporter could not see them.
+  defp span_record(fields) when is_list(fields), do: List.to_tuple(fields)
+  defp span_record(record), do: record
+
   @impl true
   def export(:traces, sdk_table, _resource, _config) do
     ensure_table()
@@ -57,7 +73,8 @@ defmodule Courier.TestSpanExporter do
     spans =
       sdk_table
       |> :ets.tab2list()
-      |> Enum.map(fn {_span_id, record} -> Courier.TestSpans.readable(record) end)
+      |> Enum.map(&span_record/1)
+      |> Enum.map(&Courier.TestSpans.readable/1)
       |> Enum.sort_by(& &1.start_time)
 
     # The row key is an id from the SAME SEQUENCE `mark/0` draws from, and that is
