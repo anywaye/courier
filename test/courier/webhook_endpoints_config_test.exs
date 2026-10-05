@@ -23,6 +23,11 @@ defmodule Courier.WebhookEndpointsConfigTest do
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account_id
+
   setup do
     original = Application.get_env(:courier, :dns_resolver)
     on_exit(fn -> Application.put_env(:courier, :dns_resolver, original) end)

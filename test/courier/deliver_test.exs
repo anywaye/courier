@@ -33,6 +33,11 @@ defmodule Courier.DeliverTest do
   # what this block exists to show is fine.
   @account_id "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
 
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account_id
+
   defp payload(overrides \\ %{}) do
     Map.merge(
       %{

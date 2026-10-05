@@ -43,6 +43,11 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
   alias Courier.WebhookEndpoints
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
+
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account_id
   @other_account_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
   @url "https://hooks.example.com/events"
@@ -127,7 +132,8 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     test "another account's token does not grant access to this one's endpoints" do
       # The whole point of the matrix: knowing that *an* account exists is not
       # knowing that this endpoint is yours.
-      theirs = endpoint!(%{account_id: @other_account_id})
+      theirs =
+        as_account(@other_account_id, fn -> endpoint!(%{account_id: @other_account_id}) end)
 
       conn = owner_conn() |> get("/v1/webhook_endpoints/#{theirs.id}")
 
@@ -328,7 +334,8 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     test "answers 404 for another account's endpoint, not 403" do
       # Core's openapi-conventions: a 403 "leaks existence". There is no 403
       # anywhere in this file, and that is the rule.
-      endpoint = endpoint!(%{account_id: @other_account_id})
+      endpoint =
+        as_account(@other_account_id, fn -> endpoint!(%{account_id: @other_account_id}) end)
 
       conn = owner_conn() |> get("/v1/webhook_endpoints/#{endpoint.id}")
 
@@ -397,13 +404,25 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "answers 404 for another account's endpoint" do
-      endpoint = endpoint!(%{account_id: @other_account_id})
+      endpoint =
+        as_account(@other_account_id, fn -> endpoint!(%{account_id: @other_account_id}) end)
 
       conn =
         owner_conn() |> patch("/v1/webhook_endpoints/#{endpoint.id}", %{"status" => "disabled"})
 
       assert %{"code" => "not_found"} = json_response(conn, 404)
-      assert Repo.get!(WebhookEndpoint, endpoint.id).status == :enabled
+
+      # READ BACK UNDER THE IDENTITY THAT OWNS THE ROW. `Repo.get!/2` reaches a
+      # protected row by primary key alone, and under the RLS `select` policy the
+      # test body's identity decides whether it is returned at all. The body's
+      # identity here is `@account_id` -- unless a request changed it, which
+      # `CourierWeb.Plugs.TenantIdentity` does, because inside the sandbox its
+      # transaction is a SAVEPOINT whose release does not discard a
+      # transaction-local setting. So the read is asked for the identity it needs
+      # rather than inheriting one.
+      assert as_account(@other_account_id, fn ->
+               Repo.get!(WebhookEndpoint, endpoint.id).status == :enabled
+             end)
     end
 
     test "refuses a url courier will not send to" do
@@ -451,12 +470,21 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "answers 404 for another account's endpoint, and leaves it" do
-      endpoint = endpoint!(%{account_id: @other_account_id})
+      endpoint =
+        as_account(@other_account_id, fn -> endpoint!(%{account_id: @other_account_id}) end)
 
       conn = owner_conn() |> delete("/v1/webhook_endpoints/#{endpoint.id}")
 
       assert %{"code" => "not_found"} = json_response(conn, 404)
-      assert WebhookEndpoints.get(endpoint.id, @other_account_id)
+
+      # READ BACK UNDER THE IDENTITY THAT OWNS THE ROW — see the identical
+      # comment on the PATCH test above. As `@account_id` this is `nil` whatever
+      # the DELETE did, because the RLS `select` policy does not return the other
+      # account's row: **an assertion that passes because the row is invisible
+      # rather than because it survived proves nothing about the DELETE.**
+      assert as_account(@other_account_id, fn ->
+               WebhookEndpoints.get(endpoint.id, @other_account_id)
+             end)
     end
 
     test "answers 404 for an id that does not exist" do
@@ -534,7 +562,9 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "answers 404 for another account's endpoint, and sends nothing" do
-      endpoint = endpoint!(%{account_id: @other_account_id})
+      endpoint =
+        as_account(@other_account_id, fn -> endpoint!(%{account_id: @other_account_id}) end)
+
       Courier.TestSupport.RecordingSender.reset()
 
       conn = owner_conn() |> post("/v1/webhook_endpoints/#{endpoint.id}/test")

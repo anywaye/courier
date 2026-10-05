@@ -337,8 +337,33 @@ defmodule CourierWeb.ErrorReportingTest do
       # stateless and GlitchTip keeps the events in its own Postgres. A claim
       # about an absence is only checkable against a list, so this asserts against
       # the migration list rather than trusting a reading of the schema.
+      # `Courier.OwnerRepo`, and BOTH halves of that are load-bearing:
+      #
+      #   * the OWNER, because this reads `schema_migrations` — a table the
+      #     runtime role is deliberately NOT granted
+      #     (`20261005120000_grant_app_role_runtime_dml`: nothing at runtime
+      #     reads it). As `Courier.Repo` this is `permission denied for schema
+      #     public`, which is a correct refusal of a correct arrangement.
+      #   * STARTED HERE, because `Courier.OwnerRepo` is deliberately not in the
+      #     supervision tree — nothing in a running courier holds an owner
+      #     connection. So the failure without the next line is not a permission
+      #     error but a lookup:
+      #
+      #         ** (RuntimeError) could not lookup Ecto repo Courier.OwnerRepo
+      #            because it was not started or it does not exist
+      #
+      # `start_supervised!/1` rather than a bare `start_link`, so the process is
+      # stopped and cleaned up between tests. `async: false` on this file is what
+      # makes starting a second repo here safe at all: a repo on a sandbox-pooled
+      # database is a shared resource, and the file already says so above its
+      # `use`.
+      start_supervised!(Courier.OwnerRepo)
+
       migrations =
-        Ecto.Migrator.migrations(Courier.Repo, Ecto.Migrator.migrations_path(Courier.Repo))
+        Ecto.Migrator.migrations(
+          Courier.OwnerRepo,
+          Ecto.Migrator.migrations_path(Courier.OwnerRepo)
+        )
 
       assert is_list(migrations)
       assert migrations != [], "the assertion is only meaningful against a real migration list"

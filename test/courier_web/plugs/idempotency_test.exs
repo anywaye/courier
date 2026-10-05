@@ -29,6 +29,11 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
   alias CourierWeb.Plugs.Idempotency, as: KeyPlug
 
   @account "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
+
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account
   @other_account "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
   @url "https://hooks.example.com/events"
@@ -66,6 +71,57 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
   defp claims, do: Repo.aggregate(IdempotencyKey, :count)
 
   defp endpoint_count, do: Repo.aggregate(Courier.WebhookEndpoint, :count)
+
+  # PER-ACCOUNT COUNTS, each run UNDER ITS OWN IDENTITY.
+  #
+  # Two reasons, and the second is the one that took a driver test to find.
+  #
+  # First: a whole-table `Repo.aggregate(..., :count)` is a claim about every
+  # other test in the repository as much as about this one, and under an RLS
+  # `select` policy it is also a claim about the policy -- a body holding
+  # `@account`'s identity reads one row and the assertion fails with
+  #
+  #     left:  1
+  #     right: 2
+  #
+  # on a test whose two requests both did the right thing.
+  #
+  # Second: **a count taken from the test body is scoped to whatever identity the
+  # body happens to hold, and `CourierWeb.Plugs.TenantIdentity` changes it.** The
+  # plug opens its transaction with `begin_account/2`, and inside the sandbox that
+  # is a SAVEPOINT whose RELEASE does not discard a transaction-local setting.
+  # Measured, on a driver test that printed the identity at each step:
+  #
+  #     identity at start:          6f5d4c3b-...  (@account)
+  #     identity after OWNER post:  6f5d4c3b-...  (unchanged)
+  #     identity after OTHER post:  7a6e5d4c-...  (the other account)
+  #
+  # **That is a property of the sandbox, not a production leak**, and the
+  # difference is the whole of `Courier.Tenancy`'s argument for `is_local := true`:
+  # in production the plug's transaction is the OUTERMOST one, so `COMMIT`
+  # discards the setting in the database with nothing in courier to forget. The
+  # sandbox's transaction sits OUTSIDE the plug's and nothing commits it until the
+  # test ends.
+  #
+  # So each count asks for the identity it wants rather than inheriting one, and
+  # `as_account/2` puts the previous one back so one count cannot colour the next.
+  defp endpoints_for(account_id) do
+    as_account(account_id, fn ->
+      Repo.aggregate(
+        Ecto.Query.from(e in Courier.WebhookEndpoint, where: e.account_id == ^account_id),
+        :count
+      )
+    end)
+  end
+
+  defp claims_for(account_id) do
+    as_account(account_id, fn ->
+      Repo.aggregate(
+        Ecto.Query.from(k in IdempotencyKey, where: k.account_id == ^account_id),
+        :count
+      )
+    end)
+  end
 
   defp an_endpoint do
     {:ok, endpoint, _secret} = WebhookEndpoints.create(%{url: @url, account_id: @account})
@@ -241,8 +297,28 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
       assert owner(@key) |> post(@path, %{url: @url}) |> json_response(201)
       assert other(@key) |> post(@path, %{url: @url}) |> json_response(201)
 
-      assert endpoint_count() == 2
-      assert claims() == 2
+      # COUNTED PER ACCOUNT, and that is the whole point of this assertion now.
+      # A whole-table `Repo.aggregate(..., :count)` is a claim about every other
+      # test in the repository as much as about this one (AGENTS.md, on
+      # `tenancy.yml`'s own entry points), and it is now also a claim about the
+      # RLS `select` policy: this test body runs with the file's identity, so a
+      # whole-table count reads **one** row and the assertion fails with
+      #
+      #     left:  1
+      #     right: 2
+      #
+      # on a test whose two requests both did the right thing. Two rows, each
+      # counted in its own account, is the claim this test is actually about --
+      # and it is the shape that cannot be satisfied by a boundary that refuses
+      # one account to see the other, since neither count can be inflated by
+      # reading across.
+      assert endpoints_for(@account) == 1
+      assert endpoints_for(@other_account) == 1
+
+      # The same, for the key claims: two accounts, two rows, counted each in its
+      # own account.
+      assert claims_for(@account) == 1
+      assert claims_for(@other_account) == 1
     end
 
     test "the same key on another endpoint is a different key" do

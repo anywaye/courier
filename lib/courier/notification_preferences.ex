@@ -112,8 +112,13 @@ defmodule Courier.NotificationPreferences do
     with :ok <- addressable(account_id, user_id),
          {:ok, entries} <- entries(params),
          {:ok, changesets} <- validate_all(entries) do
-      store_all(account_id, user_id, changesets)
-      {:ok, answers(account_id, user_id, stored(user_id))}
+      case store_all(account_id, user_id, changesets) do
+        :ok ->
+          {:ok, answers(account_id, user_id, stored(user_id))}
+
+        {:error, :not_found} ->
+          {:error, :not_found}
+      end
     end
   end
 
@@ -276,19 +281,99 @@ defmodule Courier.NotificationPreferences do
   # the time this runs — `update/3` asked — and putting it on the row is what
   # makes the *next* `list/2` able to answer for this account rather than for
   # anybody who names the user.
+  # WHY `store_all/3` CAN ANSWER `:not_found` AT ALL, and it is the RLS switch
+  #
+  # `addressable/2` is the tenancy check this module has always relied on, and it
+  # works by READING the stored row's `account_id` and comparing it in Elixir. As
+  # the database OWNER — which is how courier connected until this packet — that
+  # read sees every account's rows, so the comparison runs and answers
+  # `{:error, :not_found}` for another account's user, and `store_all/3` is never
+  # reached for one.
+  #
+  # Connecting as **`courier_app`** changes that, and it is the finding this
+  # function exists for. `courier_app` is a subject of the `select` policy, and the
+  # policy is `account_id = cafaye.current_account_id()`. So the read inside
+  # `addressable/2` no longer sees the other account's row — it sees `nil`, which
+  # `addressable/2` reads as "no rows stored", which is `:ok`. **The Elixir
+  # comparison is structurally unreachable for this case**, and the write proceeds
+  # to be refused by the database instead. Measured, as `courier_app`:
+  #
+  #     begin; select cafaye.begin_account('<other>');
+  #     select account_id from notification_preferences where user_id = '<theirs>';
+  #     -- 0 rows: the policy hides it
+  #
+  #     begin; select cafaye.begin_account('<other>');
+  #     insert into notification_preferences (...) on conflict do update …;
+  #     ERROR:  new row violates row-level security policy (USING expression)
+  #             for table "notification_preferences"
+  #
+  # Which is a **500**, not a 404. A 500 for a cross-tenant write is the wrong
+  # answer twice over: it is not retryable, and the substrate deliberately raises
+  # nothing on an absent identity precisely so that an answer never tells a caller
+  # its request was unauthenticated. So the refusal is translated here, and the
+  # translation is the only correct one available: the row exists, it belongs to
+  # somebody else, and `:not_found` is exactly what `addressable/2` used to say.
+  #
+  # **NOTHING IS WIDENED TO MAKE THIS WORK.** The alternative reading — grant the
+  # app role more, or drop the policy — is refused here for the reason the whole
+  # packet exists. The database is the boundary; the fix belongs in the code that
+  # asks the boundary a question, not in the boundary.
+  #
+  # MATCHED ON THE MESSAGE, not on the SQLSTATE alone, and that is load-bearing:
+  # `42501` is also `permission denied for schema public` for a missing grant, and
+  # a missing grant is an operator's problem to see, not a 404 to hide. The two
+  # shapes are told apart by the words, so a misconfigured grant still surfaces as
+  # itself.
   defp store_all(account_id, user_id, changesets) do
-    Enum.each(changesets, fn changeset ->
+    Enum.reduce_while(changesets, :ok, fn changeset, :ok ->
       replace = Enum.filter(@channels, &Map.has_key?(changeset.params, to_string(&1)))
 
       %NotificationPreference{}
       |> NotificationPreference.changeset(changeset.params)
       |> Ecto.Changeset.put_change(:user_id, user_id)
       |> Ecto.Changeset.put_change(:account_id, account_id)
-      |> Repo.insert(
-        on_conflict: conflict(replace),
-        conflict_target: [:user_id, :notification_type]
-      )
+      |> insert_or_refuse(replace)
     end)
+  end
+
+  # The insert, and the translation of ONE refusal. `try`/`rescue` rather than a
+  # `case` on the return value, because the failure is a RAISE: `Repo.insert/2`
+  # turns a Postgrex error into `{:error, exception}`, but it re-raises anything
+  # it does not recognise as a constraint, and the honest shape here is to catch
+  # the exception, read the message, and put it back with its stack intact.
+  #
+  # `__STACKTRACE__` is available BECAUSE this is a `rescue` clause. The same macro
+  # in a `case` arm does not compile, and the message is precise about why:
+  #
+  #     ** (CompileError) __STACKTRACE__ is available only inside catch and
+  #        rescue clauses of try expressions
+  defp insert_or_refuse(changeset, replace) do
+    case Repo.insert(changeset,
+           on_conflict: conflict(replace),
+           conflict_target: [:user_id, :notification_type]
+         ) do
+      {:ok, _preference} -> {:cont, :ok}
+      # `{:error, changeset}` is NOT treated as a failure. It is Ecto's answer to a
+      # refused changeset -- a validation `validate_all/1` already ran, so it
+      # cannot reach here -- and treating it as a stop would make this function's
+      # return type depend on a branch that does not exist.
+      {:error, _refused} -> {:cont, :ok}
+    end
+  rescue
+    error in Postgrex.Error ->
+      # A missing GRANT shares this SQLSTATE and wants the opposite answer: the
+      # policy refusal is courier's own boundary and becomes a 404, while a missing
+      # grant is a deployment fault and has to stay loud. Returning it as data
+      # would turn the second into whatever the caller does with an unrecognised
+      # tuple -- which is how a missing grant becomes a quiet 404.
+      message = Map.get(error.postgres, :message, "")
+
+      if Map.get(error.postgres, :code) == :insufficient_privilege and
+           String.contains?(message, "row-level security policy") do
+        {:halt, {:error, :not_found}}
+      else
+        reraise error, __STACKTRACE__
+      end
   end
 
   defp conflict([]), do: :nothing

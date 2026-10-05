@@ -21,6 +21,11 @@ defmodule Courier.Workers.DispatchWebhooksWorkerTest do
   alias Courier.Workers.DispatchWebhooksWorker
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
+
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account_id
   @other_account_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
   defp endpoint!(attrs \\ %{}) do
@@ -70,7 +75,7 @@ defmodule Courier.Workers.DispatchWebhooksWorkerTest do
     end
 
     test "does not deliver to another account's endpoints" do
-      endpoint!(%{account_id: @other_account_id})
+      as_account(@other_account_id, fn -> endpoint!(%{account_id: @other_account_id}) end)
       event(%{account_id: @account_id})
 
       perform_job(DispatchWebhooksWorker, %{})

@@ -21,6 +21,11 @@ defmodule Courier.WebhookDeliveriesTest do
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account_id
+
   defp endpoint! do
     {:ok, endpoint, _secret} =
       WebhookEndpoints.create(%{url: "https://hooks.example.com/events", account_id: @account_id})

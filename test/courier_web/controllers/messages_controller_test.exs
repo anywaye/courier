@@ -36,6 +36,11 @@ defmodule CourierWeb.MessagesControllerTest do
   alias Courier.Suppressions
 
   @account "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
+
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account
   @other_account "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e"
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
   @other_user_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"

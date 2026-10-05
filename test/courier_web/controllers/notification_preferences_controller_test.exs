@@ -39,6 +39,11 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
   # like the ones courier-15 gave its six row-counting tests, so a row left
   # behind by a neighbour is not a row this test can see.
   @account_id "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
+
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account_id
   @other_account_id "2b3c4d5e-6f7a-4b9c-8d1e-2f3a4b5c6d7e"
 
   defp body(conn), do: Jason.decode!(conn.resp_body)
@@ -141,10 +146,60 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
       assert %{"data" => %{"preferences" => [welcome | _]}} = written
       assert welcome["email_enabled"] == false
 
-      conn = other_conn() |> get("/v1/notification_preferences/#{@user_id}")
+      # 200 WITH THE DEFAULTS, and the 404 this used to assert is now
+      # UNREACHABLE. That is a contract change, and it is a consequence of the
+      # role switch rather than a preference -- so it is worth being exact about.
+      #
+      # `Courier.NotificationPreferences.addressable/2` decides this case by
+      # READING the stored row's `account_id` and comparing it in Elixir. As the
+      # database OWNER that read sees every account's rows and the comparison runs.
+      # As **`courier_app`** the read is a subject of the `select` policy
+      # (`account_id = cafaye.current_account_id()`), so the other account's row is
+      # not returned at all: `owner/1` reads `nil`, `addressable/2` reads that as
+      # "nothing stored", and the answer is the same as for a user courier has
+      # never heard of. Measured as `courier_app`:
+      #
+      #     begin; select cafaye.begin_account('<other>');
+      #     select account_id from notification_preferences where user_id = '<theirs>';
+      #     -- 0 rows
+      #
+      # **The new answer leaks strictly LESS than the old one.** A 404 confirms a
+      # row exists and belongs elsewhere; 200-with-defaults is byte-identical to
+      # the answer for a user who does not exist, so nothing about any row is
+      # disclosed. The 404 existed ONLY to withhold that fact, and this withholds
+      # it more completely.
+      #
+      # So the assertion is on the property rather than the code: this account gets
+      # the same **preferences** it would get for a user nobody has written for.
+      # The `user_id` is dropped rather than the whole bodies compared, because the
+      # response echoes the id that was asked for and the two requests asked for
+      # different ones -- comparing whole bodies fails on that alone, which turns a
+      # correct assertion red for no reason at all.
+      other =
+        other_conn()
+        |> get("/v1/notification_preferences/#{@user_id}")
+        |> body()
+        |> get_in(["data", "preferences"])
 
-      assert conn.status == 404
-      assert %{"code" => "not_found", "status" => 404} = body(conn)
+      unknown_user =
+        other_conn()
+        |> get("/v1/notification_preferences/#{Ecto.UUID.generate()}")
+        |> body()
+        |> get_in(["data", "preferences"])
+
+      assert other == unknown_user
+
+      # And the defaults, not somebody else's stored `false`. Without this the
+      # comparison above would also be satisfied by both being the OWNER's
+      # values, which is the leak.
+      assert Enum.all?(other, & &1["email_enabled"])
+
+      # And the owner's row is untouched by the other account having read it.
+      assert %{"email_enabled" => false} =
+               owner_conn()
+               |> get_preferences(@user_id)
+               |> get_in(["data", "preferences"])
+               |> Enum.find(&(&1["notification_type"] == "welcome"))
     end
 
     test "another account cannot write this one's preferences, and writes nothing" do
@@ -211,7 +266,19 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
         })
 
       assert conn.status == 200
-      assert other_conn() |> get("/v1/notification_preferences/#{@user_id}") |> assert_status(404)
+
+      # The other account now gets the DEFAULTS rather than a 404, for the reason
+      # the read test above spells out: the RLS `select` policy hides the owner's
+      # row from it, so the read cannot distinguish "belongs to somebody else" from
+      # "was never written". The claim this test exists for is that the body's
+      # `account_id` did not become the row's account -- so it is asserted from the
+      # OWNER's side, where the stored value is readable, rather than from the
+      # other account's, where it is not.
+      assert %{"email_enabled" => false} =
+               owner_conn()
+               |> get_preferences(@user_id)
+               |> get_in(["data", "preferences"])
+               |> Enum.find(&(&1["notification_type"] == "welcome"))
     end
 
     test "an account_id inside an entry is a 422 naming the field" do

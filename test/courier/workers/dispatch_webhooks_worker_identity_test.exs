@@ -69,6 +69,11 @@ defmodule Courier.Workers.DispatchWebhooksWorkerIdentityTest do
   use Oban.Testing, repo: Courier.Repo
 
   @account_a "b1c2d3e4-5f60-4718-8293-a4b5c6d7e8f9"
+
+  # The account this file seeds as. The suite runs as `courier_app`, a subject of
+  # the row-level-security policies, so a write to a protected table with no
+  # identity set is refused `42501` -- see `Courier.DataCase`.
+  @moduletag account: @account_a
   @account_b "c2d3e4f5-6071-4829-93a4-b5c6d7e8f9a0"
 
   @handler {__MODULE__, :webhook_endpoints_reads}
@@ -191,7 +196,7 @@ defmodule Courier.Workers.DispatchWebhooksWorkerIdentityTest do
 
     test "two accounts in one batch are read under two DIFFERENT identities" do
       endpoint!(@account_a)
-      endpoint!(@account_b)
+      as_account(@account_b, fn -> endpoint!(@account_b) end)
       event(@account_a, "courier-a")
       event(@account_b, "courier-b")
 
