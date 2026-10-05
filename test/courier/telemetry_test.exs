@@ -153,6 +153,38 @@ defmodule Courier.TelemetryTest do
                config.exporter
     end
 
+    test "the disabled path BOOTS, and this is not the same claim as the one above" do
+      # `sdk_config/0` returning the right keyword list is not a boot. This asserts
+      # the shape that `otel_configuration:processors/2` actually accepts, which is
+      # a DIFFERENT shape from the one this file used to assert — see the note on
+      # `processors: []` in `Courier.Telemetry.sdk_config/0`.
+      #
+      # It is here, and not only there, because the defect was invisible to every
+      # other assertion in this file: `config/runtime.exs` guards the SDK block with
+      # `config_env() != :test`, so nothing in the suite ever evaluated the disabled
+      # configuration against a running SDK. An assertion about a configuration is
+      # not a boot.
+      System.put_env("OTEL_SDK_DISABLED", "true")
+      config = Telemetry.sdk_config()
+
+      # NO `span_processor` key at all. The key's value is wrapped in a
+      # one-element list and mapped over as `{Name, Opts}` PAIRS, so a bare atom
+      # and an empty list both raise FunctionClauseError inside the SDK:
+      #
+      #     span_processor: :otel_simple_processor -> anonymous fn(:otel_simple_processor)
+      #     span_processor: []                     -> anonymous fn([])
+      #     both at otel_configuration.erl:179
+      refute Keyword.has_key?(config, :span_processor)
+
+      assert config[:processors] == []
+
+      # And the propagators survive, because the no-op is about EXPORTING and not
+      # about parsing: a request carrying a traceparent still continues its trace
+      # with telemetry switched off.
+      assert :trace_context in config[:text_map_propagators]
+      assert :baggage in config[:text_map_propagators]
+    end
+
     test "the disabled path builds NO exporter at all" do
       # Not an exporter pointed at nothing and left to retry, not a batch processor
       # with a queue behind it. A queue that accepts spans and holds them is a memory
@@ -165,7 +197,8 @@ defmodule Courier.TelemetryTest do
       # needs an `if telemetry_enabled?` around it.
       System.put_env("OTEL_SDK_DISABLED", "true")
 
-      assert Telemetry.sdk_config()[:span_processor] == :otel_simple_processor
+      refute Keyword.has_key?(Telemetry.sdk_config(), :span_processor)
+      assert Telemetry.sdk_config()[:processors] == []
     end
 
     test "it is a keyword list, because Config.config/2 accepts only a keyword list" do

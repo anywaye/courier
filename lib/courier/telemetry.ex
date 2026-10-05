@@ -443,6 +443,33 @@ defmodule Courier.Telemetry do
     * `register_loaded_applications: false` and `create_application_tracers: false`
       — courier names its own tracer, so the SDK's per-application tracers are two
       mechanisms for one thing and every span would be recorded twice.
+
+    ## The DISABLED path is an EMPTY processor list, and that is the sixth defect
+
+    It used to be `:otel_simple_processor`, which reads like "export nowhere,
+    cheaply" and is a BARE ATOM. `otel_configuration:processors/2` maps over the
+    processor list expecting `{Name, Opts}` PAIRS and has no clause for a bare
+    atom, so a courier booted with `OTEL_SDK_DISABLED=true` did not boot at all:
+
+        [notice] Application opentelemetry exited: exited in: :opentelemetry_app.start(:normal, [])
+            ** (EXIT) an exception was raised:
+                ** (FunctionClauseError) no function clause matching in anonymous fn/1
+                   in :otel_configuration.processors/2
+                    (opentelemetry 1.7.0) src/otel_configuration.erl:179
+        ** (Mix) Could not start application opentelemetry
+
+    So the kill switch — the one setting whose whole job is to let somebody turn
+    telemetry OFF — took the release down instead, which is the failure mode this
+    module's own moduledoc says it exists to prevent. `[]` is a true no-op: no
+    processor is started, no queue exists, no dial happens, and every
+    `[:telemetry, :span]` call in the codebase stays valid because courier's own
+    `Courier.SpanCollector.on_end/1` is what installs the processor, not the SDK.
+
+    It is worth naming WHY nothing caught this: `config/runtime.exs` guards the
+    whole SDK block with `config_env() != :test`, so the disabled path was never
+    booted by the suite — `telemetry_test.exs` asserted the keyword list and
+    nothing ever evaluated it against a running SDK. An assertion about a
+    configuration is not a boot.
   """
   def sdk_config do
     if enabled?() do
@@ -462,7 +489,27 @@ defmodule Courier.Telemetry do
     else
       [
         text_map_propagators: [:trace_context, :baggage],
-        span_processor: :otel_simple_processor,
+        # `processors: []`, and `span_processor` OMITTED rather than set. Both
+        # halves are load-bearing, and the reasons are the same one:
+        # `otel_configuration:processors/2` takes `span_processor` first, wraps
+        # whatever it finds in a single-element list, and maps `{Name, Opts}` pairs
+        # over it — so ANY value for that key is either a pair (fine) or a crash.
+        # Measured on the two shapes this tried:
+        #
+        #     span_processor: :otel_simple_processor
+        #       ** (FunctionClauseError) ... :otel_configuration.processors/2
+        #           anonymous fn(:otel_simple_processor) ... otel_configuration.erl:179
+        #     span_processor: []
+        #       ** (FunctionClauseError) ... :otel_configuration.processors/2
+        #           anonymous fn([]) ... otel_configuration.erl:179
+        #
+        # Omitting the key entirely is the third option and the only one that
+        # boots: `transform/2` answers `undefined`, so the SDK falls through to
+        # `processors`, and an empty list there starts no processor at all. No
+        # queue, no dial, no process — and `Courier.SpanCollector.on_end/1`, which
+        # is what actually installs courier's processor, is a function on the
+        # tracer record rather than something the SDK starts, so it is unaffected.
+        processors: [],
         register_loaded_applications: false,
         create_application_tracers: false
       ]

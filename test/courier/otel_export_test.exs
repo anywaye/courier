@@ -280,6 +280,29 @@ defmodule Courier.OtelExportTest do
       assert SpanCollector.pending() == 0
     end
 
+    test "the DISABLED path leaves NO processor configured, and this is a BOOT claim" do
+      # `sdk_config/0` on the disabled path, asserted against what
+      # `otel_configuration:processors/2` accepts rather than against what reads
+      # well. It used to be `:otel_simple_processor`, a bare ATOM; the SDK wraps
+      # whatever `span_processor` holds in a one-element list and maps `{Name,
+      # Opts}` pairs over it, so a courier booted with `OTEL_SDK_DISABLED=true`
+      # did not boot:
+      #
+      #     ** (FunctionClauseError) no function clause matching in anonymous fn/1
+      #        in :otel_configuration.processors/2
+      #         (opentelemetry 1.7.0) src/otel_configuration.erl:179
+      #     ** (Mix) Could not start application opentelemetry
+      #
+      # The kill switch took the release down instead of turning telemetry off.
+      System.put_env("OTEL_SDK_DISABLED", "true")
+      on_exit(fn -> System.delete_env("OTEL_SDK_DISABLED") end)
+
+      config = Telemetry.sdk_config()
+
+      refute Keyword.has_key?(config, :span_processor)
+      assert config[:processors] == []
+    end
+
     test "an empty queue is not an export attempt" do
       # Calling the exporter with nothing to send is what makes `to_proto/2`
       # answer `empty`, and `empty` is indistinguishable from success. Skipping
