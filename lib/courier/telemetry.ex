@@ -165,6 +165,24 @@ defmodule Courier.Telemetry do
   @doc "The `#tracer{}` field list, in order. For a test that checks the rebuild."
   def tracer_fields, do: @tracer_fields
 
+  @doc """
+  The tracer `:otel_tracer_provider` answers with when there is no SDK, verbatim.
+
+  Not a hand-written `{:otel_tracer_noop, []}`. It is read out of the SDK's own
+  source by `test/courier/telemetry_disabled_test.exs`, which is the point: this
+  function returns the constant so the module under test can recognise the
+  answer, and the test asserts the constant against the SDK rather than courier
+  against itself.
+
+  See the moduledoc's seventh defect. When `OTEL_SDK_DISABLED=true`,
+  `opentelemetry_sup:init/1` returns `{ok, {#{}, []}}` — no children, no tracer
+  provider — and `:otel_tracer_provider.get_tracer/4` catches its own
+  `exit:{noproc, _}` and answers this. `[]` is `:otel_tracer_noop`'s own tracer
+  context, and the module implements the whole `otel_tracer` behaviour over it, so
+  it is a working answer to "open a span" and a refusal to record one.
+  """
+  def tracer_noop, do: {:otel_tracer_noop, []}
+
   @doc "Forget the cached tracer. For a test that replaced the provider."
   def forget_tracer, do: :persistent_term.erase(@tracer_key)
 
@@ -250,7 +268,70 @@ defmodule Courier.Telemetry do
   def forget_exporter, do: :persistent_term.erase(@exporter_state_key)
 
   defp build_tracer do
-    {module, record} = :otel_tracer_provider.get_tracer(service_name(), nil, nil)
+    :otel_tracer_provider.get_tracer(service_name(), nil, nil)
+    |> normalize_tracer()
+  end
+
+  @doc """
+  Normalise a tracer ANSWER from `:otel_tracer_provider`, and cache it.
+
+  The seam `put_tracer/1` and `test/courier/telemetry_disabled_test.exs` use, and
+  the reason it is public rather than private is stated where the no-op case is
+  handled: the SDK's answer when telemetry is off is `{otel_tracer_noop, []}`,
+  and a suite cannot restart `:opentelemetry` to produce it — `config/runtime.exs`
+  writes `config :opentelemetry, ...` once at boot, so a test that stopped and
+  restarted the SDK would be testing a VM nobody deploys. What a test CAN do is
+  hand this function the answer, which is the whole of courier's half of the
+  decision.
+  """
+  def put_tracer(tracer) do
+    tracer = normalize_tracer(tracer)
+    :persistent_term.put(@tracer_key, tracer)
+    tracer
+  end
+
+  def normalize_tracer(tracer) do
+    noop = tracer_noop()
+
+    # THE SEVENTH DEFECT, and it is here because of one SDK fact.
+    #
+    # `OTEL_SDK_DISABLED=true` does not merely configure away the processors.
+    # `opentelemetry_sup:init/1` has a clause for `#{sdk_disabled := true}` that
+    # returns `{ok, {#{}, []}}` — NO CHILDREN — so `otel_tracer_provider_sup` is
+    # never started, and `get_tracer/4` catches its own `exit:{noproc, _}` and
+    # answers the no-op tracer:
+    #
+    #     handle_call({get_tracer, _Name, _Vsn, _SchemaUrl}, _From,
+    #                 State=#state{shared_tracer=undefined}) ->
+    #         {reply, {otel_tracer_noop, []}, State};
+    #
+    # which is a correct, working answer: `otel_tracer_noop` implements the whole
+    # `otel_tracer` behaviour over a `[]` context and opens non-recording spans.
+    #
+    # The `Tuple.to_list/1` below assumed a `#tracer{}` record, so courier raised
+    # `ArgumentError` — in the REQUEST path, on every request — and a courier
+    # booted with telemetry off answered **500 to everything including
+    # `/healthz`**. The kill switch was an outage, on the deployment that turned
+    # telemetry off precisely because something had already gone wrong with it.
+    #
+    # So: the no-op tracer is passed through UNTOUCHED. It needs no span
+    # processor, because a span it opens is not recorded and so has nothing to
+    # hand one, and it must not be rebuilt, because there is no record to rebuild.
+    # What it must do is keep answering `start_span/4` so the request is served.
+    #
+    # The `raise` below stays for the reason it was written: an SDK whose
+    # `#tracer{}` record has genuinely changed shape. The no-op tracer is the SDK
+    # saying "there is no SDK, and that is fine", which is not a broken record.
+    case tracer do
+      ^noop ->
+        tracer
+
+      {module, record} ->
+        rebuild_tracer(module, record)
+    end
+  end
+
+  defp rebuild_tracer(module, record) do
     {tag, fields} = record |> Tuple.to_list() |> then(&{hd(&1), tl(&1)})
     on_end_index = Enum.find_index(@tracer_fields, &(&1 == :on_end_processors))
 
