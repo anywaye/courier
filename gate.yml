@@ -226,7 +226,16 @@ gate:
       # The floor is a DECREASE detector and these 13 are tests nobody had, so
       # leaving it at 1295 would have been the same silence as every other packet
       # that forgot. It moves here.
-      minimum: 1308
+      #
+      # AND IT MOVES AGAIN for the app role: 1308 -> 1311, against a measured
+      # 1317. **The three are tests that moved TIER rather than tests that
+      # appeared** — `error_reporting_test.exs` left the no-database tier because
+      # it now reads `schema_migrations` through `Courier.OwnerRepo`, and a
+      # `bigserial`-backed read as `courier_app` is a `permission denied` rather
+      # than a files-on-disk claim. A floor that only ever moves when a test is
+      # written is a floor that cannot see a test changing what it needs, and this
+      # is the packet where that happened.
+      minimum: 1311
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

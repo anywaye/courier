@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1308
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1311
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -327,6 +327,23 @@ jobs:
       #
       # **1314 is 619 + 695**, so the parts still sum to the whole.
       #
+      # REMEASURED on the tree carrying the APP ROLE: whole 1314 -> 1317, floor
+      # 1308 -> 1311, database 695 -> 698, files 38 -> 39, no database unchanged
+      # at 619 across the same 27 files. **All 3 are in the database tier and the
+      # split is read off the case templates rather than guessed**, the same
+      # derivation the tier steps use: one file,
+      # `test/courier_web/error_reporting_test.exs`, left the no-database tier.
+      # It read `Ecto.Migrator.migrations/2` — a files-on-disk claim that needs no
+      # database — and as `courier_app` that read is refused, because
+      # `schema_migrations` is a table the runtime role is deliberately not
+      # granted. It now reads through `Courier.OwnerRepo` and `start_supervised!`
+      # gives that repo a process, so the file touches a database and belongs here.
+      # That is the same rule the one-click unsubscribe moved
+      # `telemetry_canary_test.exs` under, stated in the other direction: a file
+      # that reaches a repo belongs in the tier that can prove it.
+      #
+      # **1317 is 619 + 698**, so the parts still sum to the whole.
+      #
       # ON THE `TelemetryCanaryTest` FLAKE, MEASURED AND NOT ADJUSTED. This packet
       # adds 13 tests to the tier that contains that file and the rate did not
       # move: 2 failures in 16 database-tier runs WITH the two new files, 2 in 10
@@ -391,7 +408,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 619
 
-      - name: tier — database (695 tests, 38 files)
+      - name: tier — database (698 tests, 39 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -415,7 +432,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 695
+          bin/assert-suite "$log" "database" 698
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -490,7 +507,7 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1314 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1317 passed | \`bin/assert-suite\` |"
             echo "| no database, 27 files | 619 passed | tier step |"
             echo "| database, 38 files | 695 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
