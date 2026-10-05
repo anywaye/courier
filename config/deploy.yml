@@ -198,6 +198,17 @@ env:
     # environment, and that is the one honest limitation of Kamal's model,
     # recorded in DECISIONS.md.
     - DATABASE_URL
+    # THE OWNER, for `bin/migrate` only. `DATABASE_URL` names `courier_app` —
+    # the app login role, which owns nothing and is a subject of courier's
+    # row-level-security policies — and a migration is DDL, so the release needs
+    # the owner's DSN to run one. It is a separate variable because one variable
+    # cannot be two credentials.
+    #
+    # It is NOT a boot requirement and `config/runtime.exs` does not raise on it:
+    # nothing in the request path reads it, and a release that refuses to START
+    # over a missing migration credential has turned an incomplete deploy into an
+    # outage. `bin/migrate` fails instead, and names the module.
+    - COURIER_OWNER_DATABASE_URL
     # The five below are courier's own BOOT CONTRACT, and this is the second
     # reason the list is longer than kit's. `config/runtime.exs` raises on each
     # of them in `:prod`, so a deploy that omits one does not degrade — it does

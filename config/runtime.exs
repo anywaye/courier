@@ -315,6 +315,32 @@ if config_env() == :prod do
     # pool_count: 4,
     socket_options: maybe_ipv6
 
+  # THE OWNER, FOR `bin/migrate` AND NOTHING ELSE.
+  #
+  # `DATABASE_URL` above names `courier_app` — the app login role, which owns
+  # nothing and is a subject of the row-level-security policies. A migration is
+  # DDL, and `courier_app` cannot run one, so `rel/overlays/bin/migrate` needs the
+  # OWNER's DSN. This is a separate variable rather than a flag on
+  # `DATABASE_URL` because one variable cannot be two credentials, and the release
+  # reads `DATABASE_URL` to start the application.
+  #
+  # NOT REQUIRED AT BOOT, and deliberately: the running application never needs
+  # it, and a service that refuses to start because a *migration* credential is
+  # missing has turned an incomplete deploy into an outage. `bin/migrate` is the
+  # thing that fails instead, and it fails by name. That asymmetry is the point
+  # — a boot refusal here would take down a healthy release over a credential
+  # nothing in the request path reads.
+  #
+  # `Courier.OwnerRepo` is not in `:ecto_repos` and not in the supervision tree,
+  # so no running process holds a connection that bypasses every policy courier
+  # installs. See that module.
+  if owner_database_url = System.get_env("COURIER_OWNER_DATABASE_URL") do
+    config :courier, Courier.OwnerRepo,
+      url: owner_database_url,
+      priv: "priv/repo",
+      socket_options: maybe_ipv6
+  end
+
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you
   # want to use a different value for prod and you most likely don't want
