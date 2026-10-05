@@ -563,6 +563,90 @@ reads: a `Repo.all/1` with no `order_by` returns rows in PostgreSQL's order, not
 insertion order, so an assertion that compares two lists must sort both sides
 before it is a claim about courier rather than about the server's whim.
 
+**The suite connects as `courier_app`, and that is what makes the RLS proofs mean
+anything.** `config/test.exs` and `config/dev.exs` used to name `postgres`, a
+**superuser**, and a superuser bypasses RLS whatever `FORCE ROW LEVEL SECURITY`
+says. So the three policies installed by
+`20261003090000_protect_account_scoped_tables` were inert in every environment
+this repository configured, and 1276 green tests could not tell an enforced
+boundary from an installed one. `Courier.Tenancy`'s moduledoc carried the
+measurement; this is the change it was asking for.
+
+  * **Two modules, not one repo key with a switch.** `Courier.Repo` is
+    `courier_app`; `Courier.OwnerRepo` is the owner, and it is **not** in
+    `:ecto_repos` and not in the supervision tree, so no running release holds a
+    connection that bypasses every policy. The rejected version was one repo key
+    with `COURIER_OWNER_DATABASE_URL` overriding it — which does not "make
+    migrations run as the owner", it makes **the tests** run as the owner, and the
+    suite goes green with the boundary off. Two modules make the phase a
+    compile-time fact. `mix.exs`'s `test` alias runs `ecto.create`/`ecto.migrate`
+    against the owner and the suite itself against `courier_app`.
+  * **`bin/migrate` had the same defect one layer out.** `Courier.Release.migrate/0`
+    iterated `:ecto_repos`, which is `[Courier.Repo]` — so a release that
+    migrated would have failed on the first migration that creates a table, with
+    `permission denied for schema public`, from a binary whose application half
+    works. It runs `Courier.OwnerRepo` now, and `COURIER_OWNER_DATABASE_URL`
+    configures it **without being a boot requirement**: nothing in the request
+    path reads it, so refusing to start over a migration credential would take a
+    healthy release down for something no request needs.
+  * **The sequence grant is a kit defect this tree pins, not courier's bug.**
+    `cafaye.protect_table/2` at `@substrate_sha` (`15cee0e1`) grants table DML and
+    no sequence privilege, so a protected table with a `bigserial` column is
+    uninsertable by the login role — kit fixed it in `63663f8` and this
+    repository's `kit.ref` predates that. It surfaces as `42501`, the same
+    SQLSTATE the policies raise, so an assertion checking the code alone cannot
+    tell a working boundary from a table nobody can write to.
+    `20261005120000_grant_app_role_runtime_dml` closes it and the six unprotected
+    tables, minimally, and grants **no `TRUNCATE` anywhere** — it is the one DML
+    privilege with no row filter.
+  * **`@moduletag account:` is the harness's half, and it is opt-in.** The sandbox
+    already wraps every test in a transaction, so the identity is set on that
+    connection rather than in a `with_account/3` — a nested transaction is a
+    SAVEPOINT whose release does not discard a transaction-local setting. A file
+    touching only `outbox_events`, `email_suppressions` or `webhook_deliveries`
+    needs no tag: those tables have no `account_id` **by design**, which is the
+    same fact `tenancy.yml`'s empty `rls.tables` records.
+  * **`CourierWeb.Plugs.TenantIdentity` changes the test's identity, and a
+    read-back after a request is scoped to the LAST request's account.** Harmless
+    in production — the plug's transaction is the outermost, so `COMMIT` discards
+    the setting in the database, which is the whole of `is_local := true`'s
+    argument — but in a test the sandbox's transaction sits OUTSIDE it. Measured
+    on a driver test: `identity after OWNER post: 6f5d…` then
+    `identity after OTHER post: 7a6e…`. Three assertions were reading a protected
+    row back as the wrong account, and one of them (the DELETE) passed *because*
+    the row was invisible rather than because it survived — a boundary that
+    satisfies a denial arm for free.
+  * **`Courier.NotificationPreferences.addressable/2` is now structurally
+    unreachable for a cross-tenant read, and the answer changed.** It decided that
+    case by READING the stored row's `account_id` and comparing it in Elixir; as a
+    policy subject the read returns nothing, so the comparison never runs. The
+    write is then refused by the database with `42501`, which was a **500 where a
+    404 was documented**; `store_all/3` translates it to `:not_found`, matched on
+    the *message* rather than the SQLSTATE so a missing GRANT stays loud. The
+    read's 404 is gone and the answer is 200-with-defaults, byte-identical to a
+    user who does not exist — which leaks **less**, since the 404 existed only to
+    withhold the fact that a row exists. **This is a contract change and
+    `openapi.yaml` still declares the 404.** Reported, not reconciled: see
+    `REPORT-courier-app-role.md`.
+  * **A floor that only moves when a test is WRITTEN is a floor that cannot see a
+    test changing what it needs.** This packet added one test and moved
+    `error_reporting_test.exs` between tiers, because it now reads
+    `schema_migrations` through `Courier.OwnerRepo` — a table the runtime role is
+    deliberately not granted.
+  * **`tenancy.yml`'s `no-identity` arms are now TRUE where they were a
+    convention, and its `rls.databaseEnforced: false` needs a reader.** That file
+    says courier's boundary is "the application, and the application's own tests
+    are what hold it", and it was honest while the suite ran as a superuser. It
+    is *more* honest now — the policies are enforced against the role courier
+    actually connects as — which means `rls.databaseEnforced: false` now
+    describes something narrower than it did: three tables ARE enforced, by
+    `protect_table`, and the four that are not are the ones the migration
+    enumerates. **Not updated in this packet**, and that is a finding rather than
+    an omission: `tenancy_check.py` reads `sources:` as evidence and the
+    migration list it reads now contains a second RLS-bearing file, so the
+    `tenancy.rls-undeclared` silence this file relies on has to be re-measured by
+    whoever owns the checker. Reported, not guessed at.
+
 **The toolchain is pinned in `mise.toml` and nowhere else.** `bin/toolchain-pins`
 is how CI reads it, so the workflow cannot disagree with the worktree; the one
 unavoidable duplicate is kit's `versions:` input, and `bin/toolchain-pins

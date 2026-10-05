@@ -20,6 +20,19 @@ test`. It needs a Postgres at `localhost:5432` as `postgres`/`postgres` —
 kit publishes that on `${KIT_POSTGRES_PORT:-15500}` under the cluster's own
 credentials, and the gate must not run against a database the dev loop mutates.
 
+**TWO CREDENTIALS, and the suite runs as the weaker one.** `mix ecto.create` and
+`mix ecto.migrate` connect as the owner (`postgres` here, because a local
+postgres and CI's `services: postgres` have exactly one role and creating a
+database is the one job a `NOSUPERUSER` owner cannot do). The suite itself
+connects as **`courier_app`** — the app login role, which owns nothing and is a
+subject of every row-level-security policy in
+`priv/repo/migrations/20261003090000_protect_account_scoped_tables.exs`. It is
+not in `:ecto_repos`, not in the supervision tree, and reachable only from
+`mix.exs`'s aliases and `Courier.Release`, so no running process holds a
+connection that bypasses courier's account boundary. On a cluster kit
+provisioned, set `COURIER_DB_OWNER_USER=courier` — that is the owner role
+`10-cluster.sh` creates. See `Courier.OwnerRepo`.
+
 Before committing a change, `mix precommit`: warnings-as-errors, unused deps
 dropped from the lockfile, formatted, suite green.
 
@@ -191,8 +204,15 @@ bin/dev down                         # stop the stack; every volume is kept
 The compose stack runs the same release the platform will run. Its postgres is
 **kit's shared cluster**, not a courier-owned container: `bin/dev` merges the
 pinned kit stack with this repository's `docker-compose.yml`, and the cluster
-carries one database and one role per service — `courier` here, created as
-`LOGIN NOSUPERUSER` and refused at the door of every other service's database.
+carries one database and **two roles** per service — `courier`, the owner, and
+`courier_app`, the login the application uses. Both are `LOGIN NOSUPERUSER`; the
+owner is refused at the door of every other service's database, and `courier_app`
+owns nothing, so the RLS policies apply to it rather than being exempt.
+
+`DATABASE_URL` in `docker-compose.yml` names **`courier_app`**, and
+`COURIER_OWNER_DATABASE_URL` names the owner for `bin/migrate`. The split is two
+variables rather than one flag because one variable cannot be two credentials,
+and the release reads `DATABASE_URL` to start the application.
 
 Migrations are **not** part of `compose up`. The cluster creates an empty
 `courier` database and nothing else, so a fresh volume needs the release's own

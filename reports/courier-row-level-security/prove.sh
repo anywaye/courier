@@ -19,11 +19,19 @@
 # path is genuinely filtered and would be the stronger proof.
 #
 # It is ALSO useless as a proof, because `postgres` is a SUPERUSER and a
-# superuser bypasses RLS unconditionally, whatever FORCE says. That is the
-# single most important thing this harness measures (§4 below): courier's
-# application connects as `postgres` and reads every row of all three protected
-# tables with no identity set. `SET ROLE` leaves superuser behind, so the
-# policies actually apply and the boundary can be observed.
+# superuser bypasses RLS unconditionally, whatever FORCE says. `SET ROLE` leaves
+# superuser behind, so the policies actually apply and the boundary can be
+# observed.
+#
+# AS OF THE APP-ROLE PACKET this is no longer only a property of the harness.
+# `Courier.Repo` connects as **`courier_app`** in every environment this
+# repository configures, and `Courier.OwnerRepo` — the credential that runs the
+# migrations — is not in `:ecto_repos` and not in the supervision tree. So §4
+# below no longer measures a hypothetical: the superuser bypass is a fact about
+# the BOOTSTRAP role, and the role the application actually uses is subject to
+# every policy. The section is kept because the bootstrap role is still a
+# superuser on a plain local postgres, and a check that stops measuring the thing
+# it was written for is a check that has stopped looking.
 #
 # FOUR PROBES PER TABLE, and none of them is the same statement as another:
 #
@@ -282,14 +290,18 @@ expect_denied "E / RED: escalating your OWN endpoint into account B (WITH CHECK)
 # --------------------------------------------------------------------------
 # 3b. THE SEQUENCE FINDING — `protect_table` grants DML, not the sequence
 # --------------------------------------------------------------------------
-head1 "3b. THE SEQUENCE FINDING — notification_preferences uses bigserial"
-say "`protect_table` grants select/insert/update/delete on the TABLE. It does"
-say "not grant USAGE on the sequence behind a bigserial primary key, so"
-say "`courier_app` cannot INSERT into notification_preferences at all — and it"
-say "fails on the SEQUENCE, not on the policy. This is the packet's reason for"
-say "having corrected the INSERT probe above, and it is a real gap for the NEXT"
-say "packet: the moment courier's application switches to `courier_app`, a write"
-say "to this table fails on a privilege rather than on tenancy."
+head1 "3b. THE SEQUENCE GRANT — the bigserial column courier_app writes through"
+say "protect_table grants select/insert/update/delete on the TABLE. It does not"
+say "grant USAGE on the sequence behind a bigserial primary key, so WITHOUT a"
+say "second grant courier_app cannot INSERT into notification_preferences at all"
+say "-- and it fails on the SEQUENCE, not on the policy, which is the same"
+say "SQLSTATE (42501) the RLS refusals raise."
+say ""
+say "The copy of kit's substrate this repository pins (15cee0e1) predates"
+say "kit's fix (63663f8), so courier closes it in its own migration:"
+say "20261005120000_grant_app_role_runtime_dml. The probe below is therefore"
+say "now a REGRESSION check: it passes only because that migration ran, and it"
+say "goes red the moment the sequence grant is withdrawn."
 ask "$identify_a insert into notification_preferences
   (user_id, notification_type, email_enabled, push_enabled, inserted_at, updated_at, account_id)
   values ('aaaaaaaa-0000-4000-8000-000000000009', 'transactional', true, true, now(), now(), '$ACCOUNT_A');"
@@ -298,10 +310,14 @@ insert into notification_preferences
   (user_id, notification_type, email_enabled, push_enabled, inserted_at, updated_at, account_id)
   values ('aaaaaaaa-0000-4000-8000-000000000009', 'transactional', true, true, now(), now(), '$ACCOUNT_A');"
 say "inserted into account A's OWN account — i.e. this is not a tenancy refusal:"
-if [ "$rc" -ne 0 ] && printf '%s' "$raw" | grep -q 'sequence'; then
-  say "CONFIRMED: refused on the sequence, as predicted."
+if [ "$rc" -eq 0 ]; then
+  say "CONFIRMED: the insert into account A's OWN rows now succeeds, so the"
+  say "sequence grant is present. This probe is the regression check for"
+  say "20261005120000_grant_app_role_runtime_dml -- withdraw it and this goes red."
 else
-  say "NOT CONFIRMED: the insert behaved differently than this probe claims."
+  say "NOT CONFIRMED: refused on the sequence, which means the grant is MISSING."
+  printf '%s\n' "$raw"
+  say "Either the migration did not run, or it ran and its grant was withdrawn."
   failures=$((failures + 1))
 fi
 say ""
@@ -315,9 +331,15 @@ psql -t -A -c "
 # --------------------------------------------------------------------------
 # 4. THE SUPERUSER FINDING
 # --------------------------------------------------------------------------
-head1 "4. THE SUPERUSER FINDING — the application's own role is not filtered"
+head1 "4. THE SUPERUSER FINDING — the BOOTSTRAP role is not filtered"
 say "Identical statement to 1/B above, but WITHOUT SET ROLE, i.e. as the role"
-say "Courier.Repo connects as. Same table, same no-identity state."
+say "that ran the migration. Same table, same no-identity state."
+say ""
+say "THIS WAS 'the role Courier.Repo connects as' until the app-role packet."
+say "It is now the owner credential only, and that distinction is the whole"
+say "point: Courier.Repo is courier_app and IS filtered, while this connection"
+say "belongs to Courier.OwnerRepo and is not. Nothing in a running release"
+say "opens one -- see Courier.OwnerRepo's moduledoc."
 say "--- SQL ---"
 printf "select count(*) from idempotency_keys where account_id = '%s';\n" "$ACCOUNT_B"
 say "--- output ---"
@@ -328,7 +350,7 @@ psql -t -A -c "select 'current_user=' || current_user
                       || ' rolsuper=' || rolsuper
                       || ' rolbypassrls=' || rolbypassrls
                from pg_roles where rolname = current_user;"
-expect_eq "as the application's role, account B's row is still visible" "1" "$out"
+expect_eq "as the bootstrap role, account B's row is still visible" "1" "$out"
 
 # --------------------------------------------------------------------------
 # 5. THE DELIBERATE BREAKAGE, then the revert
