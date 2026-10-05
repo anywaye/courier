@@ -27,6 +27,10 @@ defmodule Courier.NotificationPreferencesTest do
 
   @types ~w(welcome password_reset team_invitation)
 
+  # THE ACCOUNT THIS FILE WRITES AS. `notification_preferences` is protected, so
+  # an INSERT with no identity set is refused `42501`. See `Courier.DataCase`.
+  @moduletag account: @account
+
   defp types_of(preferences), do: Enum.map(preferences, & &1.notification_type)
 
   defp stored(user_id, type, account_id \\ @account) do

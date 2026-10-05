@@ -23,6 +23,13 @@ defmodule Courier.IdempotencyTest do
   @endpoint "/v1/webhook_endpoints"
   @other_endpoint "/v1/webhook_endpoints/8f3c2b1a-0000-4000-8000-000000000001/test"
 
+  # THE ACCOUNT THIS FILE WRITES AS. `idempotency_keys` is one of the three
+  # protected tables, so an INSERT with no identity set is refused `42501` — the
+  # policy's `with check` is `account_id = cafaye.current_account_id()`. It was
+  # not refused while the suite connected as `postgres`, because a superuser
+  # bypasses RLS whatever FORCE says; see `Courier.DataCase`.
+  @moduletag account: @account
+
   defp claim_key(overrides \\ %{}) do
     attrs =
       Enum.into(overrides, %{
@@ -74,7 +81,9 @@ defmodule Courier.IdempotencyTest do
       # key." Two tenants choosing `11111111-…` must not collide, and a shared
       # index on the key alone would.
       assert {:ok, _claim} = claim_key()
-      assert {:ok, _other} = claim_key(%{account_id: @other_account})
+
+      assert {:ok, _other} =
+               as_account(@other_account, fn -> claim_key(%{account_id: @other_account}) end)
     end
 
     test "the same key on another endpoint is a different key" do
@@ -107,7 +116,21 @@ defmodule Courier.IdempotencyTest do
 
     test "is nil for another account's claim, because the scope includes the principal" do
       assert {:ok, _claim} = claim_key()
-      assert Idempotency.fetch(@other_account, @endpoint, @key) == nil
+
+      # `as_account/2` MATTERS HERE, and it is the difference between this test
+      # proving something and this test being satisfied by accident. Run as the
+      # file's own account — the identity the row belongs to — the RLS `select`
+      # policy hides the row on its own and `fetch/3` returns nil whether or not
+      # its own `account_id` predicate is there. **A boundary that refuses
+      # everybody satisfies this assertion for free.**
+      #
+      # As the OTHER account the policy admits the table and the row is visible to
+      # it, so the only thing left that can refuse is `fetch/3`'s own
+      # `where: account_id == ^account_id`. That is the thing under test, so that
+      # is the identity the call has to run as.
+      assert as_account(@other_account, fn ->
+               Idempotency.fetch(@other_account, @endpoint, @key)
+             end) == nil
     end
   end
 

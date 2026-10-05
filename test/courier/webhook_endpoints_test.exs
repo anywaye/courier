@@ -21,6 +21,11 @@ defmodule Courier.WebhookEndpointsTest do
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
   @other_account_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
+  # THE ACCOUNT THIS FILE WRITES AS. `webhook_endpoints` is protected, so an
+  # INSERT with no identity set is refused `42501`. See `Courier.DataCase` for
+  # why the suite can now see that at all.
+  @moduletag account: @account_id
+
   defp attrs(overrides \\ %{}) do
     Map.merge(%{url: "https://hooks.example.com/events", account_id: @account_id}, overrides)
   end
@@ -119,8 +124,15 @@ defmodule Courier.WebhookEndpointsTest do
     test "the same url in another account is a different endpoint" do
       create!()
 
+      # `as_account/2` because the unique index on `(account_id, url)` is what
+      # this test is about, and the index is only consulted if the insert is
+      # admitted. Run as this file's own account the RLS `insert` policy refuses
+      # the other account's row outright with `42501`, which is a correct answer
+      # to a different question and would leave the index untested.
       assert {:ok, _other, _secret} =
-               WebhookEndpoints.create(attrs(%{account_id: @other_account_id}))
+               as_account(@other_account_id, fn ->
+                 WebhookEndpoints.create(attrs(%{account_id: @other_account_id}))
+               end)
     end
 
     test "stores nothing when the changeset is rejected" do
@@ -190,11 +202,17 @@ defmodule Courier.WebhookEndpointsTest do
       mine = create!()
       theirs = create!(%{url: "https://other.example.com/events"})
 
-      {:ok, _theirs, _secret} =
-        WebhookEndpoints.create(%{
-          url: "https://theirs.example.com/x",
-          account_id: @other_account_id
-        })
+      # Seeded as the other account, or the RLS `insert` policy refuses it. The
+      # row has to EXIST for `list/1` returning only this account's two to be a
+      # statement about the query rather than about a third row never being
+      # written.
+      assert {:ok, _theirs, _secret} =
+               as_account(@other_account_id, fn ->
+                 WebhookEndpoints.create(%{
+                   url: "https://theirs.example.com/x",
+                   account_id: @other_account_id
+                 })
+               end)
 
       # Both of the account's rows, and nothing of the other account's. Asserted
       # as a set of ids because a list endpoint that returned one account's
