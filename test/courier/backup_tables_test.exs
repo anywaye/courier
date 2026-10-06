@@ -47,6 +47,15 @@ defmodule Courier.BackupTablesTest do
   # is a list of expectations rather than a set membership test: a table whose
   # purpose nobody can name is a table nobody has decided to back up.
   @expected %{
+    "consumed_events" =>
+      "the INBOUND queue: every event courier has received off the bus, keyed on " <>
+        "the envelope's own id. **The dedupe lives here**, so this is the one " <>
+        "table whose loss is not a loss of history — it is a loss of the " <>
+        "guarantee. Restored, courier resumes handling at-least-once from the " <>
+        "broker's redelivery window; NOT restored, and the broker's window has " <>
+        "closed, every event consumed since the last snapshot is replayed and " <>
+        "every handler runs a second time. The first consumer to send mail makes " <>
+        "that the difference between one invitation and two",
     "email_suppressions" =>
       "the suppression list: mailboxes that hard-bounced or complained, which no send may reach",
     "idempotency_keys" =>

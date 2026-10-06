@@ -73,6 +73,11 @@ config :swoosh, api_client: false
 #                          into the future, and nothing happens at that moment —
 #                          so there is no write to hang an enqueue on and a timer
 #                          is not a choice here, it is the only shape.
+#   ConsumeEventsWorker    the same argument from the other direction, and the
+#                          strongest form of it: a DELIVERED EVENT has no write
+#                          in courier's code behind it at all. Nothing courier
+#                          does causes an event to arrive, so there is nothing to
+#                          hang an enqueue on and a timer is the only shape.
 #
 # One minute is the ceiling on how long an unpublished row can sit, which is also
 # the number an alert would use. `Oban.Cron` is part of the `oban` package (no
@@ -82,19 +87,43 @@ config :swoosh, api_client: false
 # `Oban.Cron` itself to prove the path rather than reading this comment.
 config :courier, Oban,
   repo: Courier.Repo,
-  queues: [outbox: 10, webhooks: 5],
+  queues: [outbox: 10, webhooks: 5, consumers: 10],
   plugins: [
     {Oban.Cron,
      crontab: [
        {"* * * * *", Courier.Workers.ProcessOutboxWorker},
        {"* * * * *", Courier.Workers.DispatchWebhooksWorker},
-       {"* * * * *", Courier.Workers.DeliverWebhookWorker}
+       {"* * * * *", Courier.Workers.DeliverWebhookWorker},
+       {"* * * * *", Courier.Workers.ConsumeEventsWorker}
      ]}
   ]
 
 # Outbox relay tuning. Read at runtime, not compiled in, so a deployment can
 # change batch size without a rebuild.
 config :courier, :outbox,
+  batch_size: 50,
+  max_attempts: 10
+
+# What courier SUBSCRIBES to, and the module that handles each type. This is the
+# fleet's first non-empty `consumes:`, and the keys are held to `cafaye.yml`'s
+# `consumes:` list by `Courier.ConsumersTest` — a subscription declared in one
+# and absent from the other is a message courier receives and drops, which is the
+# same outcome as no subscription and one step harder to see.
+#
+# A handler is a module with `handle/1` returning `{:ok, _}` or `{:error, reason}`.
+# It must NOT raise: `Courier.Consumers` wraps every call anyway, because a
+# subscriber callback runs in the process that owns the subscription and an
+# uncaught raise there is a denial of service on the whole event stream — but a
+# handler that raises has still cost the event a delivery.
+config :courier, :consumers, %{
+  "identity.member.invited" => Courier.Consumers.MemberInvited
+}
+
+# The consumer's own tuning, in `:consumer` and not `:consumers` — the registry
+# above and the numbers below are unrelated things and one key meaning both is
+# how a deployment ends up reading a batch size out of a handler map. Same split
+# as `:outbox` beside `:nats_publisher`.
+config :courier, :consumer,
   batch_size: 50,
   max_attempts: 10
 

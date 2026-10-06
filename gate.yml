@@ -268,7 +268,7 @@ gate:
       # re-measured rather than assumed, for the reason the paragraph above gives:
       # an unchanged floor that was never re-run is not evidence.
       #
-      # **1409 is 645 + 764**, so the parts still sum to the whole. That is the
+      # **1458 is 651 + 807**, so the parts still sum to the whole. That is the
       # check that had to be re-run rather than assumed: had either new file
       # matched neither grep, the whole suite would have reported 1409 while the
       # tiers summed to 1348, and the missing 61 would have been in no tier at
@@ -277,7 +277,7 @@ gate:
       # The floor sits AT the measurement again, with zero headroom, for the reason
       # the telemetry paragraph gives: the next packet that adds a test goes red
       # until it raises this number. That is the rule working, not a gap in it.
-      minimum: 1409
+      minimum: 1458
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

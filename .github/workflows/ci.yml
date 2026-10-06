@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1409
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1458
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -417,7 +417,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (645 tests, 28 files)
+      - name: tier — no database (651 tests, 29 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -451,9 +451,9 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 645
+          bin/assert-suite "$log" "no database" 651
 
-      - name: tier — database (764 tests, 42 files)
+      - name: tier — database (807 tests, 44 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -477,7 +477,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 764
+          bin/assert-suite "$log" "database" 807
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -552,9 +552,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1409 passed | \`bin/assert-suite\` |"
-            echo "| no database, 28 files | 645 passed | tier step |"
-            echo "| database, 42 files | 764 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1458 passed | \`bin/assert-suite\` |"
+            echo "| no database, 29 files | 651 passed | tier step |"
+            echo "| database, 44 files | 807 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"

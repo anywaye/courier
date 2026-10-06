@@ -80,15 +80,23 @@ defmodule Courier.ConsumersTest do
   # Two bodies to sleep between: one that succeeds, one that raises, and one that
   # answers an error. Three shapes because the loop has to survive all three and
   # a test that only used one would not know which rule it was proving.
+  #
+  # **They are handed the `consumed_events` ROW, not the envelope** — see
+  # `Courier.Consumers.MemberInvited`'s moduledoc — so they read `row.id`, which
+  # is a struct field access and not `row["id"]`. A struct has no `Access`
+  # behaviour, and getting that wrong raises `FunctionClauseError` from inside
+  # the loop, which the loop's own rescue would swallow: a handler test written
+  # against the wrong shape would be green while proving nothing.
   defmodule Succeeds do
     @moduledoc false
-    def handle(envelope), do: send(:consumer_test, {:handled, envelope["id"]}) && {:ok, %{}}
+    def handle(row), do: send(:consumer_test, {:handled, row.id}) && {:ok, %{}}
   end
 
   defmodule Raises do
     @moduledoc false
-    def handle(envelope) do
-      send(:consumer_test, {:reached, envelope["id"]})
+
+    def handle(row) do
+      send(:consumer_test, {:reached, row.id})
       raise "the handler is broken"
     end
   end
@@ -96,13 +104,13 @@ defmodule Courier.ConsumersTest do
   defmodule RefusesFirst do
     @moduledoc false
 
-    def handle(%{"id" => "6a3f2b1c-0000-4000-8000-000000000001"} = envelope) do
-      send(:consumer_test, {:refused, envelope["id"]})
+    def handle(%ConsumedEvent{id: "6a3f2b1c-0000-4000-8000-000000000001"}) do
+      send(:consumer_test, {:refused, "6a3f2b1c-0000-4000-8000-000000000001"})
       {:error, :missing_acceptance_url}
     end
 
-    def handle(envelope) do
-      send(:consumer_test, {:handled, envelope["id"]})
+    def handle(row) do
+      send(:consumer_test, {:handled, row.id})
       {:ok, %{}}
     end
   end
@@ -130,6 +138,37 @@ defmodule Courier.ConsumersTest do
 
   defp claim_one, do: Consumers.claim()
 
+  # AT MODULE LEVEL, and not inside the two describes that need it.
+  #
+  # The first draft put this setup in `describe "consume/0"` only, and the
+  # crontab-sweep tests — which install their own handler and were written after —
+  # leaked it into every test that ran afterwards. The symptom was the
+  # integration test at the bottom of this file getting
+  # `Courier.ConsumersTest.Succeeds` instead of the real
+  # `Courier.Consumers.MemberInvited` and reporting
+  # `{:error, "… invalid destination"}`: a raise from `send/2` to a name no
+  # longer registered, rescued by the loop and written to the row.
+  #
+  # **Every test that writes application env needs the restore, and putting it
+  # where it is obviously needed is how one test group quietly changes another.**
+  setup do
+    original = Application.get_env(:courier, :consumers)
+
+    on_exit(fn ->
+      if original do
+        Application.put_env(:courier, :consumers, original)
+      else
+        Application.delete_env(:courier, :consumers)
+      end
+    end)
+
+    # The handlers below address this process by name, so the test is registered
+    # under the name rather than the pid.
+    Process.register(self(), :consumer_test)
+
+    :ok
+  end
+
   describe "subscribed/0" do
     test "is the fleet's first, and cafaye.yml declares the same list" do
       # A consumer nobody can read is a consumer nobody deployed. `caf dev`,
@@ -149,6 +188,14 @@ defmodule Courier.ConsumersTest do
         handler = Consumers.handler_for(type)
 
         assert handler != nil, "#{type} is subscribed to and has no handler"
+
+        # `Code.ensure_loaded?/1` FIRST, and this is the whole reason the line is
+        # two statements. `function_exported?/3` answers **false for a module that
+        # has not been loaded**, so the obvious one-liner fails for every type in
+        # a release where nothing happened to reference the handler yet — and a
+        # test that reports "no handle/1" for a module that has one sends the
+        # reader looking for a bug in the handler instead of in the test.
+        assert Code.ensure_loaded?(handler), "#{inspect(handler)} does not exist"
         assert function_exported?(handler, :handle, 1), "#{inspect(handler)} has no handle/1"
       end
     end
@@ -217,16 +264,34 @@ defmodule Courier.ConsumersTest do
       {:ok, _} = Consumers.record(envelope())
       [event] = claim_one()
 
-      for _ <- 1..Consumers.max_attempts() do
-        {:error, :exhausted} = Consumers.attempt(event, "provider refused")
-        [event] = claim_one()
-      end
+      # Ten attempts, then the eleventh claim is empty. Written as a recursion over
+      # the CLAIM rather than over the attempt count: the rule being asserted is
+      # "the row stops being claimable when its attempts reach the cap", and a
+      # loop that claims after each attempt asserts something slightly different
+      # (that the claim is empty at some particular iteration) and passes for the
+      # wrong reason.
+      exhaust(event, Consumers.max_attempts())
 
       assert Consumers.claim() == []
 
       row = Repo.get(ConsumedEvent, envelope()["id"])
       assert row.attempt_count == Consumers.max_attempts()
       assert is_nil(row.consumed_at)
+    end
+
+    defp exhaust(_event, 0), do: :ok
+
+    defp exhaust(event, remaining) do
+      # The Nth attempt is the last one the cap allows, so it is the one after it
+      # that must be unclaimable — hence claiming only while there is budget left.
+      if remaining > 1 do
+        {:ok, event} = Consumers.attempt(event, "provider refused")
+        [claimed] = Consumers.claim()
+        exhaust(claimed, remaining - 1)
+      else
+        {:ok, _} = Consumers.attempt(event, "provider refused")
+        :ok
+      end
     end
 
     test "a duplicate delivery is refused by the primary key, and that is not an error" do
@@ -282,7 +347,7 @@ defmodule Courier.ConsumersTest do
     test "clears a previous failure's reason, so the row reads as what it now is" do
       {:ok, _} = Consumers.record(envelope())
       [event] = claim_one()
-      {:error, :exhausted} = Consumers.attempt(event, "provider refused")
+      {:ok, event} = Consumers.attempt(event, "provider refused")
       [event] = claim_one()
 
       {:ok, marked} = Consumers.mark_handled(event)
@@ -323,27 +388,6 @@ defmodule Courier.ConsumersTest do
   end
 
   describe "consume/0" do
-    setup do
-      # The registry is read from application env, which the whole VM shares, so
-      # a test that changed it without restoring it would leak into every other
-      # test in the suite. AGENTS.md's rule, and the reason for `async: false`.
-      original = Application.get_env(:courier, :consumers)
-
-      on_exit(fn ->
-        if original do
-          Application.put_env(:courier, :consumers, original)
-        else
-          Application.delete_env(:courier, :consumers)
-        end
-      end)
-
-      # The handlers above address this process by name, so the test is
-      # registered under the name rather than the pid.
-      Process.register(self(), :consumer_test)
-
-      :ok
-    end
-
     test "dispatches an envelope and marks it handled" do
       {:ok, _} = Consumers.record(envelope())
       Application.put_env(:courier, :consumers, %{"identity.member.invited" => Succeeds})
@@ -432,9 +476,12 @@ defmodule Courier.ConsumersTest do
       # Oban's rule for a worker with nothing to do, and the reason the sweep is
       # safe to run every minute: a sweep that errored on an empty table would be
       # a failing job every minute forever.
+      # `Map.take/2` drops `failed` on the success arm, so asserting it would be a
+      # `KeyError` rather than a test — which is why the assertion is on the keys
+      # the worker actually returns. A sweep reporting `{:ok, _}` with a `failed`
+      # key in it would mean a failure was being swallowed.
       assert {:ok, summary} = ConsumeEventsWorker.perform(%Oban.Job{})
-      assert summary.handled == 0
-      assert summary.failed == 0
+      assert summary == %{handled: 0, skipped: 0}
     end
 
     test "a failed handler is an error, so Oban retries and the row stays claimable" do

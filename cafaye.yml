@@ -112,10 +112,29 @@
 #       this route can send against the document in both directions — so a future
 #       401 here would fail rather than ship.
 #
-#   - `consumes` is empty. courier is not subscribed to anything yet; when it
-#     starts reacting to identity or billing events this is the list, and every
-#     entry has to come with an idempotent consumer, because delivery is
-#     at-least-once (PLAN.md §3).
+#   - `consumes` has one entry, and it is the fleet's first. Every service
+#     published and nobody subscribed, so the bus was one-ended; this is the
+#     other end. `identity.member.invited` is in core's catalog
+#     (`core/docs/event-naming.md`), which is core's rule 6 — a subscription to a
+#     type no publisher declares ships silently and fails on somebody else's
+#     deploy.
+#
+#     **The handler is `Courier.Consumers.MemberInvited`, and it currently
+#     refuses.** The payload carries `account_id`, `invitation_id`, `email`,
+#     `role` and `invited_by_id`; the `team_invitation` template also needs
+#     `account_name`, `invited_by` and `url`, and **the accept URL is
+#     unrecoverable from any event** — identity returns the invitation token in
+#     its 201 and stores only the digest. See
+#     `REPORT-courier-consumer-invite-01.md` and the handler's moduledoc. The
+#     subscription is declared anyway, because the consumer, its dedupe and its
+#     retry budget are the part that had never been built, and the payload gap
+#     is one line in identity rather than a reason not to have the other end of
+#     the bus.
+#
+#     The entry is held to `Courier.Consumers.subscribed/0` by a test in both
+#     directions, and every entry comes with an idempotent consumer because
+#     delivery is at-least-once (PLAN.md §3): `consumed_events` keys on the
+#     envelope's own id, so a redelivery collides on the primary key.
 
 name: courier
 description: cafaye courier — transactional email, notification preferences, and every outbound webhook.
@@ -180,7 +199,8 @@ exposes:
     - courier.email.complained
     - courier.notification.suppressed
 
-consumes: []
+consumes:
+    - identity.member.invited
 
 # Other cafaye services. Empty: courier depends on postgres, not on a sibling
 # service, and the services that will depend on it depend the other way round.
