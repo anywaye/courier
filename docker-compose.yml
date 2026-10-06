@@ -349,11 +349,32 @@ services:
     # `tag` is the process identity the collector promotes to `service.name` when a
     # record has none — see `transform/cafaye_logs`. It has to match the service
     # name or a crash is filed against `unknown`.
-    logging:
-      driver: syslog
-      options:
-        syslog-address: "tcp://otel-collector:15514"
-        tag: "courier"
+    # NO LOG-DRIVER OVERRIDE. See the identical note in identity/docker-compose.yml
+    # for the full argument; the short form is that `syslog` makes the DOCKER
+    # DAEMON resolve `otel-collector`, in the host namespace, where container
+    # names do not exist:
+    #
+    #   failed to initialize logging driver: dial tcp: lookup otel-collector:
+    #   0.250.250.200:53: no such host
+    #
+    # The container never starts, so the crash layer is unreachable precisely
+    # when it is needed. It does not degrade, it prevents. gateway/docker-compose.yml
+    # already said so out loud — "fails to start gateway rather than starting it
+    # without traces."
+    #
+    # The panic still reaches an operator. Every language writes a fatal error to
+    # stderr, `json-file` captures it, and `docker logs` shows it — on every host,
+    # with no DNS involved.
+    #
+    # And the collector runs an `otlp` LOGS receiver on 4317/4318, so this
+    # service's existing OTel SDK can ship logs there over OTLP, resolved INSIDE
+    # the container network where the embedded DNS answers. Same receiver, same
+    # bytes, and it does not depend on the daemon's resolver.
+    #
+    # `tag: "courier"` had one job: the collector's `transform/cafaye_logs`
+    # promotes it to `service.name` when a record carries none. OTLP log records
+    # carry `service.name` from the SDK's resource attributes instead, so nothing
+    # is lost on that axis either.
 
     # The database, and ONLY the database. Not the collector, for the reason at the
     # top of this file.
