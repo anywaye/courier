@@ -51,8 +51,22 @@ defmodule Courier.BackupTablesTest do
       "the suppression list: mailboxes that hard-bounced or complained, which no send may reach",
     "idempotency_keys" =>
       "stored responses, so a replayed POST returns the first answer rather than mailing twice",
+    "notification_events" =>
+      "one thing that happened, once, for an account. The half of a notification " <>
+        "that is not about anybody in particular, and the row every notification " <>
+        "points at — so a restore that carried `notifications` without this would " <>
+        "bring back inboxes whose messages say nothing",
     "notification_preferences" =>
       "a user's answer about one notification type — the thing a tenant loses first",
+    # `seen_at` and `read_at` are in here and the reason is the packet this came
+    # from: the reference implementation has no equivalent, because its unread
+    # state is a counter nobody stored. An in-app inbox that is restored with its
+    # read state lost shows every notification as unread to every person who had
+    # already read it.
+    "notifications" =>
+      "one event addressed to one person, with WHEN THEY READ IT and WHEN THEY " <>
+        "SAW IT — the only place courier can answer \"what was I told about, and " <>
+        "which of those have I read?\", and the answer a restore has to bring back",
     "oban_jobs" => "the outbox relay's queue: work accepted and not yet done",
     "outbox_events" =>
       "every CloudEvents envelope courier published, and the relay's own claim query",

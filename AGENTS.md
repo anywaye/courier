@@ -35,6 +35,13 @@ lib/courier/outbox.ex                 THE outbox WRITE: the row and the job that
                                       publishes it, in one transaction
 lib/courier/notification_preference.ex         the row behind a user's answer
 lib/courier/notification_preferences.ex       read and write those answers
+lib/courier/notification_event.ex             something that happened, once
+lib/courier/notification.ex                   that event addressed to one person,
+                                            with when they saw it and read it
+lib/courier/notifications.ex                  the in-app RECORD: record an event
+                                            to N recipients, list one inbox,
+                                            mark seen, mark read, count unread.
+                                            Renders nothing and sends nothing
 lib/courier/inbound.ex                the behaviour: verify, then parse, then
                                       ingest, in THAT order
 lib/courier/inbound/signature.ex       the CONSUMER's half of the Standard Webhooks

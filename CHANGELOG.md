@@ -14,6 +14,53 @@ document lands in both files in one commit, because core asserts the two agree.
 
 ### Added
 
+- **courier can now remember what it told somebody.** Two tables —
+  `notification_events` (one thing that happened, for an account) and
+  `notifications` (that event addressed to one person, with `seen_at` and
+  `read_at`) — and `Courier.Notifications` to write and read them. Before this, a
+  notification courier delivered left no trace courier could later read:
+  preferences existed to decide whether to send and nothing recorded what was
+  sent, so *"what was I told about, and which of those have I read?"* had no
+  answer. `parlor` renders an inbox from this; `openapi.yaml` is **unchanged**,
+  because this packet adds no route (see the report for why).
+  - **`account_id` is on BOTH tables, `NOT NULL`, in the FIRST migration.** The
+    reference implementation's `noticed_events`/`noticed_notifications` carry no
+    `account_id` and cannot be retrofitted cheaply here, because every
+    row-level-security policy in this repository is written as
+    `account_id = (select cafaye.current_account_id())`. Added later, that
+    predicate is `NULL` for every existing row, which Postgres resolves as "not
+    true" — so pre-existing rows become invisible to their own account rather
+    than visible to another one. `cafaye.protect_table/2` is called for both
+    tables, which is what installs `FORCE ROW LEVEL SECURITY`; the FORCE bit and
+    the per-command policies are asserted from `pg_class` in
+    `test/courier/notifications_boundary_test.exs`.
+  - **The recipient is `NOT NULL`, and an event with no notification is a state
+    `record/2` cannot produce.** An event addressed to nobody is a fan-out that
+    has not happened, and an unread count that could see one would be a lie.
+    `record/2` writes both rows in one transaction and **rolls it back** if the
+    second write refuses — `Repo.transaction/1` whose function *returns* an
+    error commits, so the rollback is the mechanism rather than the comment.
+  - **`seen` and `read` are different facts and neither is cleared.** `seen_at`
+    is "it appeared in a list"; `read_at` is "the person opened it". Both marks
+    are idempotent — a second call returns the same row with the **first**
+    timestamp — and `read_at` implies `seen_at` in the database
+    (`check (read_at is null or seen_at is not null)`), because opening something
+    is a stronger statement than seeing it and a deep link can open a
+    notification that was never in a list.
+  - **`params` is jsonb, not a rendered body.** The reference ships notification
+    bodies as ERB fragments through `ApplicationController.render`; courier is
+    API-only and renders nothing, so a consumer reads these keys and decides what
+    a person sees. No template, body, partial or view was added.
+  - **Six defects were found while writing it, and five of them were in this
+    code rather than in the tree it was written against.** They are written down
+    in `REPORT-courier-inapp-notifications-01.md` with the measurements; the two
+    worth reading there are `Repo.transaction/1` wrapping its function's return
+    (`record/2` answered `{:ok, {:ok, …}}` and 31 tests failed on a shape nobody
+    had written down), and Ecto's `on_conflict: :nothing` documentation being
+    true only for database-generated primary keys — with a client-generated uuid
+    it returns the **proposed** struct, so the unique index fired correctly
+    while the function handed its caller an id belonging to no row.
+
 - **A recipient can unsubscribe from bulk mail with one click, and courier stops
   sending it.** Gmail and Yahoo's bulk-sender requirements (enforced since June
   2024) are about RFC 8058: a `List-Unsubscribe` header whose HTTPS URI a mail

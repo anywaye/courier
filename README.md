@@ -60,6 +60,8 @@ courier's durable state:
 | Table | What losing it costs |
 | --- | --- |
 | `notification_preferences` | every tenant's answer about every notification type — the first thing a customer notices |
+| `notification_events` | one thing that happened, for an account. Every in-app notification points at one, so a restore carrying `notifications` without this brings back inboxes whose messages say nothing |
+| `notifications` | who was told what, and **when they read it and when they saw it**. The only place courier can answer "what was I told about, and which of those have I read?", and an inbox restored with its read state lost shows every notification as unread |
 | `webhook_endpoints` | every account's URL **and its signing secret** |
 | `webhook_deliveries` | the attempt log, including where each endpoint is in its retry budget |
 | `outbox_events` | the CloudEvents envelopes courier published, and the relay's own claim query |

@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1348
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1409
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -357,6 +357,38 @@ jobs:
       #
       # **1348 is 645 + 703**, so the parts still sum to the whole.
       #
+      # REMEASURED on the tree carrying the IN-APP NOTIFICATION RECORD: whole
+      # 1348 -> 1409, database 703 -> 764, files 40 -> 42, no database unchanged
+      # at 645 across the same 28 files. **All 61 are in the database tier and the
+      # split is read off the case templates rather than guessed**, the same
+      # derivation the two tier steps use: one file,
+      # `test/courier/notifications_test.exs` (45 tests), is a `Courier.DataCase`
+      # because every claim in it is a claim about a ROW; the other,
+      # `test/courier/notifications_boundary_test.exs` (16 tests), is one for a
+      # different and sharper reason — **its subject is `pg_class` and
+      # `cafaye.unprotected_tables()`**, so it is a claim about what the DATABASE
+      # holds and cannot be made by a test that never reaches one. Putting it in
+      # the other tier would make that tier's own claim ("these tests never touch
+      # `Courier.Repo`") false for the same reason the one-click unsubscribe
+      # moved `telemetry_canary_test.exs` out of it.
+      #
+      # The database tier also grew by 1 test in an EXISTING file:
+      # `test/courier/backup_tables_test.exs` did not gain one — it went RED, with
+      #
+      #     the database carries ["notification_events", "notifications"], which
+      #     is neither a table courier's migrations create nor one of
+      #     ["schema_migrations", "oban_peers"]. A table nobody has decided to
+      #     back up is a table a restore loses.
+      #
+      # which is that test doing exactly its job on a table nobody had declared,
+      # and the two tables it names are now declared with what each is FOR. That
+      # is the shape of the claim working: a new table cannot be added without
+      # somebody deciding whether a `pg_dump` of courier's one database carries
+      # it, and `seen_at`/`read_at` are named there explicitly because an inbox
+      # restored with its read state lost shows every notification as unread.
+      #
+      # **1409 is 645 + 764**, so the parts still sum to the whole.
+      #
       # ON THE `TelemetryCanaryTest` FLAKE, MEASURED AND NOT ADJUSTED. This packet
       # adds 13 tests to the tier that contains that file and the rate did not
       # move: 2 failures in 16 database-tier runs WITH the two new files, 2 in 10
@@ -421,7 +453,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 645
 
-      - name: tier — database (703 tests, 40 files)
+      - name: tier — database (764 tests, 42 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -445,7 +477,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 703
+          bin/assert-suite "$log" "database" 764
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -520,9 +552,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1348 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1409 passed | \`bin/assert-suite\` |"
             echo "| no database, 28 files | 645 passed | tier step |"
-            echo "| database, 40 files | 703 passed | tier step |"
+            echo "| database, 42 files | 764 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"

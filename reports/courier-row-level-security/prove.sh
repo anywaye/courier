@@ -65,6 +65,10 @@ IDEM_B='bbbbbbbb-0000-4000-8000-000000000001'
 HOOK_A='aaaaaaaa-0000-4000-8000-000000000002'
 HOOK_B='bbbbbbbb-0000-4000-8000-000000000002'
 ENDPOINT='/rls-proof'
+EVENT_A='cccccccc-0000-4000-8000-000000000001'
+EVENT_B='cccccccc-0000-4000-8000-000000000002'
+NOTE_A='dddddddd-0000-4000-8000-000000000001'
+NOTE_B='dddddddd-0000-4000-8000-000000000002'
 URL='https://rls-proof.invalid/hook'
 
 export PGUSER="${PGUSER:-postgres}"
@@ -151,6 +155,7 @@ expect_denied() { # <label>
 }
 
 identify_a="set role courier_app; select cafaye.begin_account('$ACCOUNT_A'::uuid);"
+identify_none="set role courier_app;"
 
 # --------------------------------------------------------------------------
 # 0. Seed one row per account per table, as the OWNER.
@@ -393,6 +398,102 @@ psql -t -A -c "select table_schema || '.' || table_name || ' — ' || why
                from cafaye.unprotected_tables() order by table_name;"
 
 # --------------------------------------------------------------------------
+# 6b. THE IN-APP NOTIFICATION TABLES — the same four probes, and the reason
+#     they are here rather than only in the suite
+# --------------------------------------------------------------------------
+head1 "6b. notifications / notification_events — the in-app record"
+say "These two tables arrived with the in-app notification packet, and they are"
+say "proved here for the ONE reason they cannot be proved in the suite: the OWNER"
+say "half. `config/test.exs` connects as courier_app, which is a subject of the"
+say "policies either way, so a FORCE-less table is indistinguishable from a"
+say "protected one from in there — measured: with \`no force row level security\`"
+say "on both tables and RLS still enabled, 12 of 16 in-suite boundary tests stay"
+say "green and only the four that read pg_class go red."
+say ""
+say "So: the same five probes, the same control-first ordering, on the two tables"
+say "whose boundary is the newest thing in this schema."
+say ""
+
+psql -v ON_ERROR_STOP=1 -q <<SQL
+delete from notifications where recipient_id in ('$USER_A'::text, '$USER_B'::text);
+delete from notification_events where id in ('$EVENT_A'::uuid, '$EVENT_B'::uuid);
+
+insert into notification_events (id, account_id, type, record_type, record_id, params, inserted_at, updated_at)
+values
+  ('$EVENT_A', '$ACCOUNT_A', 'comment', 'Comment', '11111111-aaaa-4aaa-8aaa-111111111111', '{"actor":"DANA"}'::jsonb, now(), now()),
+  ('$EVENT_B', '$ACCOUNT_B', 'comment', 'Comment', '22222222-bbbb-4bbb-8bbb-222222222222', '{"actor":"SAM"}'::jsonb, now(), now());
+
+insert into notifications (id, account_id, notification_event_id, recipient_type, recipient_id, inserted_at, updated_at)
+values
+  ('$NOTE_A', '$ACCOUNT_A', '$EVENT_A', 'user', '$USER_A', now(), now()),
+  ('$NOTE_B', '$ACCOUNT_B', '$EVENT_B', 'user', '$USER_B', now(), now());
+SQL
+if [ $? -ne 0 ]; then say "FATAL: could not seed; everything below would measure nothing."; exit 2; fi
+
+say "catalog before anything is disabled:"
+psql -t -A -c "
+  select '  ' || relname || ' rls=' || relrowsecurity || ' force=' || relforcerowsecurity
+    from pg_class
+   where relname in ('notifications', 'notification_events') order by relname;"
+
+ask "select count(*) from notifications where account_id = '$ACCOUNT_A';"
+show "$identify_a
+select count(*) from notifications where account_id = '$ACCOUNT_A';"
+expect_eq "A / control: account A sees its own notification" "1" "$out"
+
+ask "$identify_a select count(*) from notifications where account_id = '$ACCOUNT_B';"
+show "$identify_a
+select count(*) from notifications where account_id = '$ACCOUNT_B';"
+expect_eq "B / RED: account A sees none of account B's notifications" "0" "$out"
+
+# The NO-IDENTITY half, which is the one the suite asserts and which a table with
+# no policy at all also satisfies. It is here because it costs one line and it is
+# the third of the three denials.
+#
+# **`set role courier_app` AND NOT `begin_account`, AND THE DISTINCTION IS THE
+# POINT.** The first version of this probe was a bare `select count(*) from
+# notifications` and it answered **2** — every row in the table — because the
+# connection was then the role that ran the migration, and on this cluster that
+# role is a SUPERUSER, which bypasses RLS whatever FORCE says. The `else` branch of
+# `ask/1` runs whatever SQL it is given, so a probe that forgets `set role` is
+# silently probing the superuser rather than failing to probe at all.
+#
+# Read as a warning about the harness rather than about the table: every other
+# probe in this file carries `identify_a`, and this one was the only statement
+# that did not, which is exactly the shape that measures the wrong thing.
+ask "$identify_none select count(*) from notifications;"
+show "$identify_none
+select count(*) from notifications;   -- no identity at all"
+expect_eq "no identity reads NO ROWS, and reads none rather than erroring" "0" "$out"
+
+ask "$identify_a select recipient_id from notifications where account_id = '$ACCOUNT_A';"
+show "$identify_a
+select recipient_id from notifications where account_id = '$ACCOUNT_A';"
+expect_eq "C / control: the real recipient comes back" "$USER_A" "$out"
+
+ask "$identify_a update notifications set account_id = '$ACCOUNT_B' where id = '$NOTE_A';"
+show "$identify_a
+update notifications set account_id = '$ACCOUNT_B' where id = '$NOTE_A';"
+expect_denied "E / RED: escalating your OWN notification into account B (WITH CHECK)"
+
+head1 "6c. THE FORCE HALF, MEASURED, AND IT IS A SEPARATE PROBE"
+say "Rls enabled with the FORCE bit REMOVED is the state that looks completely"
+say "correct in review: relrowsecurity = true, four policies present, every"
+say "login-role denial green. The catalog is the only thing that distinguishes it."
+say ""
+say "--- SQL: alter table notifications no force row level security;"
+psql -v ON_ERROR_STOP=1 -q -c 'alter table notifications no force row level security;'
+psql -t -A -c "select '  after: rls=' || relrowsecurity || ' force=' || relforcerowsecurity
+                 from pg_class where relname = 'notifications';"
+ask "$identify_a select count(*) from notifications where account_id = '$ACCOUNT_B';"
+say "post-mutation cross-account read = '$out' (still 0, because courier_app is subject)"
+say ""
+say "--- SQL: alter table notifications force row level security;"
+psql -v ON_ERROR_STOP=1 -q -c 'alter table notifications force row level security;'
+psql -t -A -c "select '  restored: rls=' || relrowsecurity || ' force=' || relforcerowsecurity
+                 from pg_class where relname = 'notifications';"
+
+# --------------------------------------------------------------------------
 # 7. Leave the database as found
 # --------------------------------------------------------------------------
 head1 "7. CLEANUP"
@@ -402,6 +503,9 @@ delete from webhook_endpoints where url = '$URL';
 delete from notification_preferences
   where user_id in ('$USER_A'::uuid, '$USER_B'::uuid,
                     'aaaaaaaa-0000-4000-8000-000000000009'::uuid);
+delete from notifications     where recipient_id in ('$USER_A', '$USER_B');
+delete from notification_events
+  where id in ('$EVENT_A'::uuid, '$EVENT_B'::uuid);
 SQL
 say "cleanup exit code: $?"
 

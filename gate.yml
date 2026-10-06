@@ -251,7 +251,33 @@ gate:
       # `CourierWeb.ConnCase`, because the claim is a real request's status code
       # over the real router rather than a configuration's shape. So the split is
       # 645 no-database / 703 database and this number is their sum.
-      minimum: 1348
+      #
+      # REMEASURED on the tree carrying the IN-APP NOTIFICATION RECORD, and
+      # **ALL 61 ARE IN THE DATABASE TIER.** The split is read off the case
+      # templates by the same `grep` the two tier steps in
+      # `.github/workflows/ci.yml` use, so it cannot be a guess:
+      #
+      #   * `test/courier/notifications_test.exs` — 45 tests, a
+      #     `Courier.DataCase`, because every claim in it is a claim about a ROW.
+      #   * `test/courier/notifications_boundary_test.exs` — 16 tests, also a
+      #     `Courier.DataCase`: its subject is `pg_class` and
+      #     `cafaye.unprotected_tables()`, which is a claim about a real database
+      #     and cannot be made by a test that never reaches one.
+      #
+      # So the no-database tier is **unchanged at 645 across the same 28 files** —
+      # re-measured rather than assumed, for the reason the paragraph above gives:
+      # an unchanged floor that was never re-run is not evidence.
+      #
+      # **1409 is 645 + 764**, so the parts still sum to the whole. That is the
+      # check that had to be re-run rather than assumed: had either new file
+      # matched neither grep, the whole suite would have reported 1409 while the
+      # tiers summed to 1348, and the missing 61 would have been in no tier at
+      # all.
+      #
+      # The floor sits AT the measurement again, with zero headroom, for the reason
+      # the telemetry paragraph gives: the next packet that adds a test goes red
+      # until it raises this number. That is the rule working, not a gap in it.
+      minimum: 1409
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
