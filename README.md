@@ -159,8 +159,8 @@ half and adds the two jobs kit cannot own:
 
 Two things a reader should know before trusting a green run:
 
-- **The floors are decrease detectors, not targets.** 1156 tests, 577 of them
-  without a database, 579 with it, and 62 in the SSRF table. Delete one and CI
+- **The floors are decrease detectors, not targets.** 1458 tests, 651 of them
+  without a database, 807 with it, and 62 in the SSRF table. Delete one and CI
   goes red. Add one and CI goes red until the floor is raised, which is the
   intended direction.
 - **The `ci` job is expected to be red today**, on `test` (kit runs a bare
