@@ -300,7 +300,26 @@ gate:
       # fourteen. A floor set from a prediction rather than from a run is a floor
       # that either blocks the next packet or, worse, sits under the tree and
       # describes it no longer.
-      minimum: 1423
+      #
+      # REMEASURED on the tree carrying the FLEET'S FIRST SUBSCRIPTION — the
+      # `identity.member.invited` consumer — merged on top of the mail-adapter
+      # packet: whole suite 1423 -> 1472, no-database 659 -> 665 across
+      # 29 -> 30 files, database tier 764 -> 807 across 42 -> 44 files.
+      #
+      # **The +49 are the consumer packet's, and the split is read off the case
+      # templates the two tier greps use, not guessed**: three new files —
+      # `test/courier/consumers_test.exs` and
+      # `test/courier/consumers/member_invited_test.exs`, both a
+      # `Courier.DataCase` because their claims are about rows and the relay
+      # claim loop's marking, and `test/courier/consumers/wiring_test.exs`, a
+      # plain `ExUnit.Case` because its subject is configuration wiring and it
+      # touches no `Courier.Repo`. `backup_tables_test.exs` grew by 9 in the
+      # same packet.
+      #
+      # **1472 is 665 + 807**, so the parts still sum to the whole — re-measured
+      # by running the tier greps on the merged tree, not by adding the two
+      # branches' deltas on paper.
+      minimum: 1472
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
