@@ -116,7 +116,14 @@ config :courier, :outbox,
 # uncaught raise there is a denial of service on the whole event stream — but a
 # handler that raises has still cost the event a delivery.
 config :courier, :consumers, %{
-  "identity.member.invited" => Courier.Consumers.MemberInvited
+  "identity.member.invited" => Courier.Consumers.MemberInvited,
+  # The second subscription, and the first one courier can ACT on: the payload
+  # carries `user_id`, which is a real person, so the handler records an in-app
+  # notification through `Courier.Notifications` — that context's first
+  # production caller. The invited handler refuses by design (the accept URL is
+  # unrecoverable from any event); this one needs no refusal, because the
+  # payload's three fields are exactly what the notification surface takes.
+  "identity.member.accepted" => Courier.Consumers.MemberAccepted
 }
 
 # The consumer's own tuning, in `:consumer` and not `:consumers` — the registry
