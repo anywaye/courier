@@ -170,15 +170,22 @@ defmodule Courier.ConsumersTest do
   end
 
   describe "subscribed/0" do
-    test "is the fleet's first, and cafaye.yml declares the same list" do
+    test "is the fleet's first two, and cafaye.yml declares the same list" do
       # A consumer nobody can read is a consumer nobody deployed. `caf dev`,
       # `pantry` and core's contract harness read the manifest, so the two lists
       # are checked against each other rather than trusted to agree.
-      assert Consumers.subscribed() == ["identity.member.invited"]
+      #
+      # The second entry is the first one courier can ACT on: its payload
+      # carries a `user_id`, which is a real person, so the handler records an
+      # in-app notification. The first refuses by design — see
+      # `Courier.Consumers.MemberInvited`'s moduledoc for why the refusal is
+      # the correct answer and not a gap in the wiring.
+      assert Consumers.subscribed() == ["identity.member.accepted", "identity.member.invited"]
 
       manifest = File.read!(Path.join(File.cwd!(), "cafaye.yml"))
 
-      assert manifest =~ ~r/^consumes:\s*$\n\s*-\s*identity\.member\.invited\s*$/m
+      assert manifest =~
+               ~r/^consumes:\s*$\n\s*-\s*identity\.member\.invited\s*$\n\s*-\s*identity\.member\.accepted\s*$/m
     end
 
     test "carries a handler for every type it subscribes to" do

@@ -135,6 +135,27 @@
 #     directions, and every entry comes with an idempotent consumer because
 #     delivery is at-least-once (PLAN.md §3): `consumed_events` keys on the
 #     envelope's own id, so a redelivery collides on the primary key.
+#
+#   - `identity.member.accepted` is the second entry, and the first one courier
+#     can act on. It is published from the same file
+#     (`identity/internal/outbox/tenancy.go`, `NewMemberAccepted`) when an
+#     invitation is redeemed and the membership is created, with payload
+#     `account_id`, `user_id`, `role` and the account as the subject. The
+#     handler is `Courier.Consumers.MemberAccepted`, and it records an in-app
+#     notification: the payload carries a `user_id`, which is a real person, and
+#     `Courier.Notifications` needs nothing else. **Email is deliberately not
+#     attempted** — the payload carries no address, and courier has no identity
+#     client (the refusal in `REPORT-courier-consumer-invite-01.md` §2.6
+#     stands). The unblock is one line in identity's `NewMemberAccepted`: carry
+#     the member's address.
+#
+#     **The name divergence is consumed, not resolved.** core's catalog
+#     (`core/docs/event-naming.md`) calls this fact `identity.member.joined`;
+#     identity publishes `accepted` per the packet decision recorded at
+#     `tenancy.go:55-70`. courier subscribes to what is published — a
+#     subscription to a type no publisher declares fails on somebody else's
+#     deploy (core's rule 6) — and the divergence is reported rather than
+#     renamed: `REPORT-courier-consumer-memberaccepted-01.md`.
 
 name: courier
 description: cafaye courier — transactional email, notification preferences, and every outbound webhook.
@@ -201,6 +222,7 @@ exposes:
 
 consumes:
     - identity.member.invited
+    - identity.member.accepted
 
 # Other cafaye services. Empty: courier depends on postgres, not on a sibling
 # service, and the services that will depend on it depend the other way round.

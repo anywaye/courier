@@ -319,7 +319,23 @@ gate:
       # **1472 is 665 + 807**, so the parts still sum to the whole — re-measured
       # by running the tier greps on the merged tree, not by adding the two
       # branches' deltas on paper.
-      minimum: 1472
+      #
+      # REMEASURED on the tree carrying the SECOND SUBSCRIPTION — the
+      # `identity.member.accepted` consumer, the first event courier can act on:
+      # whole suite 1472 -> 1488, no-database UNCHANGED at 665 across the same 30
+      # files, database tier 807 -> 823 across 44 -> 45 files.
+      #
+      # **The +16 are one file, `test/courier/consumers/member_accepted_test.exs`,
+      # and it is a `Courier.DataCase` because every claim in it is a claim about
+      # rows** — the notification the handler writes, the `consumed_events` row
+      # the loop marks, and the dedupe the primary key enforces. The no-database
+      # tier did not move, and that is the re-measurement rather than an
+      # assumption: an unchanged floor that was never re-run is not evidence.
+      #
+      # **1488 is 665 + 823**, so the parts still sum to the whole — re-measured
+      # by running the tier greps on this tree, not by adding the two branches'
+      # deltas on paper.
+      minimum: 1488
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

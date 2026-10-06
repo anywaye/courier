@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1472
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1488
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -400,6 +400,19 @@ jobs:
       #
       # **1423 is 659 + 764**, so the parts still sum to the whole.
       #
+      # REMEASURED on the tree carrying the SECOND SUBSCRIPTION — the
+      # `identity.member.accepted` consumer, the first event courier can act on:
+      # whole 1472 -> 1488, database 807 -> 823, files 44 -> 45, no database
+      # UNCHANGED at 665 across the same 30 files. **All 16 are in the database
+      # tier and the split is read off the case templates rather than guessed**:
+      # one new file, `test/courier/consumers/member_accepted_test.exs`, a
+      # `Courier.DataCase` because every claim in it is a claim about rows — the
+      # notification the handler writes, the `consumed_events` row the loop
+      # marks, the dedupe the primary key enforces. The no-database tier did not
+      # move, and that is the re-measurement rather than an assumption.
+      #
+      # **1488 is 665 + 823**, so the parts still sum to the whole.
+      #
  so the parts still sum to the whole.
       #
       # ON THE `TelemetryCanaryTest` FLAKE, MEASURED AND NOT ADJUSTED. This packet
@@ -415,7 +428,9 @@ jobs:
       # suite `bin/prime` runs, and still this machine rather than CI: not
       # adjusted, and not hidden either.
       #
-      # The previous values here were 1282 (619 + 663) on the tree carrying the
+      # The previous values here were 1472 (665 + 807) on the tree carrying the
+      # fleet's first subscription, 1423 (659 + 764) on the tree carrying the
+      # mail catcher, 1282 (619 + 663) on the tree carrying the
       # one-click unsubscribe, 1218 (623 + 595) on the tree carrying the door
       # opener, 1156 (577 + 579) on the tree carrying
       # `config/kamal-backup.yml`, and 1134 (561 + 573) on the tree carrying the
@@ -466,7 +481,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 665
 
-      - name: tier — database (807 tests, 44 files)
+      - name: tier — database (823 tests, 45 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -490,7 +505,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 807
+          bin/assert-suite "$log" "database" 823
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -565,7 +580,7 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1472 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1488 passed | \`bin/assert-suite\` |"
             echo "| no database, 29 files | 659 passed | tier step |"
             echo "| database, 42 files | 764 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
