@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1343
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1348
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -344,6 +344,19 @@ jobs:
       #
       # **1317 is 619 + 698**, so the parts still sum to the whole.
       #
+      # REMEASURED on the tree carrying the KILL-SWITCH fix: whole 1343 -> 1348,
+      # database 698 -> 703, files 39 -> 40, no database unchanged at 645 across
+      # the same 28 files. **All 5 are in the database tier and the split is read
+      # off the case templates rather than guessed**: one new file,
+      # `test/courier/telemetry_disabled_test.exs`, which is a
+      # `CourierWeb.ConnCase` because its claim is a real request's status code
+      # over the real router rather than a configuration's shape. That is the
+      # rule the one-click unsubscribe moved `telemetry_canary_test.exs` under,
+      # applied again: a file that drives a request belongs in the tier that can
+      # prove the request was served.
+      #
+      # **1348 is 645 + 703**, so the parts still sum to the whole.
+      #
       # ON THE `TelemetryCanaryTest` FLAKE, MEASURED AND NOT ADJUSTED. This packet
       # adds 13 tests to the tier that contains that file and the rate did not
       # move: 2 failures in 16 database-tier runs WITH the two new files, 2 in 10
@@ -408,7 +421,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 645
 
-      - name: tier — database (698 tests, 39 files)
+      - name: tier — database (703 tests, 40 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -432,7 +445,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 698
+          bin/assert-suite "$log" "database" 703
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -507,9 +520,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1343 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1348 passed | \`bin/assert-suite\` |"
             echo "| no database, 28 files | 645 passed | tier step |"
-            echo "| database, 39 files | 698 passed | tier step |"
+            echo "| database, 40 files | 703 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"
