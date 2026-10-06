@@ -327,6 +327,110 @@ services:
       COURIER_IDENTITY_URL: http://identity:4000
       COURIER_IDENTITY_TOKEN: "${COURIER_IDENTITY_TOKEN:?set COURIER_IDENTITY_TOKEN, or mint one with POST /v1/accounts/{account_id}/api-keys}"
 
+      # ---------------------------------------------------------------------
+      # THE MAIL ADAPTER, AND WHY IT IS A CATCHER
+      #
+      # `Courier.MailerAdapter.adapter!/1` raises when COURIER_MAIL_ADAPTER is
+      # unset, and refuses `none` in `:prod` — the container is a prod release
+      # (Dockerfile sets MIX_ENV=prod), so the Local adapter is not available
+      # here. Without this block `bin/dev up` fails: the release boots, hits
+      # `config/runtime.exs:200`, and raises.
+      #
+      # The adapter is `smtp` pointed at the mailpit service below. That is the
+      # only configuration that makes the dev stack work with zero credentials
+      # and makes mail VISIBLE — a developer can open the web UI and read what
+      # courier sent, which is what a dev stack is for. The alternative (A in
+      # the packet brief) was to require real SMTP credentials at compose time,
+      # which moves the failure from a container crash to a compose error but
+      # makes every developer supply a relay before the stack comes up.
+      #
+      # `COURIER_SMTP_AUTH=never` and `COURIER_SMTP_TLS=never` because mailpit
+      # accepts everything unauthenticated on a development machine. No
+      # credential is committed here: there is none to commit.
+      # ---------------------------------------------------------------------
+      COURIER_MAIL_ADAPTER: smtp
+      COURIER_SMTP_HOST: mailpit
+      COURIER_SMTP_PORT: "1025"
+      COURIER_SMTP_AUTH: never
+      COURIER_SMTP_TLS: never
+      COURIER_SMTP_SSL: "false"
+
+      # ---------------------------------------------------------------------
+      # THE OTHER TWO BOOT-REQUIRED VARIABLES, AND WHY THEY WERE MISSING TOO
+      #
+      # `COURIER_MAIL_ADAPTER` was the first of FIVE boot-required variables the
+      # dev stack did not supply, and fixing only it just moves the crash down
+      # `config/runtime.exs`. The release evaluates that file top to bottom, so
+      # the reported failures were, in order: the mail adapter at line 200, then
+      # `COURIER_INBOUND_RESEND_SECRET` at 277, then `SECRET_KEY_BASE` at 350.
+      # One at a time, each inside the container, each a crash-loop — which is
+      # what "fix the next one and see" looks like when the list is only
+      # discoverable by booting.
+      #
+      # The list is not discoverable by booting. It is five `System.get_env(…) ||
+      # raise` pairs in `config/runtime.exs` plus the adapter's own raise in
+      # `Courier.MailerAdapter`, and `config/deploy.yml` already transcribes it
+      # as prose at lines 218-228. That transcription is the thing to read, and
+      # `Courier.ComposeConfigTest` now reads the source itself so the two
+      # cannot drift: the test derives the required set from `runtime.exs` and
+      # asserts `docker-compose.yml` supplies every member of it.
+      #
+      # WHY THESE TWO GET A DEVELOPMENT VALUE AND THE TWO ABOVE DO NOT. The test
+      # above is only worth anything if the fix is not "give everything a
+      # default", because a default is precisely what
+      # `Courier.MailerAdapter.adapter!/1` refuses for good reason. The
+      # distinction is whether a local substitute exists:
+      #
+      #   * `COURIER_SECRET_BOX_KEY` seals per-endpoint webhook secrets. The dev
+      #     stack has no customers, so there is nothing to seal — but there is
+      #     also no way for a developer to invent the right key, so it stays a
+      #     `${…:?}` compose error naming itself.
+      #   * `COURIER_IDENTITY_TOKEN` authenticates courier to identity, and only
+      #     identity can mint one. No local substitute, so it stays `:?`.
+      #   * `SECRET_KEY_BASE` signs courier's OWN cookies and endpoint tokens,
+      #     on a machine with no users and no reachable network. A committed
+      #     development value is what `config/dev.exs:58` and
+      #     `config/test.exs:75` already do, and what the Phoenix 1.8 generator
+      #     ships in its own compose file. It authenticates nobody anywhere.
+      #   * `COURIER_INBOUND_RESEND_SECRET` is the PROVIDER's signing secret, so a
+      # committed value is the sharpest thing on this list and it gets the most
+      # explanation. The default is the same shape `config/test.exs:136` already
+      # commits — a base64 blob that decodes to a sentence about being a fake —
+      # and it is safe here for one measured reason: **courier's port is not
+      # published**, so nothing off this machine can reach `POST /inbound/resend`
+      # to sign anything under it. The moment that changes, this default is a
+      # version-controlled secret under which anyone who learns the stack's URL
+      # can forge a hard bounce against a real mailbox, and it must become the
+      # `:?` form above.
+      #
+      # It is `:-` and not `:?` so a developer does not have to go to a provider's
+      # dashboard to boot a stack with no inbound traffic to receive. Set the real
+      # `whsec_` value in `.env` to exercise the inbound path for real — the
+      # environment wins over this default.
+      # ---------------------------------------------------------------------
+      SECRET_KEY_BASE: "N0hG2os3k49qghyM9nsz+v7uuI6N8Msgch1e1YE9lmjC2n5bahmQKOrq2a5Up+aj"
+
+      COURIER_INBOUND_RESEND_SECRET: "${COURIER_INBOUND_RESEND_SECRET:-whsec_Y291cmllciBkZXYgc3RhY2sgcGxhY2Vob2xkZXIsIG5vdCBhIHJlYWwgcmVzZW5kIHNpZ25pbmcgc2VjcmV0}"
+
+      # The sixth, and the one that proves the point of reading the list off the
+      # file instead of off the three failures a developer happened to see.
+      #
+      # `COURIER_ERROR_RELAY_TOKEN` is required by a DIFFERENT SHAPE from the
+      # other five: bound to a variable, then refused three dozen lines later by
+      # `if is_nil(error_relay_token) do raise`. Any reader keyed on the
+      # `System.get_env(…) || raise` shape misses it, and a test asserting
+      # "every boot-required variable is supplied" then passes while courier is
+      # crash-looping on it — a green check over a partial set, which is the
+      # failure this repository's own rules name twice. It was found by booting
+      # this stack, not by reading `config/deploy.yml`, whose prose list at
+      # lines 218-228 does name it (line 245 of the `secret:` block).
+      #
+      # Same reasoning as the inbound secret: it is a shared secret, so the value
+      # below is a `:?` and a developer sets their own. There is no local
+      # substitute for it, and the dev stack's crash layer reports into
+      # courier's OWN relay rather than a fleet one.
+      COURIER_ERROR_RELAY_TOKEN: "${COURIER_ERROR_RELAY_TOKEN:?set COURIER_ERROR_RELAY_TOKEN, or run: openssl rand -hex 32}"
+
     # THE CRASH LAYER, and it is the reason a panic reaches an operator with no
     # per-language log SDK in it.
     #
@@ -376,10 +480,15 @@ services:
     # carry `service.name` from the SDK's resource attributes instead, so nothing
     # is lost on that axis either.
 
-    # The database, and ONLY the database. Not the collector, for the reason at the
-    # top of this file.
+    # The database and the mail catcher. Not the collector, for the reason at the
+    # top of this file. Mailpit is in the readiness path because courier cannot
+    # send without it — but it is a local container, not a network dependency,
+    # and a developer who kills it sees courier fail loudly rather than queue
+    # mail silently.
     depends_on:
       postgres:
+        condition: service_healthy
+      mailpit:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
@@ -399,3 +508,57 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  # ---------------------------------------------------------------------
+  # MAILPIT — the dev stack's mail catcher
+  #
+  # WHY THIS EXISTS. `Courier.MailerAdapter.adapter!/1` raises when
+  # COURIER_MAIL_ADAPTER is unset, and refuses `none` in `:prod`. The container
+  # is a prod release, so the Local adapter is not available. Without a relay
+  # to point at, `bin/dev up` fails: the release boots, hits
+  # `config/runtime.exs:200`, and raises.
+  #
+  # Mailpit is a lightweight SMTP catcher. It accepts every message
+  # unauthenticated on port 1025 and stores it in memory. The web UI on port
+  # 8025 lets a developer read what courier sent — which is what a dev stack
+  # is for. No credential is committed here: there is none to commit.
+  #
+  # WHY IT IS COURIER'S AND NOT KIT'S. Courier is the only service in the
+  # fleet that sends mail today. Adding mailpit to kit's shared template would
+  # add a container to every service's stack for no benefit. The override
+  # model exists precisely so a service can add its own dependencies without
+  # touching the shared template. A second mail sender would add its own
+  # mailpit the same way.
+  #
+  # WHY IT IS IN COURIER'S READINESS PATH. Courier cannot send without it.
+  # A developer who kills mailpit sees courier fail loudly (connection
+  # refused) rather than queue mail silently — which is the correct failure
+  # mode for a dev stack. This is NOT the same as the collector rule above:
+  # the collector is a shared observability dependency that no service should
+  # gate on, while mailpit is courier's own delivery target.
+  mailpit:
+    image: axllent/mailpit:v1.22.0
+    ports:
+      # The web UI, so a developer can read what courier sent. The SMTP port
+      # (1025) is NOT published — it is only needed by courier inside the
+      # compose network, and publishing it would let anything on the machine
+      # send mail through the catcher.
+      - "${KIT_MAILPIT_PORT:-15025}:8025"
+    healthcheck:
+      # Mailpit's `readyz` subcommand, which probes the server's own HTTP API
+      # and exits 0 only when it answers. The image is distroless (no shell),
+      # so a CMD-SHELL probe cannot run at all.
+      #
+      # THE FULL PATH IS SPELLED OUT, and that is measured rather than assumed:
+      # a healthcheck's CMD form execs the command DIRECTLY — the image's
+      # ENTRYPOINT (`/mailpit`) is NOT prepended to it. `["CMD", "readyz"]`
+      # fails every check with `exec: "readyz": executable file not found in
+      # $PATH`, and the container sits in `unhealthy` while the server inside
+      # it is perfectly fine. Measured on axllent/mailpit:v1.22.0.
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    networks:
+      - platform

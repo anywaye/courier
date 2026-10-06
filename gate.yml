@@ -277,7 +277,30 @@ gate:
       # The floor sits AT the measurement again, with zero headroom, for the reason
       # the telemetry paragraph gives: the next packet that adds a test goes red
       # until it raises this number. That is the rule working, not a gap in it.
-      minimum: 1409
+      #
+      # REMEASURED on the tree carrying the dev stack's MAIL CATCHER and the six
+      # boot-required variables: whole suite 1409 -> 1423, no-database 645 -> 659,
+      # files 28 -> 29, database tier unchanged at 764 across the same 42 files.
+      #
+      # **The +14 are all in the no-database tier and the split is read off the
+      # case template, not guessed**: one new file,
+      # `test/courier/compose_config_test.exs`, a plain `ExUnit.Case` because its
+      # subject is two files on disk — `docker-compose.yml` and
+      # `config/runtime.exs` — and it touches no `Courier.Repo`. That placement is
+      # the rule `backup_config_test.exs` established: a configuration claim that
+      # could only be checked against a live postgres would be one a
+      # database-less runner silently skips.
+      #
+      # **1423 is 659 + 764**, so the parts still sum to the whole — the check
+      # that has to be re-run rather than assumed.
+      #
+      # THE MEASUREMENT IS NOT OBVIOUS AND THE PREVIOUS NUMBER WAS WRONG. A
+      # partial version of this packet raised the floor to 1419 on a count of ten
+      # tests that were not the ten that shipped; the file that landed carries
+      # fourteen. A floor set from a prediction rather than from a run is a floor
+      # that either blocks the next packet or, worse, sits under the tree and
+      # describes it no longer.
+      minimum: 1423
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1409
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1423
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -389,6 +389,19 @@ jobs:
       #
       # **1409 is 645 + 764**, so the parts still sum to the whole.
       #
+      # REMEASURED on the tree carrying the dev stack's MAIL CATCHER and the six
+      # boot-required variables: whole 1409 -> 1423, no database 645 -> 659, files
+      # 28 -> 29, database tier unchanged at 764 across the same 42 files.
+      # **All 14 are in the no-database tier, and the split is read off the case
+      # templates rather than guessed**, the same derivation the two tier steps
+      # use: one new file, `test/courier/compose_config_test.exs`, a plain
+      # `ExUnit.Case` because its subject is two files on disk — the compose
+      # override and `config/runtime.exs` — and it touches no `Courier.Repo`.
+      #
+      # **1423 is 659 + 764**, so the parts still sum to the whole.
+      #
+ so the parts still sum to the whole.
+      #
       # ON THE `TelemetryCanaryTest` FLAKE, MEASURED AND NOT ADJUSTED. This packet
       # adds 13 tests to the tier that contains that file and the rate did not
       # move: 2 failures in 16 database-tier runs WITH the two new files, 2 in 10
@@ -417,7 +430,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (645 tests, 28 files)
+      - name: tier — no database (659 tests, 29 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -451,7 +464,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 645
+          bin/assert-suite "$log" "no database" 659
 
       - name: tier — database (764 tests, 42 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -552,8 +565,8 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1409 passed | \`bin/assert-suite\` |"
-            echo "| no database, 28 files | 645 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1423 passed | \`bin/assert-suite\` |"
+            echo "| no database, 29 files | 659 passed | tier step |"
             echo "| database, 42 files | 764 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
