@@ -242,12 +242,83 @@ developer testing a one-click unsubscribe will find the link goes nowhere.
 
 ## 5. Gate
 
-`mise run prime` — see §6 for the verbatim tail. Floors re-measured in the same
-commit, per the rule in AGENTS.md that adding a test goes red until the floor
-moves.
+`mise run prime` green, tail verbatim:
+
+```
+[prime] $ ./bin/prime
+...
+..............................................................................
+Finished in 6.0 seconds (2.7s async, 3.3s sync)
+
+Result: 1423 passed
+```
+
+The no-database tier, run the way CI derives it — the tier's own grep for the
+file list, not arithmetic on a comment:
+
+```console
+$ grep -rLE 'use (Courier\.DataCase|CourierWeb\.ConnCase)' test --include='*_test.exs' \
+    | sort > /tmp/nodb-tier.txt
+$ wc -l < /tmp/nodb-tier.txt
+29
+$ xargs mix test < /tmp/nodb-tier.txt
+..............................................................................
+Finished in 5.2 seconds (1.6s async, 3.6s sync)
+
+Result: 659 passed
+```
+
+`659 + 764 = 1423`, so the tiers still sum to the whole. Floors re-measured in
+the same commit, per the rule in AGENTS.md that adding a test goes red until the
+floor moves — and note the previous attempt's floor of **1419 was a prediction,
+not a measurement**, and wrong by four. A floor set from a guess either blocks
+the next packet or sits under the tree describing it no longer.
 
 ---
 
 ## 6. Verbatim output
 
-_(filled in from the run below)_
+```
+$ mix test test/courier/compose_config_test.exs
+..............
+Finished in 0.1 seconds (0.00s async, 0.00s sync)
+
+Result: 14 passed
+```
+
+Container state after `bin/dev up`:
+
+```
+cafaye-courier-1         Up (healthy)
+cafaye-mailpit-1         Up 23 minutes (healthy)    1025/tcp, 0.0.0.0:15025->8025/tcp
+cafaye-postgres-1        Up (healthy)
+cafaye-otel-collector-1  Up (healthy)
+cafaye-identity-1        Up (healthy)
+cafaye-grafana-1         Up (healthy)
+cafaye-loki-1            Up (healthy)
+cafaye-mimir-1           Up (healthy)
+cafaye-tempo-1           Up (healthy)
+cafaye-nats-1            Up (healthy)
+cafaye-redis-1           Up (healthy)
+
+$ docker exec cafaye-courier-1 … /readyz
+{"status":"error","checks":{"database":"unavailable"}}
+```
+
+---
+
+## 7. What I would do next, in order
+
+1. **The host-side migration path** (§4). `bin/dev` runs `mix ecto.migrate` on
+   the host against `localhost`, and the stack publishes postgres on 15500. This
+   is why `bin/dev up` still exits 1 and it is a one-line-per-file decision, not
+   a research problem. Until it is fixed the dev loop's last mile is broken in a
+   way that looks exactly like the defect this packet just fixed.
+2. **`print_urls` in kit** (§1). The catcher is running and nothing tells a
+   developer where to look. The fix is a per-service URL hook in kit, not a
+   second hardcoded list.
+3. **`PHX_HOST` in the dev stack** (§4), so the `List-Unsubscribe` header points
+   somewhere a developer can click.
+4. **`COURIER_MAIL_ADAPTER` in the derived required list** is hand-added because
+   its refusal is in another module (§2). If a third boot requirement ever lands
+   in a module other than `runtime.exs`, the derived list will not see it.
