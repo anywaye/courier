@@ -20,15 +20,32 @@
 # closed**, so this file and `test/courier/**` are what hold it, and
 # `REPORT-courier-tenancy-declare.md` maps which holds what.
 #
-# CARRIED OVER: the `rls` block records what the DATABASE does, and identity's
-# header explains why its own `rls` block is the **substrate's** rather than its
-# own — `protect_table` generated every policy, so the block records five CALLS
-# rather than claiming policy courier wrote. **Courier has no substrate call at
-# all**, which is the same discipline pointed the other way: `databaseEnforced:
-# false` and an empty table list, with the migrations named as the sources the
-# checker read to be sure. The claim is not "courier's database enforces nothing"
-# — it is "there is no row-level-security DDL in these ten migrations", which is
-# a thing the checker can settle and this header states rather than asserts.
+# CARRIED OVER, AND THE CARRYING IS THE FINDING: the `rls` block records what
+# the DATABASE does, and courier's database does it — **five tables are
+# row-level-security FORCED**, by `cafaye.protect_table/2` calls in
+# `20261003090000_protect_account_scoped_tables.exs` (`idempotency_keys`,
+# `notification_preferences`, `webhook_endpoints`) and
+# `20261006120000_create_notifications.exs` (`notification_events`,
+# `notifications`). kit's substrate writes `alter table … force row level
+# security` and four policies per table — `_cafaye_select`, `_cafaye_insert`,
+# `_cafaye_update`, `_cafaye_delete` — each qualified on
+# `cafaye.current_account_id()`. So the database half is real, and saying so in
+# this file is correct.
+#
+# WHAT THE DECLARATION SAYS INSTEAD, AND WHY: `databaseEnforced: false` with an
+# empty table list. Not because the database does nothing — because this
+# checker's DDL scanner cannot parse an `.exs` migration, so it cannot see the
+# `protect_table/2` calls, and the `tenancy.rls-unreadable` warning below names
+# exactly those two files. Declaring `true` in the shape the schema requires
+# (a populated `rls.tables` with each policy named) was measured to produce
+# `tenancy.rls-policy-absent`: the scanner finds no relation in sources it cannot
+# read, and a hand-written `.sql` copy of the DDL fails too, because the
+# policies are created by a function call the scanner cannot follow. A
+# declaration pointing at a file that does not exist in this repository is the
+# same defect this file exists to prevent, so the `false` stays and this comment
+# carries the truth the format cannot express: **the database enforces on five
+# tables; the declaration says what this checker can prove, not what the
+# database does.**
 #
 # NOT CARRIED OVER, and this is the finding rather than an oversight: the
 # `no-identity` arm of every entry point below is answered by a **refusal at the
@@ -110,34 +127,58 @@ scope:
     - lib/courier/workers/dispatch_webhooks_worker.ex
 
 rls:
-  # False, and it is the honest answer rather than the convenient one. Every
-  # account-scoped statement in this service is an Ecto query that filters by
-  # `account_id` in Elixir; Postgres is told nothing, so a query that lost its
-  # predicate would return every account's rows with no database object standing
-  # in the way. `entryPoints[].enforced.line` is what holds that line instead,
-  # and `tenancy_check.py` checks each one still carries `account_id`.
+  # False, and the false is about THIS DECLARATION, not about the database.
+  # Read the header above for the five tables that are RLS-forced; what is
+  # written here is why the declaration cannot say so in the shape the schema
+  # requires. Three facts, in the order they decided it:
   #
-  # THIS IS NOT A GAP THAT WAS MISSED, it is a decision this repository already
-  # made about its own tables: `test/courier/backup_tables_test.exs` reads
-  # `information_schema` and asserts courier stores nothing outside Postgres
-  # except an in-database `bytea`, which is the same instinct from the other
-  # side — the boundary is the application, and the application's own tests are
-  # what hold it.
+  #   1. The scanner reads `rls.sources` as SQL. A `.exs` migration is a file
+  #      it cannot parse, so `ddl.relation(name)` answers `None` for every table
+  #      and `tenancy.rls-policy-absent` fires on each one — measured, not
+  #      inferred. Pointing `sources` at a hand-written `.sql` copy gets past
+  #      the table check and fails on the policy name, because the policies are
+  #      written by `cafaye.protect_table/2` and the scanner cannot follow a
+  #      function call to the four policies it creates.
+  #   2. The old comment here claimed "none of the ten migrations mentions
+  #      `row level security`, `create policy`…". There are THIRTEEN migrations
+  #      now, and the claim was always literally true and misleading in intent:
+  #      the DDL is inside a `select cafaye.protect_table(…)` string, so a text
+  #      scan for the DDL's own words finds nothing while the database is
+  #      forced. A comment that says "no RLS DDL" about a tree that calls
+  #      `protect_table` five times is the same defect as the declaration it
+  #      was explaining.
+  #   3. So the `false` stays, and it is the honest answer to the question the
+  #      checker can actually ask: "is the database half of this declaration
+  #      proven closed by a machine that can read it?" No — and
+  #      `tenancy.rls-unreadable` below is the checker saying so itself, naming
+  #      the two files. Being named there is the difference between "I cannot
+  #      see this" and a confident zero.
+  #
+  # WHAT HOLDS THE LINE INSTEAD, since the database half is machine-unproven
+  # here: `entryPoints[].enforced.line` above, which `tenancy_check.py` checks
+  # still carries `account_id`; the suite connecting as `courier_app`, a policy
+  # subject rather than a superuser, so the policies are enforced against the
+  # role courier actually runs as; and
+  # `test/courier/workers/dispatch_webhooks_worker_identity_test.exs`, which
+  # asserts the identity is on the connection for every protected read the
+  # worker makes. The application's own tests are what hold the boundary — the
+  # same instinct `test/courier/backup_tables_test.exs` applies to what courier
+  # stores.
   databaseEnforced: false
-  # `priv/repo/migrations`, all ten of them, and this list is the evidence for
-  # the `false` above rather than a formality: `read_ddl` reads every file here
-  # and reports a table as protected on `enable`/`force`/`create policy` alone.
-  # None of the ten mentions `row level security`, `create policy`, `force row
-  # level` or `security definer` — which is why `tenancy.rls-undeclared` and
-  # `tenancy.rls-unreadable` are both silent below. A `.exs` migration is a file
-  # this scanner cannot parse, so silence is reported rather than assumed: had
-  # one carried RLS DDL as a string, it would have been named here.
+  # `priv/repo/migrations`, all thirteen of them, and this list is the evidence
+  # the checker read to reach the `rls-unreadable` warning below: `read_ddl`
+  # reads every file here and reports a table as protected on
+  # `enable`/`force`/`create policy` alone, and two of the thirteen are `.exs`
+  # files carrying RLS DDL as a string this scanner cannot parse. Silence is
+  # reported rather than assumed — that is what the warning is.
   sources:
     - priv/repo/migrations
   # Empty **because** `databaseEnforced` is false. The schema refuses `false`
   # with a populated list in both directions, and the reason is the one that
   # applies here: a service that says its database does nothing and then lists
-  # tables it does something to is the same omission facing the other way.
+  # tables it does something to is the same omission facing the other way. The
+  # five protected tables are named in the header above, with the reason this
+  # block cannot name them itself.
   tables: []
 
 # THE DECLARED ENUMERATION IS SEVEN ENTRY POINTS ACROSS FOUR TABLES, and the
@@ -167,7 +208,7 @@ rls:
 # rows". Read what courier can actually prove: a request with no bearer token is
 # stopped by `CourierWeb.Plugs.Principal` with 401 and **never reaches a
 # statement at all** (`assert conn.halted`,
-# `test/courier_web/controllers/webhook_endpoints_controller_test.exs:101`). There
+# `test/courier_web/controllers/webhook_endpoints_controller_test.exs:106`). There
 # is no query to answer with an empty result, because there is no query — and
 # unlike a 403-for-another-account, a 401 for no token leaks nothing at all: the
 # caller named no id, so nothing about any row was confirmed.
@@ -216,22 +257,28 @@ entryPoints:
       cases:
         - id: no-identity
           asserts: absent
+          # The test head was the declared line; the assertion is this halted
+          # check, inside the loop over all six actions — every action, not one.
           expects: halted
           file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
-          line: 101
+          line: 106
         - id: other-account
           asserts: absent
           # The context's own test, and `nil` rather than an error: the answer to
-          # "do you have this?" for a row the caller cannot see is no.
+          # "do you have this?" for a row the caller cannot see is no. The
+          # `describe` head was the declared line; the assertion is the `== nil`
+          # in "returns nothing for an account that does not own it".
           expects: nil
           file: test/courier/webhook_endpoints_test.exs
-          line: 176
+          line: 188
         - id: own-account
           asserts: present
-          # The row's own id, read back through the same `get/2`.
+          # The row's own id, read back through the same `get/2`. The declared
+          # line was an `attrs(%{url: "file:///etc/passwd", …})` in the SSRF
+          # test — a different test entirely; the read-back is this line.
           expects: id
           file: test/courier/webhook_endpoints_test.exs
-          line: 168
+          line: 180
 
   - id: webhook-endpoints-list
     operation: select
@@ -245,21 +292,26 @@ entryPoints:
       cases:
         - id: no-identity
           asserts: absent
+          # The test head was the declared line; the assertion is this halted
+          # check, inside the loop over all six actions — every action, not one.
           expects: halted
           file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
-          line: 101
+          line: 106
         - id: other-account
           asserts: absent
+          # The other account's seed `create` was the declared line; the
+          # assertion is the `== []` in "returns another account's nothing".
           expects: "[]"
           file: test/courier/webhook_endpoints_test.exs
-          line: 211
+          line: 229
         - id: own-account
           asserts: present
           # Both of the account's ids and not the other account's, asserted as a
-          # list so the third row's absence is part of the claim.
+          # list so the third row's absence is part of the claim. The declared
+          # line was blank; the assertion is this `Enum.map(found, & &1.id)`.
           expects: id
           file: test/courier/webhook_endpoints_test.exs
-          line: 204
+          line: 222
 
   - id: webhook-endpoints-enabled
     operation: select
@@ -275,19 +327,26 @@ entryPoints:
       cases:
         - id: no-identity
           asserts: absent
+          # The test head was the declared line; the assertion is this halted
+          # check, inside the loop over all six actions — every action, not one.
           expects: halted
           file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
-          line: 101
+          line: 106
         - id: other-account
           asserts: absent
+          # The `enabled = create!()` seed was the declared line; the assertion
+          # is the `== []` in "never returns another account's endpoint".
           expects: "[]"
           file: test/courier/webhook_endpoints_test.exs
-          line: 254
+          line: 272
         - id: own-account
           asserts: present
+          # The declared line was `assert found.status == :disabled` — the
+          # disabled-endpoint test, a different question; the own-account read
+          # is this `found.id == enabled.id`.
           expects: id
           file: test/courier/webhook_endpoints_test.exs
-          line: 241
+          line: 259
 
   - id: webhook-endpoints-page
     operation: select
@@ -301,22 +360,29 @@ entryPoints:
       cases:
         - id: no-identity
           asserts: absent
+          # The test head was the declared line; the assertion is this halted
+          # check, inside the loop over all six actions — every action, not one.
           expects: halted
           file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
-          line: 101
+          line: 106
         # BOTH denial arms are at the controller, and that is the state of this
         # surface rather than a preference: `GET /v1/webhook_endpoints` is
         # `page/3`'s only caller and the suite pins the boundary over HTTP.
         - id: other-account
           asserts: absent
+          # The declared line was blank — the gap between two tests; the
+          # assertion is the empty `data` list in "never lists another
+          # account's".
           expects: "[]"
           file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
-          line: 250
+          line: 256
         - id: own-account
           asserts: present
+          # The `describe` head was the declared line; the assertion is the
+          # one-element `data` list in "lists the caller's own endpoints".
           expects: id
           file: test/courier_web/controllers/webhook_endpoints_controller_test.exs
-          line: 241
+          line: 247
 
   # --------------------------------------------------------------------------
   # idempotency_keys — the table `(account_id, endpoint, idempotency_key)`.
@@ -343,19 +409,29 @@ entryPoints:
         # before a key is ever claimed.
         - id: no-identity
           asserts: absent
+          # The declared line was `assert conn.status == 401`; the arm's token is
+          # the envelope's own code, asserted on the next line — the 401 alone
+          # would be satisfied by any refusal.
           expects: unauthorized
           file: test/courier_web/controllers/messages_controller_test.exs
-          line: 111
+          line: 116
         - id: other-account
           asserts: absent
+          # The declared line was blank; the assertion is the `== nil` closing
+          # the `as_account(@other_account, …)` call — the comment above that
+          # call is why running as the file's own account would satisfy it for
+          # free.
           expects: nil
           file: test/courier/idempotency_test.exs
-          line: 110
+          line: 133
         - id: own-account
           asserts: present
+          # The declared line was the claim itself; the assertion is the read
+          # back — `found.id == claim.id` in "finds a claim that is inside its
+          # window".
           expects: id
           file: test/courier/idempotency_test.exs
-          line: 95
+          line: 104
 
   # --------------------------------------------------------------------------
   # notification_preferences — and the one place courier's boundary is NOT a
@@ -376,27 +452,40 @@ entryPoints:
       # `nil` (a user nobody has written for) is `:ok`, because courier holds no
       # foreign key to identity's users and cannot tell that user from one that
       # does not exist. Only a row that EXISTS and belongs elsewhere is a 404.
+      #
+      # THE DECLARED LINE IS `defp addressable/2` ITSELF, and the old declaration
+      # named the comment above it — a line that carries no key. Both `list/2`
+      # and `update/3` call it first, so it is the enforcement both entry
+      # points below share.
       mechanism: repository-method
       file: lib/courier/notification_preferences.ex
-      line: 150
+      line: 152
     negative:
       asserts: absent
       cases:
         - id: no-identity
           asserts: absent
+          # The test head was the declared line; the assertion is this halted
+          # check, inside the loop over both verbs — the GET and the PUT.
           expects: halted
           file: test/courier_web/controllers/notification_preferences_controller_test.exs
-          line: 94
+          line: 99
         - id: other-account
           asserts: absent
+          # The declared line was the owner's write that seeds the row; the
+          # assertion is the `{:error, :not_found}` the other account's read
+          # gets back.
           expects: not_found
           file: test/courier/notification_preferences_test.exs
-          line: 221
+          line: 225
         - id: own-account
           asserts: present
+          # The test head was the declared line; the assertion is this
+          # `Enum.all?(preferences, &(&1.email_enabled and …))` — the account's
+          # own defaults read back through the same `list/2`.
           expects: email_enabled
           file: test/courier/notification_preferences_test.exs
-          line: 43
+          line: 47
 
   - id: notification-preferences-update
     operation: update
@@ -405,36 +494,46 @@ entryPoints:
       # The same line and the same `addressable/2`, called **first** — before the
       # batch is even looked at. A 422 about the caller's own body leaks nothing,
       # but answering one for a user the caller cannot see would confirm the user
-      # has preferences before the 404 gets a chance to withhold it.
+      # has preferences before the 404 gets a chance to withhold it. The declared
+      # line is `defp addressable/2` at 152 — see the note on
+      # `notification-preferences-list` above for why it is not the comment that
+      # used to be named here.
       mechanism: repository-method
       file: lib/courier/notification_preferences.ex
-      line: 150
+      line: 152
     negative:
       asserts: absent
       cases:
         - id: no-identity
           asserts: absent
+          # The test head was the declared line; the assertion is this halted
+          # check, inside the loop over both verbs — the GET and the PUT.
           expects: halted
           file: test/courier_web/controllers/notification_preferences_controller_test.exs
-          line: 94
+          line: 99
         # A DENIED WRITE IS NOT ASSERTED WITH AN ABSENCE TOKEN. `{:error,
         # :not_found}` on its own would be `tenancy.denial-unpaired`: "matched
         # nothing" is also what a write that found nothing to do returns. So this
         # arm reads the victim's row back as its owner and asserts the value the
-        # refused write was trying to change is untouched.
+        # refused write was trying to change is untouched. The declared line was
+        # the comment saying so; the assertion is the read-back below it.
         - id: other-account
           asserts: absent
           expects: push_enabled
           file: test/courier/notification_preferences_test.exs
-          line: 242
+          line: 246
         # The owner's own `PUT`, read back as the owner: `push_enabled` is still
         # true because the other account's write was refused and this account's
-        # was not.
+        # was not. The declared line was a comment in the controller test; the
+        # assertion is the owner's own row read back afterwards — and NOT line
+        # 195, which asserts on the OTHER account's answer. An own-account arm
+        # pointed at a line asserting about `other` is the faking rule wearing a
+        # disguise: the token matches and the identity is wrong.
         - id: own-account
           asserts: present
           expects: email_enabled
           file: test/courier_web/controllers/notification_preferences_controller_test.exs
-          line: 177
+          line: 198
 
   # --------------------------------------------------------------------------
   # the worker. `call`, which is the schema's word for a row reached with the
@@ -449,9 +548,13 @@ entryPoints:
       # creates all carry that tenant's endpoint. There is no caller's account in
       # a worker, and there is no predicate to put one in: the row that decides
       # which endpoints exist is the outbox event, and it is not caller-supplied.
+      #
+      # THE DECLARED LINE IS THE `Tenancy.with_account/3` WRAPPER, which is where
+      # the identity is actually put on the connection — the old declaration
+      # named a comment in the moduledoc, and a comment carries no key.
       mechanism: query-filter
       file: lib/courier/workers/dispatch_webhooks_worker.ex
-      line: 80
+      line: 128
     negative:
       asserts: absent
       cases:
@@ -463,23 +566,27 @@ entryPoints:
         # delivering one customer's mail events to another customer.
         - id: no-identity
           asserts: absent
+          # The declared line was the `endpoint!()` seed; the assertion is the
+          # zero-delivery count after the fan-out of an event with no account.
           expects: count
           file: test/courier/workers/dispatch_webhooks_worker_test.exs
-          line: 123
+          line: 128
         # Another account's endpoints are not in this account's fan-out list,
-        # which is the whole of this edge's boundary.
+        # which is the whole of this edge's boundary. The declared line was the
+        # other account's seed; the assertion is the zero-delivery count.
         - id: other-account
           asserts: absent
           expects: count
           file: test/courier/workers/dispatch_webhooks_worker_test.exs
-          line: 78
+          line: 83
         # The account's own event produces its own deliveries. The cross
         # direction — another account's EVENT against this account's endpoints —
         # is the very next test, at line 87, and it is deliberately not named
         # here because one arm is one assertion and the three arms above already
-        # spend their two directions.
+        # spend their two directions. The declared line was the second
+        # `endpoint!` seed; the assertion is the count of two.
         - id: own-account
           asserts: present
           expects: count
           file: test/courier/workers/dispatch_webhooks_worker_test.exs
-          line: 58
+          line: 63
