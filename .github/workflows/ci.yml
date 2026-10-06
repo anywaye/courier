@@ -29,7 +29,7 @@
 #      second thing to be wrong.
 #
 #   3. The tier counts. The floors below are courier's numbers, in courier's
-#      tree. No other repository has 372 database tests or a 62-case SSRF table.
+#      tree. No other repository has 807 database tests or a 62-case SSRF table.
 #
 #   4. The lockfile guard, the coverage floor, and the release build: all three
 #      are courier's lockfile, courier's threshold, and courier's release.
