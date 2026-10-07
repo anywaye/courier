@@ -447,7 +447,16 @@ gate:
       # deltas on paper. The floor sits AT the measurement with zero headroom,
       # for the reason the telemetry paragraph gives: the next packet that adds
       # a test goes red until it raises this number.
-      minimum: 1575
+      #
+      # AND IT MOVES AGAIN for the proof that the closed set stays closed in
+      # every environment: 1575 -> 1576, no-database 697 -> 698, database
+      # UNCHANGED at 878. The one test asserts `COURIER_MAIL_ADAPTER` naming
+      # `Swoosh.Adapters.Local` is refused in `:dev` and `:test` as well as
+      # `:prod` — the unknown-adapter branch has no environment guard, and a
+      # refusal that only fired in prod would let a developer configure the
+      # silent adapter and prove to themselves that "it works". 1576 is
+      # 698 + 878, so the parts still sum to the whole.
+      minimum: 1576
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

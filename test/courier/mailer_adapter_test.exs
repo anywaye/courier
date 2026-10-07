@@ -137,6 +137,23 @@ defmodule Courier.MailerAdapterTest do
       end
     end
 
+    test "the silent adapters are refused by name in dev too, not only in prod" do
+      # The closed set stays closed in EVERY environment. Dev is where a
+      # courier is usually pointed at `Local`, and the escape hatch is the
+      # explicit `none` — naming the module is a different thing and is refused
+      # here exactly as it is in prod, because the unknown-adapter branch has
+      # no environment guard. Asserted in both environments rather than
+      # assumed: a refusal that only fired in prod would let a developer
+      # configure the silent adapter and prove to themselves that "it works".
+      for env <- [:dev, :test] do
+        System.put_env("COURIER_MAIL_ADAPTER", "Swoosh.Adapters.Local")
+
+        assert_raise RuntimeError, ~r/is not an adapter courier ships/, fn ->
+          MailerAdapter.adapter!(env)
+        end
+      end
+    end
+
     test "the unknown-adapter refusal lists every provider in the table" do
       # The supported-values list is generated from the provider table, so a
       # third provider appears here without a branch in the refusal. Asserted
