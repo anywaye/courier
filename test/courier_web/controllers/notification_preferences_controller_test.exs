@@ -250,7 +250,14 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
       assert %{
                "data" => %{
                  "user_id" => @user_id,
-                 "preferences" => [_welcome, _reset, _invitation, _security, _change_current, _change_new]
+                 "preferences" => [
+                   _welcome,
+                   _reset,
+                   _invitation,
+                   _security,
+                   _change_current,
+                   _change_new
+                 ]
                }
              } =
                body(conn)
@@ -368,7 +375,18 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert conn.status == 200
 
-      assert %{"data" => %{"preferences" => [_welcome, _reset, _invitation, _security, _change_current, _change_new]}} =
+      assert %{
+               "data" => %{
+                 "preferences" => [
+                   _welcome,
+                   _reset,
+                   _invitation,
+                   _security,
+                   _change_current,
+                   _change_new
+                 ]
+               }
+             } =
                body(conn)
     end
   end

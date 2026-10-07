@@ -390,12 +390,14 @@ defmodule CourierWeb.MessagesControllerTest do
       url = "https://cafaye.com/email-changes/confirm?token=ch4nge"
 
       conn =
-        post_authed(body(%{
-          "type" => "email_change_current",
-          "to" => address(),
-          "url" => url,
-          "name" => nil
-        }))
+        post_authed(
+          body(%{
+            "type" => "email_change_current",
+            "to" => address(),
+            "url" => url,
+            "name" => nil
+          })
+        )
 
       assert conn.status == 200
 
@@ -408,12 +410,14 @@ defmodule CourierWeb.MessagesControllerTest do
 
     test "the new-address notice sends, and names the address the account is moving from" do
       conn =
-        post_authed(body(%{
-          "type" => "email_change_new",
-          "to" => address(),
-          "previous_email" => "kaka@example.com",
-          "name" => nil
-        }))
+        post_authed(
+          body(%{
+            "type" => "email_change_new",
+            "to" => address(),
+            "previous_email" => "kaka@example.com",
+            "name" => nil
+          })
+        )
 
       assert conn.status == 200
 
@@ -447,12 +451,14 @@ defmodule CourierWeb.MessagesControllerTest do
       # that reported only the first, and the claim is that the unknown field
       # is named.
       conn =
-        post_authed(body(%{
-          "type" => "email_change_new",
-          "previous_email" => "kaka@example.com",
-          "previous_emai" => "kaka@example.com",
-          "name" => nil
-        }))
+        post_authed(
+          body(%{
+            "type" => "email_change_new",
+            "previous_email" => "kaka@example.com",
+            "previous_emai" => "kaka@example.com",
+            "name" => nil
+          })
+        )
 
       assert conn.status == 422
       assert fields(conn) == ["previous_emai"]

@@ -53,7 +53,9 @@ defmodule Courier.Principal.IntrospectionUrlTest do
   end
 
   describe "the single authoritative default" do
-    test "config/runtime.exs defaults COURIER_IDENTITY_URL to identity's port", %{runtime: runtime} do
+    test "config/runtime.exs defaults COURIER_IDENTITY_URL to identity's port", %{
+      runtime: runtime
+    } do
       assert default = runtime_identity_url_default(runtime),
              "config/runtime.exs no longer contains " <>
                "System.get_env(\"COURIER_IDENTITY_URL\", \"…\") — this reader " <>

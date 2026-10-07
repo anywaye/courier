@@ -153,7 +153,9 @@ defmodule Courier.DeliverTest do
                Deliver.account_security(payload(%{reason: "password reset"}))
 
       assert {:ok, change_current} =
-               Deliver.email_change_current(payload(%{url: "https://cafaye.com/email-changes/c?t=1"}))
+               Deliver.email_change_current(
+                 payload(%{url: "https://cafaye.com/email-changes/c?t=1"})
+               )
 
       assert {:ok, change_new} =
                Deliver.email_change_new(payload(%{previous_email: "kaka@example.com"}))
@@ -174,7 +176,9 @@ defmodule Courier.DeliverTest do
       # assertion exactly as strong (all six types present, each exactly once,
       # nothing else) while dropping the part that was never courier's promise.
       assert outbox() |> Enum.map(& &1.data["notification_type"]) |> Enum.sort() ==
-               Enum.sort(~w(welcome password_reset team_invitation account_security email_change_current email_change_new))
+               Enum.sort(
+                 ~w(welcome password_reset team_invitation account_security email_change_current email_change_new)
+               )
     end
 
     test "a password reset and a team invitation are different messages" do

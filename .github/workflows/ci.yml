@@ -215,7 +215,16 @@ jobs:
           # rule as the backup packet's cross-file contract test: a claim about
           # what the tree STATES is a claim no database can check. 1551 is
           # 677 + 874, so the parts still sum to the whole.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1551
+          #
+          # REMEASURED on the tree carrying the two email-change notices (w70):
+          # whole 1551 -> 1563, no-database 677 -> 685 (31 files), database
+          # 874 -> 878 (47 files). The +12 split 8 / 4, read off the case
+          # templates the two tier greps use: 8 in `mailers_test.exs` (a plain
+          # `ExUnit.Case` — the composed message needs no row), 4 in
+          # `messages_controller_test.exs` (a `CourierWeb.ConnCase` — the
+          # claim is that the type is sendable through the real door). 1563 is
+          # 685 + 878, so the parts still sum to the whole.
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1563
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -488,7 +497,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (677 tests, 31 files)
+      - name: tier — no database (685 tests, 31 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -527,9 +536,9 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 677
+          bin/assert-suite "$log" "no database" 685
 
-      - name: tier — database (874 tests, 47 files)
+      - name: tier — database (878 tests, 47 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -553,7 +562,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 874
+          bin/assert-suite "$log" "database" 878
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -628,9 +637,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1551 passed | \`bin/assert-suite\` |"
-            echo "| no database, 31 files | 677 passed | tier step |"
-            echo "| database, 47 files | 874 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1563 passed | \`bin/assert-suite\` |"
+            echo "| no database, 31 files | 685 passed | tier step |"
+            echo "| database, 47 files | 878 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"
