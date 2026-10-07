@@ -224,7 +224,17 @@ jobs:
           # `messages_controller_test.exs` (a `CourierWeb.ConnCase` — the
           # claim is that the type is sendable through the real door). 1563 is
           # 685 + 878, so the parts still sum to the whole.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1563
+          #
+          # REMEASURED on the tree carrying the SECOND PROVIDER (w71): whole
+          # 1563 -> 1575, no-database 685 -> 697 (31 files), database UNCHANGED
+          # at 878 (47 files). The +12 are two files, both plain `ExUnit.Case`
+          # because configuration mapping and refusals need no row: 7 in
+          # `mailer_adapter_test.exs` (the Postmark configuration block and
+          # the table-generated supported-values refusal) and 5 in
+          # `mailer_adapter_credentials_test.exs` (the Postmark startup line
+          # and the two repository scans). 1575 is 697 + 878, so the parts
+          # still sum to the whole.
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1575
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -497,7 +507,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (685 tests, 31 files)
+      - name: tier — no database (697 tests, 31 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -536,7 +546,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 685
+          bin/assert-suite "$log" "no database" 697
 
       - name: tier — database (878 tests, 47 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -637,8 +647,8 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1563 passed | \`bin/assert-suite\` |"
-            echo "| no database, 31 files | 685 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1575 passed | \`bin/assert-suite\` |"
+            echo "| no database, 31 files | 697 passed | tier step |"
             echo "| database, 47 files | 878 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"

@@ -156,9 +156,7 @@ defmodule Courier.MailerAdapterCredentialsTest do
       # silent-default failure this module exists to end, one layer out.
       log =
         capture_log(fn ->
-          Logger.warning(
-            "mailer: #{MailerAdapter.describe(adapter: Swoosh.Adapters.Postmark)}"
-          )
+          Logger.warning("mailer: #{MailerAdapter.describe(adapter: Swoosh.Adapters.Postmark)}")
         end)
 
       assert log =~ "adapter=postmark"

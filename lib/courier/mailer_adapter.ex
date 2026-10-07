@@ -141,10 +141,13 @@ defmodule Courier.MailerAdapter do
         deployment decision rather than a code change. Without one this process
         would start, accept every send, and deliver nothing.
 
-        Set it to:
+        Set it to one of:
 
             COURIER_MAIL_ADAPTER=smtp
             COURIER_SMTP_HOST=smtp.your-provider.com
+
+            COURIER_MAIL_ADAPTER=postmark
+            COURIER_POSTMARK_API_TOKEN=...
 
         `none` is accepted in development only, and means "render into memory and
         open no socket" — see Courier.MailerAdapter.
@@ -165,7 +168,9 @@ defmodule Courier.MailerAdapter do
         [adapter: Swoosh.Adapters.Local]
 
       other ->
-        case Enum.find(providers(), fn {provider, _, _, _, _, _} -> to_string(provider) == other end) do
+        case Enum.find(providers(), fn {provider, _, _, _, _, _} ->
+               to_string(provider) == other
+             end) do
           nil ->
             raise """
             COURIER_MAIL_ADAPTER=#{inspect(other)} is not an adapter courier ships.
@@ -385,8 +390,7 @@ defmodule Courier.MailerAdapter do
        "the universal one — every serious provider (SES, Postmark, Mailgun, SendGrid, Resend) speaks SMTP or has an SMTP front",
        &smtp_adapter/0, &describe_smtp/1},
       {:postmark, Swoosh.Adapters.Postmark, Swoosh.ApiClient.Req,
-       "transactional-only, API-token auth",
-       &postmark_adapter/0, &describe_postmark/1}
+       "transactional-only, API-token auth", &postmark_adapter/0, &describe_postmark/1}
     ]
   end
 

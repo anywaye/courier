@@ -230,8 +230,7 @@ if config_env() == :prod do
   # is mapped to it here rather than configured, because `nil` would read as
   # "unset" to `Application.fetch_env!` and as a crash to whatever calls it.
   config :swoosh,
-           api_client:
-             Courier.MailerAdapter.api_client(mailer_adapter[:adapter]) || false
+    api_client: Courier.MailerAdapter.api_client(mailer_adapter[:adapter]) || false
 
   # The one startup line an operator reads to confirm which relay courier is
   # pointed at. It names the host, the port and whether auth is on — never the

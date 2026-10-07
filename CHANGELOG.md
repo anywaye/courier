@@ -14,6 +14,33 @@ document lands in both files in one commit, because core asserts the two agree.
 
 ### Added
 
+- **courier can send email through a second provider.** `COURIER_MAIL_ADAPTER`
+  accepts `postmark` beside `smtp`, so "email, through more than one provider"
+  is configuration rather than a code change. Postmark is transactional-only
+  with API-token auth, matching the mail courier sends; Swoosh's own adapter
+  is used, so no HTTP client was hand-written.
+  - **`COURIER_POSTMARK_API_TOKEN` — required when the adapter is postmark**,
+    refused at boot with the variable named when it is missing or empty. The
+    provider set is one table (`Courier.MailerAdapter.providers/0`) naming
+    each provider's Swoosh adapter, its Swoosh HTTP client (nil for SMTP,
+    which dials `gen_smtp` directly), its variable builder, and its startup
+    describer; `adapter!/1`, `describe/1`, the supported-values refusal and
+    the new `api_client/1` all look the table up, so a third provider is an
+    entry plus two functions rather than a fourth branch.
+  - **The startup line names the provider and whether its token is set —
+    never the token.** The same rule SMTP's line has, asserted by a canary
+    in `test/courier/mailer_adapter_credentials_test.exs` against captured
+    log output, paired with presence assertions so a line that printed
+    nothing would not pass.
+  - **`config/runtime.exs` turns Swoosh's HTTP client on from the resolved
+    adapter** (`MailerAdapter.api_client/1`) rather than from a second
+    variable: SMTP never calls it, Postmark posts through
+    `Swoosh.ApiClient.Req`, and a deployment that configured the adapter and
+    forgot the client would otherwise boot with both halves dark.
+  - **No live send was exercised** — this machine has no provider account.
+    The proof is configuration mapping and refusals; a real send needs a
+    Postmark server token and would go through `Swoosh.Adapters.Postmark`
+    unchanged.
 - **courier can now remember what it told somebody.** Two tables —
   `notification_events` (one thing that happened, for an account) and
   `notifications` (that event addressed to one person, with `seen_at` and
