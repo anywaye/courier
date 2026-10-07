@@ -415,11 +415,10 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
       # READ BACK UNDER THE IDENTITY THAT OWNS THE ROW. `Repo.get!/2` reaches a
       # protected row by primary key alone, and under the RLS `select` policy the
       # test body's identity decides whether it is returned at all. The body's
-      # identity here is `@account_id` -- unless a request changed it, which
-      # `CourierWeb.Plugs.TenantIdentity` does, because inside the sandbox its
-      # transaction is a SAVEPOINT whose release does not discard a
-      # transaction-local setting. So the read is asked for the identity it needs
-      # rather than inheriting one.
+      # identity here is `@account_id` -- unless a request changed it, which each
+      # scoped action does, because inside the sandbox its transaction is a
+      # SAVEPOINT whose release does not discard a transaction-local setting. So
+      # the read is asked for the identity it needs rather than inheriting one.
       assert as_account(@other_account_id, fn ->
                Repo.get!(WebhookEndpoint, endpoint.id).status == :enabled
              end)

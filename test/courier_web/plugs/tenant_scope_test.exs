@@ -152,4 +152,74 @@ defmodule CourierWeb.TenantScopeTest do
                "the request read back the row its own scope wrote"
     end
   end
+
+  describe "the pipeline the scope hangs off" do
+    # The `/v1` routes. `route_info/4` is given a **string** verb because
+    # the atom form answers `:error` for every path here — the same form
+    # `router_test.exs` uses.
+    @v1_routes [
+      {"GET", "/v1/notification_preferences/:user_id"},
+      {"PUT", "/v1/notification_preferences/:user_id"},
+      {"GET", "/v1/webhook_endpoints"},
+      {"GET", "/v1/webhook_endpoints/:id"},
+      {"PATCH", "/v1/webhook_endpoints/:id"},
+      {"DELETE", "/v1/webhook_endpoints/:id"},
+      {"POST", "/v1/webhook_endpoints"},
+      {"POST", "/v1/webhook_endpoints/:id/test"},
+      {"POST", "/v1/messages"},
+      {"GET", "/v1/notifications"},
+      {"GET", "/v1/notifications/unread_count"},
+      {"POST", "/v1/notifications/:id/seen"},
+      {"POST", "/v1/notifications/:id/read"}
+    ]
+
+    @unauthenticated [
+      {"GET", "/healthz"},
+      {"GET", "/readyz"},
+      {"GET", "/unsubscribe/:token"},
+      {"POST", "/unsubscribe/:token"},
+      {"POST", "/inbound/resend"}
+    ]
+
+    test "every /v1 route is behind :authenticated, so a new route inherits the principal" do
+      for {method, path} <- @v1_routes do
+        assert %{pipe_through: pipe_through} =
+                 Phoenix.Router.route_info(CourierWeb.Router, method, path, "")
+
+        assert :authenticated in pipe_through, "#{method} #{path} must be behind :authenticated"
+      end
+    end
+
+    test "the unauthenticated surfaces are NOT behind it, by name" do
+      for {method, path} <- @unauthenticated do
+        assert %{pipe_through: pipe_through} =
+                 Phoenix.Router.route_info(CourierWeb.Router, method, path, "")
+
+        refute :authenticated in pipe_through,
+               "#{method} #{path} must not be behind :authenticated: #{inspect(pipe_through)}"
+      end
+    end
+
+    test ":authenticated holds no transaction-scoping plug" do
+      # The removed shape, guarded against by name: a plug in this pipeline
+      # that opened a transaction around the rest of the request committed
+      # before the controller ran, discarding the transaction-local identity
+      # and breaking every authenticated route's protected-table access with
+      # a 42501. The scope now lives in each action and in the `:idempotent`
+      # plug, where a transaction can wrap the work. Read off the ROUTER'S OWN
+      # SOURCE rather than a list kept here, because a list kept here can
+      # agree with a router that has the plug back.
+      source = File.read!(Path.join(__DIR__, "../../../lib/courier_web/router.ex"))
+
+      [_, body] =
+        Regex.run(~r/pipeline :authenticated do\n(.*?)\n  end/s, source) ||
+          flunk("router.ex has no `pipeline :authenticated do` block to read")
+
+      refute body =~ "TenantIdentity",
+             "no transaction-scoping plug may return to :authenticated:\n\n#{body}"
+
+      assert body =~ "CourierWeb.Plugs.Principal",
+             ":authenticated authenticates — the plug that stashes the account:\n\n#{body}"
+    end
+  end
 end

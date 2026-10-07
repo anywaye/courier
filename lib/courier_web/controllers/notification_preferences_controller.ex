@@ -50,39 +50,72 @@ defmodule CourierWeb.NotificationPreferencesController do
   use CourierWeb, :controller
 
   alias Courier.NotificationPreferences
+  alias Courier.Repo
+  alias Courier.Tenancy
   alias CourierWeb.Problem
 
   @doc """
   Every notification type courier sends, with this user's stored answers.
   """
   def show(conn, %{"user_id" => user_id}) do
-    with {:ok, user_id} <- cast_user_id(user_id),
-         {:ok, preferences} <-
-           NotificationPreferences.list(conn.assigns.current_account, user_id) do
-      json(conn, answer(user_id, preferences))
-    else
-      :error -> invalid_user_id(conn)
-      {:error, :not_found} -> not_found(conn)
-    end
+    scoped(conn, fn ->
+      with {:ok, user_id} <- cast_user_id(user_id),
+           {:ok, preferences} <-
+             NotificationPreferences.list(conn.assigns.current_account, user_id) do
+        json(conn, answer(user_id, preferences))
+      else
+        :error -> invalid_user_id(conn)
+        {:error, :not_found} -> not_found(conn)
+      end
+    end)
   end
 
   @doc """
   Applies a batch of preferences and answers with the state the user now has.
   """
   def update(conn, %{"user_id" => user_id} = params) do
-    with {:ok, user_id} <- cast_user_id(user_id),
-         {:ok, stored} <-
-           NotificationPreferences.update(conn.assigns.current_account, user_id, params) do
-      json(conn, answer(user_id, stored))
-    else
-      :error -> invalid_user_id(conn)
-      {:error, :not_found} -> not_found(conn)
-      {:error, changeset} -> validation_failed(conn, changeset)
-    end
+    scoped(conn, fn ->
+      with {:ok, user_id} <- cast_user_id(user_id),
+           {:ok, stored} <-
+             NotificationPreferences.update(conn.assigns.current_account, user_id, params) do
+        json(conn, answer(user_id, stored))
+      else
+        :error -> invalid_user_id(conn)
+        {:error, :not_found} -> not_found(conn)
+        {:error, changeset} -> validation_failed(conn, changeset)
+      end
+    end)
   end
 
   defp validation_failed(conn, changeset) do
     Problem.send(conn, 422, :validation_failed, detail(changeset), failed(changeset))
+  end
+
+  # The whole action runs inside one transaction carrying the caller's account,
+  # so the row-level-security policies on `notification_preferences` have an
+  # identity to key on. A plug cannot hold such a transaction open across the
+  # controller — see `Courier.Tenancy` — so each action opens its own, with the
+  # account `CourierWeb.Plugs.Principal` stashed.
+  #
+  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable
+  # by construction: the context rolls back only inside its own inner
+  # transaction. Handled as a 503 rather than matched away, on the same rule as
+  # `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller retries.
+  defp scoped(conn, fun) do
+    case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
+      {:ok, conn} -> conn
+      {:error, _reason} -> unavailable(conn)
+    end
+  end
+
+  defp unavailable(conn) do
+    conn
+    |> Problem.send(
+      503,
+      :unavailable,
+      "courier could not scope this request to an account, so it is not serving it."
+    )
+    |> halt()
   end
 
   # The user's preferences exist and belong to another account, which is the same

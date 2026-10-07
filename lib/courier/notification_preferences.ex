@@ -347,17 +347,32 @@ defmodule Courier.NotificationPreferences do
   #
   #     ** (CompileError) __STACKTRACE__ is available only inside catch and
   #        rescue clauses of try expressions
+  #
+  # The insert runs in a transaction of its own — a savepoint under a scoped
+  # request transaction, a real one otherwise. A refused insert is a STATEMENT
+  # error, and Postgres aborts the enclosing transaction on one: returning the
+  # refusal would poison the request's own commit and turn a cross-tenant 404
+  # into a 500. `Repo.rollback/1` unwinds only to this boundary, so the
+  # translation below still answers `:not_found` for the policy refusal and the
+  # request commits around it.
   defp insert_or_refuse(changeset, replace) do
-    case Repo.insert(changeset,
-           on_conflict: conflict(replace),
-           conflict_target: [:user_id, :notification_type]
-         ) do
-      {:ok, _preference} -> {:cont, :ok}
-      # `{:error, changeset}` is NOT treated as a failure. It is Ecto's answer to a
-      # refused changeset -- a validation `validate_all/1` already ran, so it
-      # cannot reach here -- and treating it as a stop would make this function's
-      # return type depend on a branch that does not exist.
-      {:error, _refused} -> {:cont, :ok}
+    case Repo.transaction(fn ->
+      case Repo.insert(changeset,
+             on_conflict: conflict(replace),
+             conflict_target: [:user_id, :notification_type]
+           ) do
+        {:ok, _preference} -> {:ok, :ok}
+        # `{:error, changeset}` is NOT treated as a failure. It is Ecto's answer to a
+        # refused changeset -- a validation `validate_all/1` already ran, so it
+        # cannot reach here -- and treating it as a stop would make this function's
+        # return type depend on a branch that does not exist.
+        {:error, _refused} -> Repo.rollback(:refused)
+      end
+    end) do
+      # The inner transaction adds its own `{:ok, …}` level — see the probe in
+      # `test/courier/shape_probe_test.exs`.
+      {:ok, {:ok, :ok}} -> {:cont, :ok}
+      {:error, :refused} -> {:cont, :ok}
     end
   rescue
     error in Postgrex.Error ->

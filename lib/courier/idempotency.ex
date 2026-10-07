@@ -91,9 +91,9 @@ defmodule Courier.Idempotency do
   """
   @spec claim(map()) :: {:ok, IdempotencyKey.t()} | {:error, refusal()}
   def claim(attrs) do
-    # The expired-row sweep and the insert are deliberately **not** in a
-    # transaction, and that is a considered choice rather than an omission.
-    # Wrapping them costs a real thing: `Repo.transaction/1` replaces whatever its
+    # The expired-row sweep and the insert are deliberately **not** in one
+    # transaction together, and that is a considered choice rather than an
+    # omission. Wrapping them costs a real thing: `Repo.transaction/1` replaces whatever its
     # function returns with `:rollback` when that function returns an error, so a
     # `{:error, :taken}` would arrive as a bare `{:error, :rollback}` and the
     # reason would have to be carried out of the function in a variable or a
@@ -108,12 +108,30 @@ defmodule Courier.Idempotency do
     # index to the first, and `fetch/3` hands it the winner's row.
     discard_expired(attrs)
 
-    %IdempotencyKey{}
-    |> IdempotencyKey.changeset(Map.put_new(attrs, :expires_at, expires_at()))
-    |> Repo.insert()
-    |> case do
-      {:ok, key} -> {:ok, key}
-      {:error, %Ecto.Changeset{} = changeset} -> {:error, refusal(changeset)}
+    # The insert IS in a transaction of its own, and that is a different
+    # decision from the one above. A losing insert is a unique-violation
+    # STATEMENT error, and Postgres aborts the enclosing transaction on one —
+    # so under a scoped request transaction (see `CourierWeb.Plugs.Idempotency`)
+    # a returned `{:error, :taken}` would poison the request's own commit and
+    # turn every retry into a 503. `Repo.rollback/1` unwinds only to this
+    # transaction's boundary — a savepoint under a scoped request, a real
+    # transaction otherwise — and the reason survives it, which is what the
+    # paragraph above refused to give up: the outer `case` re-maps it, so
+    # `{:error, :taken}` still means taken and never `{:error, :rollback}`.
+    case Repo.transaction(fn ->
+      case %IdempotencyKey{}
+           |> IdempotencyKey.changeset(Map.put_new(attrs, :expires_at, expires_at()))
+           |> Repo.insert() do
+        {:ok, key} -> {:ok, key}
+        {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(refusal(changeset))
+      end
+    end) do
+      # The inner transaction adds its own `{:ok, …}` level — see the probe in
+      # `test/courier/shape_probe_test.exs` — so success arrives doubly
+      # wrapped and the rollback reasons singly.
+      {:ok, {:ok, key}} -> {:ok, key}
+      {:error, :taken} -> {:error, :taken}
+      {:error, {:error, changeset}} -> {:error, {:error, changeset}}
     end
   end
 

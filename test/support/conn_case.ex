@@ -27,9 +27,9 @@ defmodule CourierWeb.ConnCase do
 
   So a file that seeds `webhook_endpoints` through a controller test declares
   `@moduletag account: @account_id` exactly as a `Courier.DataCase` file does.
-  The account is not read from the request: `CourierWeb.Plugs.TenantIdentity`
-  sets the identity for the request itself, and the tag is for the **seeding**,
-  which happens outside any request.
+  The account is not read from the request: each controller action opens its
+  own `Courier.Tenancy.with_account/3` transaction around its database work,
+  and the tag is for the **seeding**, which happens outside any request.
   """
 
   use ExUnit.CaseTemplate

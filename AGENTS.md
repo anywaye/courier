@@ -617,16 +617,20 @@ measurement; this is the change it was asking for.
     touching only `outbox_events`, `email_suppressions` or `webhook_deliveries`
     needs no tag: those tables have no `account_id` **by design**, which is the
     same fact `tenancy.yml`'s empty `rls.tables` records.
-  * **`CourierWeb.Plugs.TenantIdentity` changes the test's identity, and a
+  * **Each request's scoped transactions change the test's identity, and a
     read-back after a request is scoped to the LAST request's account.** Harmless
-    in production — the plug's transaction is the outermost, so `COMMIT` discards
+    in production — every scoped transaction commits, so `COMMIT` discards
     the setting in the database, which is the whole of `is_local := true`'s
-    argument — but in a test the sandbox's transaction sits OUTSIDE it. Measured
+    argument — but in a test the sandbox's transaction sits OUTSIDE them. Measured
     on a driver test: `identity after OWNER post: 6f5d…` then
-    `identity after OTHER post: 7a6e…`. Three assertions were reading a protected
-    row back as the wrong account, and one of them (the DELETE) passed *because*
-    the row was invisible rather than because it survived — a boundary that
-    satisfies a denial arm for free.
+    `identity after OTHER post: 7a6e…`. (An earlier shape put the transaction in
+    `CourierWeb.Plugs.TenantIdentity`, which committed before the controller ran
+    and broke every authenticated route in production while the suite stayed
+    green; the scope now lives in each action and in the `:idempotent` plug,
+    where a transaction can wrap the work.) Three assertions were reading a
+    protected row back as the wrong account, and one of them (the DELETE) passed
+    *because* the row was invisible rather than because it survived — a boundary
+    that satisfies a denial arm for free.
   * **`Courier.NotificationPreferences.addressable/2` is now structurally
     unreachable for a cross-tenant read, and the answer changed.** It decided that
     case by READING the stored row's `account_id` and comparing it in Elixir; as a
