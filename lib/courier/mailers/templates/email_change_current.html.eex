@@ -1,0 +1,3 @@
+<p><%= @greeting %></p>
+<p>Somebody signed in to the cafaye account on <%= @email %> and asked to change the address it uses.</p>
+<p>If that was you, confirm it with this link: <a href="<%= @url %>"><%= @url %></a></p>

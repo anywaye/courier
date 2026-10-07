@@ -403,7 +403,28 @@ gate:
       # deltas on paper. The floor sits AT the measurement with zero headroom,
       # for the reason the telemetry paragraph gives: the next packet that adds
       # a test goes red until it raises this number.
-      minimum: 1551
+      #
+      # REMEASURED on the tree carrying THE TWO EMAIL-NOTICE TYPES: whole suite
+      # 1551 -> 1563, no-database 677 -> 685 across the same 31 files, database
+      # 874 -> 878 across the same 47 files.
+      #
+      # **The +12 split 8 / 4, read off the case templates the two tier greps
+      # use, not guessed.** The 8 are in `test/courier/mailers_test.exs`, a
+      # plain `ExUnit.Case` because its subject is the composed message, which
+      # needs no row — four per new type: the subject, the render proof on both
+      # formats, and the two required-field refusals. The 4 are in
+      # `test/courier_web/controllers/messages_controller_test.exs`, a
+      # `CourierWeb.ConnCase` because the claim is that the type is SENDABLE
+      # through the real door, not only renderable in the library: the two
+      # sends, the required-field enforcement at the door, and the misspelled
+      # field refused by name.
+      #
+      # **1563 is 685 + 878**, so the parts still sum to the whole — re-measured
+      # by running the tier greps on this tree, not by adding the two branches'
+      # deltas on paper. The floor sits AT the measurement with zero headroom,
+      # for the reason the telemetry paragraph gives: the next packet that adds
+      # a test goes red until it raises this number.
+      minimum: 1563
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

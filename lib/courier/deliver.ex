@@ -54,7 +54,7 @@ defmodule Courier.Deliver do
   unsubscribe credential behind for a message nobody received.
 
   Which messages carry the headers is not decided here: `Courier.Unsubscribes.
-  decorate_for/3` asks `Courier.Mailers.kind/1`, and all three of courier's types
+  decorate_for/3` asks `Courier.Mailers.kind/1`, and all six of courier's types
   are `:transactional`, so today every message comes back untouched and no token
   is minted. `Courier.Unsubscribes` is where that is argued.
 
@@ -104,6 +104,30 @@ defmodule Courier.Deliver do
   """
   @spec account_security(map()) :: {:ok, map()} | {:error, term()}
   def account_security(payload), do: deliver(:account_security, payload)
+
+  @doc """
+  Sends the `email_change_current` mail — the notice to the address the account
+  uses today, warning its owner that somebody asked to move it.
+
+  The payload carries `user_id`, `email` and `url`; the `url` is the
+  confirmation link the current address's owner acts on. This is the only
+  warning an account owner gets that somebody is moving their address, so the
+  type is `:transactional` and carries no unsubscribe header: a person who
+  must act on an address change must always be able to receive the mail about
+  it.
+  """
+  @spec email_change_current(map()) :: {:ok, map()} | {:error, term()}
+  def email_change_current(payload), do: deliver(:email_change_current, payload)
+
+  @doc """
+  Sends the `email_change_new` mail — the notice to the address the account is
+  moving to, naming the address it is moving from.
+
+  The payload carries `user_id`, `email` and `previous_email`. Like its
+  sibling, it is a security notice: `:transactional`, no unsubscribe header.
+  """
+  @spec email_change_new(map()) :: {:ok, map()} | {:error, term()}
+  def email_change_new(payload), do: deliver(:email_change_new, payload)
 
   @doc """
   Sends the mail for `type`, for a caller that has the type as data rather than

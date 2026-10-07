@@ -854,6 +854,20 @@ paths:
                   user_id: 6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061
                   to: kaka@example.com
                   url: https://cafaye.com/reset?token=6f5d4c3b
+              email_change_current:
+                summary: The warning to the current address, which carries the confirmation link
+                value:
+                  type: email_change_current
+                  user_id: 6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061
+                  to: kaka@example.com
+                  url: https://cafaye.com/email-changes/confirm?token=6f5d4c3b
+              email_change_new:
+                summary: The notice to the new address, which names the address it is moving from
+                value:
+                  type: email_change_new
+                  user_id: 6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061
+                  to: new@example.com
+                  previous_email: kaka@example.com
       responses:
         '200':
           description: The provider accepted the message for delivery
@@ -1821,9 +1835,10 @@ components:
           maxLength: 2048
           description: |
             The link the message carries — the reset link, the invitation link,
-            the confirmation link. Required by `password_reset` and
-            `team_invitation` and unused by `welcome`, which is why its absence is
-            a 422 naming `url` rather than a silently linkless mail.
+            the confirmation link. Required by `password_reset`,
+            `team_invitation` and `email_change_current` and unused by `welcome`,
+            which is why its absence is a 422 naming `url` rather than a silently
+            linkless mail.
         account_name:
           type: string
           maxLength: 255
@@ -1839,6 +1854,22 @@ components:
             The role offered by a `team_invitation`. Optional and unvalidated
             against any list — courier has no role vocabulary of its own, and
             inventing one would put a second source of truth next to identity's.
+        reason:
+          type: string
+          maxLength: 255
+          description: |
+            Which of the two `account_security` facts happened — `password reset`
+            or `email address changed`. Required by that type only: the template
+            branches on it, and a notice that does not name which one happened
+            forces the reader to guess between two different remediations.
+        previous_email:
+          type: string
+          format: email
+          maxLength: 255
+          description: |
+            The address the account is moving from, carried by `email_change_new`
+            so the new address's owner is told where the account lived before.
+            Required by that type only.
 
     SendMessageResult:
       type: object
@@ -2041,7 +2072,7 @@ components:
 
     NotificationType:
       type: string
-      enum: [welcome, password_reset, team_invitation]
+      enum: [welcome, password_reset, team_invitation, account_security, email_change_current, email_change_new]
       description: |
         Every notification type courier sends. A type outside this list is a 422
         naming `preferences[0].notification_type`, because a preference for

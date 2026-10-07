@@ -1,0 +1,2 @@
+<p><%= @greeting %></p>
+<p>Somebody asked to move the cafaye account on <%= @previous_email %> to this address.</p>

@@ -44,7 +44,9 @@ config :courier, :mailing,
     # would need a `%{reason}` placeholder the two values would fill clumsily
     # ("…: password reset"). A label that names the fact's kind is the honest
     # subject for a type that is one shape with two renderings.
-    account_security: "Security notice for your caFaye account"
+    account_security: "Security notice for your caFaye account",
+    email_change_current: "Confirm an email address change on your caFaye account",
+    email_change_new: "Confirm your new caFaye email address"
   }
 
 # `api_client: false` is still correct, and now for a real reason rather than
