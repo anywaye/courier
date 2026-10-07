@@ -73,11 +73,17 @@ defmodule Courier.Tenancy do
       /v1/messages` already did exactly this inside `Courier.Deliver`'s own
       transaction — AGENTS.md records the choice and its price — so this is not
       a new contention class, it is the same one kept where it was.
-    * **A nested `Repo.transaction` becomes a SAVEPOINT.** `Courier.Deliver`,
-      `Courier.Unsubscribes` and `Courier.Idempotency` all open their own; inside
-      an action's they nest correctly and a `Repo.rollback` of one unwinds only
-      that one. The GUC set at the outer level survives a savepoint release,
-      because it was already set when the savepoint was taken.
+    * **A nested `Repo.transaction` is NOT a savepoint, and a nested
+      `Repo.rollback` fails the whole transaction.** Statement errors under a
+      scope are therefore contained with `mode: :savepoint` on the operation
+      itself (Ecto's documented remedy) rather than with an inner transaction
+      that rolls back: an inner rollback under a scoped request was measured
+      failing the outer commit as `{:error, :rollback}` — every retry a 503.
+      The pre-existing control-flow rollbacks in `Courier.Deliver`,
+      `Courier.Unsubscribes`, `Courier.Notifications` and
+      `Courier.InboundReports` predate per-action scoping and now nest inside
+      it; their failure paths are the known exposure (see the W105 handoff),
+      not a shape this packet re-verified.
     * **The response leaves before the COMMIT.** This is the honest cost and it
       is the one place this arrangement is weaker than it could be: the
       controller calls `send_resp` inside the transaction, so a client can be

@@ -139,19 +139,14 @@ defmodule CourierWeb.Plugs.Idempotency do
     end
   end
 
-  # `{:error, _}` from `with_account/3` — a `Repo.rollback` that escaped the
-  # function — is unreachable by construction: `Courier.Idempotency` never calls
-  # `Repo.rollback`. It is handled rather than matched away because a security
-  # control that raises `MatchError` on a shape it cannot explain is one whose
-  # failure nobody has diagnosed, and the answer is the same shape the rest of
-  # courier uses for "a dependency did not work": a 503 the caller may retry.
-  #
-  # The `{:ok, …}` wrap is load-bearing, and `Courier.Idempotency`'s moduledoc
-  # says why: `Repo.transaction/1` rolls the transaction back when its function
-  # *returns* `{:error, _}`, so an unwrapped claim would arrive as
-  # `{:error, :taken}` — indistinguishable from a rollback — and every retry
-  # would be a 503. Wrapping the value commits it instead, and only a genuine
-  # rollback still answers `:unavailable`.
+  # `{:error, _}` from `with_account/3` means the scoped transaction itself
+  # failed to commit — a genuine rollback, not a refusal carried as data.
+  # Refusals that are data (`{:error, :taken}`, changesets) arrive inside the
+  # `{:ok, …}` wrap: `Repo.transaction/1` commits on any normal return, so the
+  # wrap only keeps the two shapes distinct. A security control that raises
+  # `MatchError` on a shape it cannot explain is one whose failure nobody has
+  # diagnosed, and the answer is the same shape the rest of courier uses for
+  # "a dependency did not work": a 503 the caller may retry.
   defp scoped(conn, fun) do
     case Tenancy.with_account(Repo, conn.assigns.current_account, fn -> {:ok, fun.()} end) do
       {:ok, {:ok, value}} -> value

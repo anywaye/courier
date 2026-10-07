@@ -93,11 +93,9 @@ defmodule Courier.Idempotency do
   def claim(attrs) do
     # The expired-row sweep and the insert are deliberately **not** in one
     # transaction together, and that is a considered choice rather than an
-    # omission. Wrapping them costs a real thing: `Repo.transaction/1` replaces whatever its
-    # function returns with `:rollback` when that function returns an error, so a
-    # `{:error, :taken}` would arrive as a bare `{:error, :rollback}` and the
-    # reason would have to be carried out of the function in a variable or a
-    # process dictionary to survive its own transaction.
+    # omission. The insert carries its own savepoint (see below), so sharing a
+    # transaction would buy no containment — and it would widen the window in
+    # which a concurrent presenter waits on this triple's rows.
     #
     # What atomicity would buy here is nothing. The sweep deletes rows that are
     # already past their retention window, so deleting them is correct whether or
@@ -108,30 +106,27 @@ defmodule Courier.Idempotency do
     # index to the first, and `fetch/3` hands it the winner's row.
     discard_expired(attrs)
 
-    # The insert IS in a transaction of its own, and that is a different
-    # decision from the one above. A losing insert is a unique-violation
+    # `mode: :savepoint` is the whole of the failure containment, and it is
+    # there for the scoped request path. A losing insert is a unique-violation
     # STATEMENT error, and Postgres aborts the enclosing transaction on one —
     # so under a scoped request transaction (see `CourierWeb.Plugs.Idempotency`)
-    # a returned `{:error, :taken}` would poison the request's own commit and
-    # turn every retry into a 503. `Repo.rollback/1` unwinds only to this
-    # transaction's boundary — a savepoint under a scoped request, a real
-    # transaction otherwise — and the reason survives it, which is what the
-    # paragraph above refused to give up: the outer `case` re-maps it, so
-    # `{:error, :taken}` still means taken and never `{:error, :rollback}`.
-    case Repo.transaction(fn ->
-      case %IdempotencyKey{}
-           |> IdempotencyKey.changeset(Map.put_new(attrs, :expires_at, expires_at()))
-           |> Repo.insert() do
-        {:ok, key} -> {:ok, key}
-        {:error, %Ecto.Changeset{} = changeset} -> Repo.rollback(refusal(changeset))
-      end
-    end) do
-      # The inner transaction adds its own `{:ok, …}` level — see the probe in
-      # `test/courier/shape_probe_test.exs` — so success arrives doubly
-      # wrapped and the rollback reasons singly.
-      {:ok, {:ok, key}} -> {:ok, key}
-      {:error, :taken} -> {:error, :taken}
-      {:error, {:error, changeset}} -> {:error, {:error, changeset}}
+    # a bare insert would poison the request's own commit and turn every retry
+    # into a 503. The savepoint rolls back only the insert, leaving the
+    # enclosing transaction healthy, so `{:error, :taken}` still means taken.
+    #
+    # What is deliberately NOT here is an inner `Repo.transaction/1` with a
+    # `Repo.rollback/1` on the losing branch: nested Ecto transactions are NOT
+    # savepoints, and an inner rollback marks the whole transaction failed —
+    # measured, the outer commit then answers `{:error, :rollback}` and the
+    # retry is a 503 anyway. (Ecto's own `Repo.transaction/2` documentation
+    # states the same rule: a constraint failure inside a transaction aborts
+    # it, and `mode: :savepoint` is the documented remedy.)
+    %IdempotencyKey{}
+    |> IdempotencyKey.changeset(Map.put_new(attrs, :expires_at, expires_at()))
+    |> Repo.insert(mode: :savepoint)
+    |> case do
+      {:ok, key} -> {:ok, key}
+      {:error, %Ecto.Changeset{} = changeset} -> {:error, refusal(changeset)}
     end
   end
 

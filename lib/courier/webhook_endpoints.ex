@@ -70,21 +70,15 @@ defmodule Courier.WebhookEndpoints do
     with :ok <- check_url(url) do
       secret = Signature.generate_secret()
 
-      # The insert runs in a transaction of its own — a savepoint under a scoped
-      # request transaction, a real one otherwise. A refused insert (a duplicate
-      # url) is a STATEMENT error, and Postgres aborts the enclosing transaction
-      # on one: returning the changeset would poison the request's own commit and
-      # turn a 422 into a 500. `Repo.rollback/1` unwinds only to this boundary,
-      # so the caller still gets the changeset it validates.
-      case Repo.transaction(fn ->
-        case changeset |> put_secret(secret) |> Repo.insert() do
-          {:ok, endpoint} -> {:ok, {endpoint, secret}}
-          {:error, %Ecto.Changeset{} = refused} -> Repo.rollback(refused)
-        end
-      end) do
-        # The inner transaction adds its own `{:ok, …}` level — see the probe
-        # in `test/courier/shape_probe_test.exs`.
-        {:ok, {:ok, {endpoint, secret}}} -> {:ok, endpoint, secret}
+      # `mode: :savepoint` is the failure containment: a refused insert (a
+      # duplicate url) is a STATEMENT error, and Postgres aborts the enclosing
+      # transaction on one — without the savepoint the changeset would poison
+      # the request's own scoped commit and turn a 422 into a 500. An inner
+      # `Repo.transaction/1` with `Repo.rollback/1` is NOT the remedy: nested
+      # Ecto transactions are not savepoints, and an inner rollback fails the
+      # outer commit (measured as `{:error, :rollback}`).
+      case changeset |> put_secret(secret) |> Repo.insert(mode: :savepoint) do
+        {:ok, endpoint} -> {:ok, endpoint, secret}
         {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
       end
     end
@@ -249,21 +243,12 @@ defmodule Courier.WebhookEndpoints do
 
     if valid?(changeset) do
       with :ok <- check_url(Ecto.Changeset.get_field(changeset, :url)) do
-        # A savepoint under a scoped request transaction, for the same reason
-        # as `create_validated/2`: a refused update must not poison the
-        # request's own commit.
-        #
-        # The inner transaction adds its own `{:ok, …}` level — see the probe
-        # in `test/courier/shape_probe_test.exs` — so success arrives doubly
-        # wrapped and is unwrapped here, keeping this function's tuples what
-        # they were.
-        (case Repo.transaction(fn ->
-           case changeset |> Repo.update() do
-             {:ok, updated} -> {:ok, updated}
-             {:error, %Ecto.Changeset{} = refused} -> Repo.rollback(refused)
-           end
-         end) do
-           {:ok, {:ok, updated}} -> {:ok, updated}
+        # `mode: :savepoint`, for the same reason as `create_validated/2`: a
+        # refused update must not poison the request's own scoped commit.
+        # (An inner `Repo.transaction/1` with `Repo.rollback/1` is not the
+        # remedy — see above.)
+        (case changeset |> Repo.update(mode: :savepoint) do
+           {:ok, updated} -> {:ok, updated}
            {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
          end)
         # A customer re-enabling an endpoint clears courier's failure count and
