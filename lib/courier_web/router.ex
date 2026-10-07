@@ -140,6 +140,26 @@ defmodule CourierWeb.Router do
     get "/webhook_endpoints/:id", WebhookEndpointsController, :show
     patch "/webhook_endpoints/:id", WebhookEndpointsController, :update
     delete "/webhook_endpoints/:id", WebhookEndpointsController, :delete
+
+    # The in-app notification reader, and it is behind `:authenticated` for the
+    # reason the two surfaces above are: a notification is addressed to a user,
+    # and a surface that reads by a user id is a surface where any caller can
+    # read anybody's inbox by naming their id. The recipient here is the caller's
+    # own identity subject, resolved from the token by
+    # `CourierWeb.Plugs.Principal` — never from the request — so the path carries
+    # no user id at all, and there is nothing for a caller to guess.
+    #
+    # **The two marks are not behind `:idempotent`, and that is a decision rather
+    # than an omission.** `Courier.Notifications.mark_seen/3` and `mark_read/3`
+    # set their timestamps with `coalesce`, so a repeat is a no-op that returns
+    # the first timestamp — idempotence by construction, the same reason `PUT
+    # /v1/notification_preferences/:user_id` is not behind the header. A retry
+    # without a key is safe, and a key would be a credential scoped to a
+    # principal for a request that needs none.
+    get "/notifications", NotificationsController, :index
+    get "/notifications/unread_count", NotificationsController, :unread_count
+    post "/notifications/:id/seen", NotificationsController, :mark_seen
+    post "/notifications/:id/read", NotificationsController, :mark_read
   end
 
   # The same resource, on the two POSTs. A separate scope rather than one

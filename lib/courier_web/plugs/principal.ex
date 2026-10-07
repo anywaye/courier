@@ -82,19 +82,30 @@ defmodule CourierWeb.Plugs.Principal do
   def account_header, do: @account_header
 
   @doc """
-  Assigns `:current_account` from the configured resolver, or answers 401 or 503.
+  Assigns `:current_account` and `:current_principal` from the configured resolver,
+  or answers 401 or 503.
 
   The 401 is courier's problem+json like every other non-2xx, built by
   `CourierWeb.Problem`, so an unauthenticated request is the same shape as every
   other error a client has to parse — and so is the 503.
+
+  `:current_principal` is the whole `Courier.Principal` struct, and it is assigned
+  alongside the account because **the account is not the only fact a controller
+  needs about the caller.** The notifications reader addresses a recipient by the
+  principal's `subject` — the user the token names — and that field is discarded
+  here if only the account is kept. Assigning the struct rather than the subject
+  alone is the minimal change: one assign, and a controller that later needs
+  `scopes` reads it from the same place.
   """
   @spec call(Plug.Conn.t(), keyword()) :: Plug.Conn.t()
   def init(opts), do: opts
 
   def call(conn, _opts) do
     case resolver().resolve(conn) do
-      {:ok, %Principal{account_id: account_id}} ->
-        assign(conn, :current_account, account_id)
+      {:ok, %Principal{} = principal} ->
+        conn
+        |> assign(:current_account, principal.account_id)
+        |> assign(:current_principal, principal)
 
       :error ->
         unauthorized(conn)

@@ -286,10 +286,10 @@
 #
 # `CourierWeb.Plugs.ParseBody` wraps `Plug.Parsers`, and that reads a request body
 # for `POST`, `PUT`, `PATCH` and `DELETE` — and for no other verb. So the 400 is
-# reachable on exactly the four operations above that carry one of those verbs,
-# which is not the same as "every operation that takes input": `GET` sends no body
-# and is refused by neither the parser nor anything else, and a `400` declared on a
-# `GET` is a case a client writes and can never run.
+# reachable on exactly the operations that carry one of those verbs, which is not
+# the same as "every operation that takes input": `GET` sends no body and is
+# refused by neither the parser nor anything else, and a `400` declared on a `GET`
+# is a case a client writes and can never run.
 #
 # `DELETE` is the one that reads wrong. A `DELETE` carries no body in any sensible
 # client, so it looks bodyless, and a document that omits its 400 looks right —
@@ -336,10 +336,18 @@ info:
   # operation filed under `/v1` that cannot take a bearer token is a method a
   # generated client will call wrongly. The checklist's line is about the
   # customer-facing API; an inbound webhook is not one.
-  version: 2.3.0
+  #
+  # The bump to 2.4.0 is minor, and it is the additive kind core's conventions
+  # describe: four new operations on two new paths (`GET /v1/notifications`,
+  # `GET /v1/notifications/unread_count`, `POST /v1/notifications/{id}/seen` and
+  # `POST /v1/notifications/{id}/read`) and **no existing path, verb, request
+  # field or response shape changed at all**. A client generated from 2.3.0 keeps
+  # working against it, which is what makes it minor.
+  version: 2.4.0
   title: caFaye courier
   description: |
-    Transactional email, notification preferences, and outbound webhooks.
+    Transactional email, notification preferences, in-app notifications, and
+    outbound webhooks.
 
     courier delivers events to customer HTTP endpoints using the
     [Standard Webhooks](https://www.standardwebhooks.com) signature scheme, so a
@@ -369,6 +377,12 @@ tags:
       What a user has been asked to receive, per notification type and per channel.
       Silence is not consent: a user courier has never seen, or a type a user has
       never mentioned, is on.
+  - name: notifications
+    description: |
+      The in-app notification record: something that happened, addressed to one
+      person, with whether they have seen it and read it. The recipient is the
+      caller's own identity subject, resolved from the token — never from the
+      request — so these operations read the caller's own inbox and nobody else's.
   - name: messages
     description: |
       courier's send path, over HTTP. One operation, and it is the only door into
@@ -982,6 +996,201 @@ paths:
         '500': { $ref: '#/components/responses/Internal' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
+  /v1/notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      summary: The caller's own notifications, newest first
+      security:
+        - bearerAuth: [notifications:read]
+      description: |
+        One page of the caller's own in-app notifications, newest first. The
+        recipient is the caller's identity subject, resolved from the token by
+        `CourierWeb.Plugs.Principal` — never from the request — so the path
+        carries no user id and there is nothing for a caller to guess.
+
+        **A caller nobody has written notifications for gets `[]`, not an
+        404.** courier owns no users, so most recipients have never been written
+        for, and an empty inbox is the ordinary case rather than an error.
+
+        The list is ordered by `inserted_at` descending and then `id`, so the
+        order is total: two rows sharing a timestamp are ordered by a uuid, which
+        is arbitrary but stable, and a list that reshuffled between two identical
+        calls would be a pagination bug with no error message anywhere.
+
+        ## Query parameters
+
+        * `unread=true` — only the ones with no `read_at`. The string `"true"`
+          and nothing else; anything else, including absent, means all of them.
+        * `limit` — how many. Defaults to 25, capped at 100. A non-integer or
+          non-positive value is the default rather than an error: it is a query
+          parameter, not a mistake anybody is helped by a 422 for.
+        * `after` — an RFC 3339 timestamp, the cursor for "the page before". Only
+          notifications older than it are returned. A value that does not parse
+          is ignored rather than refused, for the same reason `limit` is.
+
+        ## What a caller cannot see
+
+        `account_id` is courier's tenancy key and is never in a query, a body, or
+        a response: the account is the caller's because the token says so, and a
+        caller that could name an account would be a caller who could read
+        another tenant's inbox. An `account_id` in a query string is ignored.
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - name: unread
+          in: query
+          required: false
+          description: |
+            `true` for only the unread ones. Anything else, including absent,
+            means all of them.
+          schema: { type: string, enum: ['true'] }
+        - name: after
+          in: query
+          required: false
+          description: |
+            An RFC 3339 timestamp. Only notifications older than it are
+            returned — this is the cursor for "the page before", a timestamp
+            rather than an offset, so two notifications written in the same
+            microsecond cannot make it skip one.
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: One page of the caller's notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Notification' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/notifications/unread_count:
+    get:
+      tags: [notifications]
+      operationId: getUnreadCount
+      summary: How many of the caller's notifications are unread
+      security:
+        - bearerAuth: [notifications:read]
+      description: |
+        The number an unread badge shows, and the reason `read_at` exists rather
+        than a boolean: "seen" is not "read", and a badge that counted seen would
+        fall the moment somebody scrolled past something.
+
+        The recipient is the caller's identity subject, resolved from the token —
+        never from the request — so this counts the caller's own unread
+        notifications and nobody else's.
+      responses:
+        '200':
+          description: The unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [unread]
+                    properties:
+                      unread:
+                        type: integer
+                        minimum: 0
+                        description: How many of the caller's notifications have not been read.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/notifications/{id}/seen:
+    parameters:
+      - $ref: '#/components/parameters/NotificationId'
+
+    post:
+      tags: [notifications]
+      operationId: markNotificationSeen
+      summary: Mark one of the caller's notifications seen
+      security:
+        - bearerAuth: [notifications:write]
+      description: |
+        Sets `seen_at` on one of the caller's notifications — "it appeared in a
+        list" — and answers with the row. Idempotent in the sense that matters: a
+        second call returns the same row with the **first** `seen_at` still in it,
+        because "when did they first see it" is a fact and a call that moved it
+        would be answering a different question with the same function.
+
+        **A row in another account, or one that is not this recipient's, is a
+        404**, and so is an id that is not a uuid at all. Not a 403: core's
+        conventions forbid a 403 that leaks the existence of a resource the caller
+        cannot see, and the two questions — "does this belong to you?" and "does
+        this exist?" — are the same question for a row the caller cannot see.
+
+        This operation takes no `Idempotency-Key`, and that is a decision rather
+        than an omission: the mark is idempotent by construction, so a retry is
+        safe without a key, and the header is for a POST whose repeat would do
+        the work twice.
+      responses:
+        '200':
+          description: The notification, with `seen_at` set
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/Notification' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotificationNotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/notifications/{id}/read:
+    parameters:
+      - $ref: '#/components/parameters/NotificationId'
+
+    post:
+      tags: [notifications]
+      operationId: markNotificationRead
+      summary: Mark one of the caller's notifications read
+      security:
+        - bearerAuth: [notifications:write]
+      description: |
+        Sets `read_at` — and `seen_at`, because opening something is a stronger
+        statement than seeing it, and a deep link can open a notification that was
+        never in a list. Answers with the row.
+
+        Idempotent, and it never clears either timestamp: a second call returns
+        the same row with the **first** `read_at` and `seen_at` still in them.
+        The database agrees — `check (read_at is null or seen_at is not null)`
+        refuses a row that is read and unseen — so these two functions cannot
+        disagree even if a future caller forgets.
+
+        **A row in another account, or one that is not this recipient's, is a
+        404**, for the reason `markNotificationSeen` gives.
+      responses:
+        '200':
+          description: The notification, with `read_at` and `seen_at` set
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/Notification' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotificationNotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
   /v1/webhook_endpoints:
     get:
       tags: [webhook endpoints]
@@ -1456,6 +1665,18 @@ components:
       description: The endpoint's uuid.
       schema: { type: string, format: uuid }
 
+    NotificationId:
+      name: id
+      in: path
+      required: true
+      description: |
+        The notification's uuid. Checked for shape only — a non-uuid is a 404
+        rather than a 422, because the two questions "does this belong to you?"
+        and "does this exist?" are the same question for a row the caller cannot
+        see, and a distinct answer for a malformed id would be an oracle that
+        tells a caller which ids are well-formed.
+      schema: { type: string, format: uuid }
+
     UnsubscribeToken:
       name: token
       in: path
@@ -1856,6 +2077,47 @@ components:
             Every notification type, always all of them and never a subset: a
             settings page should not have to guess what it has not been told.
           items: { $ref: '#/components/schemas/NotificationPreference' }
+
+    Notification:
+      type: object
+      required: [id, notification_event_id, seen_at, read_at]
+      description: |
+        One in-app notification: something that happened, addressed to one
+        person, with the two facts about whether they have looked at it.
+
+        `seen_at` and `read_at` are different facts and both are nullable:
+
+        * `seen_at` — "this appeared in a list". Nobody had to open anything; it
+          was on screen in an inbox. This is what a badge can honestly count.
+        * `read_at` — "this person opened it". A deliberate act.
+
+        A row that is read and not seen is not a state this service produces —
+        the database refuses it (`check (read_at is null or seen_at is not
+        null)`) — so `read_at` is never null while `seen_at` is.
+
+        **The recipient is not in the response.** It is the caller's own identity
+        subject by construction, so echoing it would be confirming a fact the
+        request never established. `account_id` is courier's tenancy key and is
+        not in the response for the same reason.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: courier's row id, which a client needs to mark a row.
+        notification_event_id:
+          type: string
+          format: uuid
+          description: The event this notification is about, for correlation.
+        seen_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When it first appeared in a list, or null if it never has.
+        read_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the person opened it, or null if they have not.
 
     WebhookEndpointStatus:
       type: string
@@ -2273,6 +2535,33 @@ components:
             title: Not found
             status: 404
             detail: No notification preferences with that user id.
+            code: not_found
+            trace_id: 0af7651916cd43dd8448eb211c80319c
+
+    NotificationNotFound:
+      description: |
+        The notification exists and belongs to another account, or is addressed to
+        a different recipient, or the id is not a uuid at all.
+
+        Not a 403, for the reason the webhook `NotFound` above gives: a 403 would
+        tell a caller that this id has a notification at all, which is the only
+        fact this 404 exists to withhold. The two questions — "does this belong
+        to you?" and "does this exist?" — are the same question for a row the
+        caller cannot see, and `Courier.Notifications` answers `{:error,
+        :not_found}` for exactly the two cases.
+
+        **A non-uuid id is a 404 too, and that is deliberate.** A distinct answer
+        for a malformed id would be an oracle that tells a caller which ids are
+        well-formed, and the shape of the error leaks nothing about whether the row
+        exists.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://errors.cafaye.com/not_found
+            title: Not found
+            status: 404
+            detail: No notification with that id.
             code: not_found
             trace_id: 0af7651916cd43dd8448eb211c80319c
 
