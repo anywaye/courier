@@ -422,7 +422,23 @@ defmodule Courier.Consumers do
   # page. The bound lives here rather than in the migration because it is a
   # property of the WRITE, and a changeset that raised on it would kill the
   # consumer mid-batch.
-  defp bound(reason), do: reason |> to_string() |> String.slice(0, 2_000)
+  #
+  # **A reason is not always a string, and `to_string/1` RAISES on a tuple.**
+  # The sessions-revoked consumer is the first handler whose refusal reaches
+  # here as `{:invalid_payload, changeset}` — a tuple, because `Courier.Mailers`
+  # answers a malformed payload with a changeset and the handler passes it
+  # through unchanged. `to_string/1` on a tuple raises `Protocol.UndefinedError`
+  # (tuples do not implement `String.Chars`), and the raise is inside
+  # `record_failure/3`, which `safe_apply/2`'s rescue does NOT cover — so it
+  # kills the loop, which is the one thing this module exists to prevent. The
+  # earlier handlers never hit this: `MemberInvited` refuses with an atom and
+  # `MemberAccepted`'s failure path is a rescued raise, which is a string. So
+  # the non-string arm is `inspect`, which never raises and keeps the reason
+  # readable on the row.
+  defp bound(reason) do
+    text = if is_binary(reason), do: reason, else: inspect(reason)
+    String.slice(text, 0, 2_000)
+  end
 
   defp batch_size, do: tuning()[:batch_size]
   @doc "The attempt cap, read at runtime so an operator can retune without a rebuild."

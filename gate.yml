@@ -354,7 +354,37 @@ gate:
       # **1520 is 665 + 855**, so the parts still sum to the whole — re-measured
       # by running the tier greps on this tree, not by adding the two branches'
       # deltas on paper.
-      minimum: 1520
+      #
+      # REMEASURED on the REBASED tree carrying BOTH the notifications reader AND
+      # the THIRD SUBSCRIPTION — the `identity.session.revoked` consumer, the
+      # first event courier can mail: whole suite 1520 -> 1544, no-database
+      # 665 -> 670 across the same 30 files, database tier 855 -> 874 across
+      # 46 -> 47 files.
+      #
+      # **The +24 split 5 / 19, and the split is read off the case templates the
+      # two tier greps use, not guessed.** `test/courier/mailers_test.exs` gained
+      # 5 in the no-database tier — it is a plain `ExUnit.Case` because its
+      # subject is the composed message, which needs no row. The new file,
+      # `test/courier/consumers/sessions_revoked_test.exs`, is a
+      # `Courier.DataCase` because every claim in it is a claim about rows: the
+      # `consumed_events` row the loop marks, the outbox row the send writes,
+      # and the dedupe the primary key enforces. Two existing files changed
+      # assertions without gaining tests: `notification_preferences_test.exs`
+      # and the controller test both enumerate the types `Mailers.types()`
+      # returns, and the fourth type is now one of them.
+      #
+      # **The database tier's file count is 47, not 46, and that is the rebase
+      # rather than a drift**: master added
+      # `test/courier_web/controllers/notifications_controller_test.exs` and this
+      # branch added `test/courier/consumers/sessions_revoked_test.exs`, both
+      # `Courier.DataCase`/`CourierWeb.ConnCase` files, so the merged tree carries
+      # 45 + 2. The no-database tier's 30 files are unchanged because neither
+      # packet added a file to it — `mailers_test.exs` already existed.
+      #
+      # **1544 is 670 + 874**, so the parts still sum to the whole — re-measured
+      # by running the tier greps on this tree, not by adding the two branches'
+      # deltas on paper.
+      minimum: 1544
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

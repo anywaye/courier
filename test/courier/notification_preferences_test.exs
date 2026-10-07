@@ -25,7 +25,13 @@ defmodule Courier.NotificationPreferencesTest do
   @account "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
   @other_account "2b3c4d5e-6f7a-4b9c-8d1e-2f3a4b5c6d7e"
 
-  @types ~w(welcome password_reset team_invitation)
+  # The four types `Courier.Mailers` can send. `account_security` is the fourth,
+  # added by the sessions-revoked consumer — and it is in this list because
+  # `NotificationPreferences.types/0` delegates to `Mailers.types/0`: a type
+  # courier can send is a type a user can be asked about. The core enum gap
+  # (the delivered-event schema still freezes three) is reported, not hidden
+  # here: `REPORT-courier-consumer-sessionsrevoked-01.md`.
+  @types ~w(welcome password_reset team_invitation account_security)
 
   # THE ACCOUNT THIS FILE WRITES AS. `notification_preferences` is protected, so
   # an INSERT with no identity set is refused `42501`. See `Courier.DataCase`.

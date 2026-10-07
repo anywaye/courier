@@ -224,7 +224,10 @@ defmodule Courier.MailersTest do
     test "the email-address reason renders the email wording, from the one template" do
       # The branch is on the mail, not on the type: one template, two renderings.
       assert {:ok, email} =
-               Mailers.build(:account_security, account_security_payload(%{reason: "email address changed"}))
+               Mailers.build(
+                 :account_security,
+                 account_security_payload(%{reason: "email address changed"})
+               )
 
       assert email.html_body =~ "The email address on your account was changed."
       assert email.text_body =~ "The email address on your account was changed."

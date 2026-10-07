@@ -243,10 +243,13 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert conn.status == 200
 
+      # Four preferences, not three: `account_security` is the fourth type
+      # `Courier.Mailers` can send, and `NotificationPreferences.types/0`
+      # delegates to it — so the defaults cover it too.
       assert %{
                "data" => %{
                  "user_id" => @user_id,
-                 "preferences" => [_welcome, _reset, _invitation]
+                 "preferences" => [_welcome, _reset, _invitation, _security]
                }
              } =
                body(conn)
@@ -322,8 +325,11 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert %{"data" => %{"user_id" => @user_id, "preferences" => preferences}} = body(conn)
 
+      # The four types `Courier.Mailers` can send — `account_security` is the
+      # fourth, added by the sessions-revoked consumer, and it is in this list
+      # because `NotificationPreferences.types/0` delegates to `Mailers.types/0`.
       assert Enum.map(preferences, & &1["notification_type"]) ==
-               ~w(welcome password_reset team_invitation)
+               ~w(welcome password_reset team_invitation account_security)
 
       assert Enum.all?(preferences, &(&1["email_enabled"] and &1["push_enabled"]))
     end
@@ -358,7 +364,9 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
         get(owner_conn(), "/v1/notification_preferences/00000000-0000-0000-0000-000000000000")
 
       assert conn.status == 200
-      assert %{"data" => %{"preferences" => [_welcome, _reset, _invitation]}} = body(conn)
+
+      assert %{"data" => %{"preferences" => [_welcome, _reset, _invitation, _security]}} =
+               body(conn)
     end
   end
 

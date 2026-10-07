@@ -126,7 +126,14 @@ defmodule Courier.Consumers.SessionsRevoked do
   # The publisher validates the same set at build time; this is the consumer's
   # own copy of the boundary, because the publisher's validation is not the
   # consumer's.
-  @reasons ~w(password reset email address changed)
+  #
+  # A LIST OF TWO STRINGS and not `~w(...)`: the sigil splits on whitespace, so
+  # `~w(password reset email address changed)` is five words and a reason is a
+  # phrase. The first draft had exactly that, and every valid reason was
+  # refused as unknown — the handler would not mail the one event it was
+  # written for, which reads exactly like a registry misconfiguration and is
+  # not one.
+  @reasons ["password reset", "email address changed"]
 
   @event_type "identity.session.revoked"
 
@@ -164,12 +171,16 @@ defmodule Courier.Consumers.SessionsRevoked do
     * `{:error, :not_this_event}` — a type this handler is not for
     * `{:error, {:incomplete_payload, field}}` — a payload field missing, or not
       a string
-    * `{:error, {:unknown_reason, reason}}` — a reason outside the closed set
 
   **The shape is checked before the value is read**, and that ordering is the
   point: `to_string/1` on a list would render `["owner@example.com"]` into a
   revocation naming a string that was never there. A refusal produced *by* the
   malformed field cannot quote it correctly.
+
+  The reason's VALUE is not checked here — only its shape. That check belongs to
+  `deliver/1`, which is where the semantic refusals live, the same way
+  `Courier.Consumers.MemberInvited` refuses the unrecoverable `url` in its own
+  `deliver/1` and not in `parse/1`.
   """
   @spec handle(ConsumedEvent.t() | map()) :: {:ok, map()} | {:error, term()}
   def handle(row) do
@@ -184,8 +195,7 @@ defmodule Courier.Consumers.SessionsRevoked do
   def parse(%ConsumedEvent{id: id} = event) when is_binary(id) and id != "" do
     with :ok <- fetch_type(event),
          {:ok, data} <- fetch_data(event),
-         {:ok, fields} <- fetch_fields(data),
-         :ok <- fetch_reason(fields) do
+         {:ok, fields} <- fetch_fields(data) do
       {:ok, fields}
     end
   end
@@ -196,23 +206,29 @@ defmodule Courier.Consumers.SessionsRevoked do
   @doc """
   Sends the notice, or passes `Courier.Deliver`'s answer through.
 
-  `{:ok, %{message_id: _, event_id: _}}` when the payload can be rendered. On a
-  refusal the answer is `Courier.Deliver`'s own, unchanged — see the moduledoc
-  on why this handler adds no vocabulary of its own.
+  `{:ok, %{message_id: _, event_id: _}}` when the payload can be rendered, or
+  `{:error, {:unknown_reason, reason}}` when the reason is outside the closed
+  set. On any other refusal the answer is `Courier.Deliver`'s own, unchanged —
+  see the moduledoc on why this handler adds no vocabulary of its own.
 
-  **The reason was validated in `parse/1`, and that ordering is the point**: a
-  refusal produced here, after the provider was dialled, would leave an outbox
-  row and a `courier.email.delivered` event for mail nobody received — the
-  silent-default failure the adapter work in this repository exists to end,
-  reached from the consumer side.
+  **The reason is validated HERE, before anything is dialled, and that ordering
+  is the point**: a refusal produced after the provider was dialled would leave an
+  outbox row and a `courier.email.delivered` event for mail nobody received —
+  the silent-default failure the adapter work in this repository exists to end,
+  reached from the consumer side. The check lives in `deliver/1` and not in
+  `parse/1` so that a caller which reaches past `parse/1` — a test, a future
+  caller — is refused by the same boundary rather than rendering the wrong
+  reason.
   """
   @spec deliver(revocation()) :: {:ok, map()} | {:error, term()}
   def deliver(revocation) do
-    Deliver.account_security(%{
-      "user_id" => revocation.user_id,
-      "email" => revocation.email,
-      "reason" => revocation.reason
-    })
+    with :ok <- fetch_reason(revocation) do
+      Deliver.account_security(%{
+        "user_id" => revocation.user_id,
+        "email" => revocation.email,
+        "reason" => revocation.reason
+      })
+    end
   end
 
   # THE CLOSED SET, CHECKED HERE AND NOWHERE ELSE IN THE HANDLER.

@@ -206,13 +206,18 @@ defmodule Courier.Consumers.SessionsRevokedTest do
       # happened forces the reader to guess, and the two facts have different
       # remediations. Mutation: make the template ignore `@reason` and this
       # fails.
-      {:ok, revocation} = SessionsRevoked.parse(row(%{data: %{@payload | "reason" => "email address changed"}}))
+      {:ok, revocation} =
+        SessionsRevoked.parse(row(%{data: %{@payload | "reason" => "email address changed"}}))
 
       assert {:ok, _} = SessionsRevoked.deliver(revocation)
 
+      # The `refute` is NOT the last expression: `refute` returns `false` on
+      # success (`not assert(!value)`), and `assert_email_sent` asserts the
+      # fun's return value — a fun ending in `refute` fails having proved
+      # exactly what it claimed.
       assert_email_sent(fn email ->
-        assert email.text_body =~ "The email address on your account was changed."
         refute email.text_body =~ "Your password was changed."
+        assert email.text_body =~ "The email address on your account was changed."
       end)
     end
 
@@ -231,7 +236,8 @@ defmodule Courier.Consumers.SessionsRevokedTest do
       # name, and no row claims a notice went out: a notice saying "your email
       # address was moved" about an admin revocation is a false claim about
       # somebody's account, delivered to their inbox.
-      {:ok, revocation} = SessionsRevoked.parse(row(%{data: %{@payload | "reason" => "account deleted"}}))
+      {:ok, revocation} =
+        SessionsRevoked.parse(row(%{data: %{@payload | "reason" => "account deleted"}}))
 
       assert {:error, {:unknown_reason, "account deleted"}} = SessionsRevoked.deliver(revocation)
 
@@ -240,15 +246,16 @@ defmodule Courier.Consumers.SessionsRevokedTest do
     end
 
     test "refuses a missing reason before anything is dialled" do
-      # `Courier.Mailers` requires the `reason` for this type, so a payload
-      # without one is refused by the renderer rather than rendered into the
-      # wrong branch — the template cannot render a branch for a reason it was
-      # not given.
-      {:ok, revocation} = SessionsRevoked.parse(row(%{data: Map.delete(@payload, "reason")}))
+      # The handler requires all three fields, so a payload without a reason is
+      # refused by NAME in parse — before anything is dialled. The renderer's
+      # own refusal of a reason-less payload (`{:invalid_payload, changeset}`)
+      # is `Courier.Mailers`' to assert, and it is asserted in
+      # `Courier.MailersTest` — this file proves the handler's half: the
+      # refusal happens before the provider is reached, so no row claims a
+      # notice went out.
+      assert {:error, {:incomplete_payload, "reason"}} =
+               SessionsRevoked.parse(row(%{data: Map.delete(@payload, "reason")}))
 
-      assert {:error, {:invalid_payload, changeset}} = SessionsRevoked.deliver(revocation)
-
-      assert %{reason: ["can't be blank"]} = errors_on(changeset)
       assert_no_email_sent()
     end
   end
@@ -260,7 +267,8 @@ defmodule Courier.Consumers.SessionsRevokedTest do
       # the real code path, and the shape the loop records. The handler adds no
       # vocabulary of its own: whatever `Courier.Deliver` answers is what the
       # handler answers.
-      {:ok, revocation} = SessionsRevoked.parse(row(%{data: %{@payload | "email" => "not-an-email"}}))
+      {:ok, revocation} =
+        SessionsRevoked.parse(row(%{data: %{@payload | "email" => "not-an-email"}}))
 
       assert {:error, {:invalid_payload, _changeset}} = SessionsRevoked.deliver(revocation)
     end
@@ -271,13 +279,15 @@ defmodule Courier.Consumers.SessionsRevokedTest do
       # `Courier.Deliver`'s or `Courier.Mailers`', unchanged. A handler that
       # invented a third dialect for them would put every future caller in the
       # position of matching on strings nobody else produces.
-      {:ok, revocation} = SessionsRevoked.parse(row(%{data: %{@payload | "reason" => "account deleted"}}))
+      {:ok, revocation} =
+        SessionsRevoked.parse(row(%{data: %{@payload | "reason" => "account deleted"}}))
 
       # Its own, because the reason is outside the closed set.
       assert {:error, {:unknown_reason, "account deleted"}} = SessionsRevoked.deliver(revocation)
 
       # `Courier.Deliver`'s, once the reason is valid and the address is not.
-      {:ok, revocation} = SessionsRevoked.parse(row(%{data: %{@payload | "email" => "not-an-email"}}))
+      {:ok, revocation} =
+        SessionsRevoked.parse(row(%{data: %{@payload | "email" => "not-an-email"}}))
 
       assert {:error, {:invalid_payload, _changeset}} = SessionsRevoked.deliver(revocation)
     end
@@ -334,6 +344,7 @@ defmodule Courier.Consumers.SessionsRevokedTest do
       summary = Consumers.consume()
 
       assert summary.handled == 1
+
       assert_email_sent(fn email ->
         assert email.text_body =~ "Your password was changed."
       end)
