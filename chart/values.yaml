@@ -120,6 +120,15 @@ ingress:
 # in git, which is the one thing the pull-based loop exists to prevent.
 env:
   PORT: "4000"
+  # The SSL redirect opt-in. `CourierWeb.Plugs.ForceSSL` redirects every
+  # plain-HTTP request to https only when this is `"true"`; anything else —
+  # including this default — serves plain HTTP. Genuine prod turns it on in
+  # its values commit; the launch tier and local compose leave it off,
+  # because courier-to-courier traffic inside those networks is plain HTTP
+  # on a private network and a redirect 307s every mail send. `/healthz`
+  # and `/readyz` answer plain HTTP either way, so the readiness probe
+  # never reads a redirect as a dead service.
+  COURIER_FORCE_SSL: "false"
 
 # What the container is allowed to ask for and keep. Requests are what
 # the scheduler places the pod on the basis of; limits are what it is

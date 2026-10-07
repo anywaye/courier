@@ -292,18 +292,12 @@ defmodule CourierWeb.RouterTest do
     |> Enum.sort()
   end
 
-  describe "in the production environment" do
-    setup do
-      # config/prod.exs is compile-time configuration, so it is not in the test
-      # environment's config. Read it back the way a release would.
-      config = Config.Reader.read!("config/prod.exs", env: :prod)
-      {:ok, force_ssl: config[:courier][CourierWeb.Endpoint][:force_ssl]}
-    end
-
-    test "the probes are exempt from the SSL redirect", %{force_ssl: force_ssl} do
-      # Otherwise a load balancer or orchestrator probing a released courier gets
-      # a 301 to https and reads it as a dead service.
-      assert ["/healthz", "/readyz"] == force_ssl[:exclude][:paths]
-    end
-  end
+  # No `describe "in the production environment"` block, and the absence is
+  # deliberate rather than forgotten. It used to read `config/prod.exs` and
+  # assert the probes were exempt from its compile-time `force_ssl` — but that
+  # key is gone: `force_ssl` is compile-time endpoint configuration no env var
+  # can switch, so the redirect moved to `CourierWeb.Plugs.ForceSSL`, gated on
+  # the `COURIER_FORCE_SSL` runtime opt-in. The probe exemption is asserted
+  # there (`test/courier_web/plugs/force_ssl_test.exs`), over the plug that
+  # enforces it, rather than over a config file that no longer decides it.
 end

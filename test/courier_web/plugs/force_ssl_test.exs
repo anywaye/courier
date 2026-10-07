@@ -115,6 +115,7 @@ defmodule CourierWeb.Plugs.ForceSSLTest do
       assert conn.halted
       assert conn.status == 307
       [location] = Plug.Conn.get_resp_header(conn, "location")
+
       assert location =~ ~r/^https:\/\//,
              "expected an https redirect, got #{inspect(location)}"
     end

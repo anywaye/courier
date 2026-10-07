@@ -44,6 +44,13 @@ defmodule CourierWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # The SSL redirect, gated on the `COURIER_FORCE_SSL` runtime opt-in rather
+  # than on compile-time configuration — see `CourierWeb.Plugs.ForceSSL` for
+  # why that key cannot live in `config/prod.exs`. It runs here, before the
+  # parsers: a request that will be redirected has no body worth parsing, and
+  # a body that cannot be parsed must not be answered before the redirect.
+  plug CourierWeb.Plugs.ForceSSL
+
   # Plug.Parsers, with courier's answer for a body it cannot parse — see
   # CourierWeb.Plugs.ParseBody for why that is a module of its own.
   plug CourierWeb.Plugs.ParseBody,

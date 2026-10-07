@@ -507,7 +507,24 @@ gate:
   # measurement with zero headroom, for the reason the telemetry
   # paragraph gives: the next packet that adds a test goes red until
   # it raises this number.
-  minimum: 1593
+  #
+  # REMEASURED on the tree carrying the force_ssl RUNTIME OPT-IN
+  # (w100): whole 1593 -> 1601, no-database 715 -> 723 across 32 ->
+  # 33 files, database UNCHANGED at 878 across the same 47 files.
+  #
+  # **The +8 are the compile-time redirect's removal and its
+  # replacement, and the split is read off the case templates, not
+  # guessed**: one new file,
+  # `test/courier_web/plugs/force_ssl_test.exs`, a plain
+  # `ExUnit.Case` (it toggles application env, so `async: false`
+  # with the reason stated) carrying 9 tests — and one test
+  # removed, the `router_test.exs` block that asserted the probes'
+  # exemption from the `force_ssl` key this packet deleted. The
+  # exemption is now asserted over the plug that enforces it.
+  #
+  # **1601 is 723 + 878**, so the parts still sum to the whole —
+  # re-measured by running the tier greps on this tree.
+  minimum: 1601
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

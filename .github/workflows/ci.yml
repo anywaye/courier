@@ -272,7 +272,18 @@ jobs:
           # no-database tier's file count is 32, not the 31 the w85
           # paragraph records. The raise is to the measurement, not to
           # the measurement plus the old floor's error.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1593
+          #
+          # AND IT MOVES AGAIN for the force_ssl RUNTIME OPT-IN (w100):
+          # whole 1593 -> 1601, no-database 715 -> 723 (32 -> 33 files),
+          # database UNCHANGED at 878 (47 files). The +8 are the
+          # compile-time redirect's removal and its replacement: one new
+          # file, `test/courier_web/plugs/force_ssl_test.exs` (9 tests,
+          # a plain `ExUnit.Case` because its subject is the plug and the
+          # config files), minus the `router_test.exs` block asserting the
+          # probes' exemption from the deleted key. 1601 is 723 + 878, so
+          # the parts still sum to the whole — re-measured by running the
+          # tier greps on this tree.
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1601
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -545,7 +556,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (715 tests, 32 files)
+      - name: tier — no database (723 tests, 33 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -584,7 +595,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 715
+          bin/assert-suite "$log" "no database" 723
 
       - name: tier — database (878 tests, 47 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase

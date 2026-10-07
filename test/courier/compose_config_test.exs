@@ -67,6 +67,8 @@ defmodule Courier.ComposeConfigTest do
     "COURIER_ERROR_SINK_DSN" => "the relay's sink; no sink means errors are counted, not sent",
     "COURIER_RELEASE" => "a release label with a default",
     "DEPLOYMENT_ENVIRONMENT" => "a resource attribute with a default",
+    "COURIER_FORCE_SSL" =>
+      "the SSL redirect opt-in; absent means plain HTTP, which is what the dev stack wants",
     "PHX_HOST" => "defaults to example.com — see the follow-up in the packet report",
     "PHX_SERVER" => "behind a proxy in kit's stack; ignored when unset",
     "POOL_SIZE" => "the repo size, defaulted at runtime.exs",

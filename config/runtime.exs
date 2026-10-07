@@ -42,6 +42,33 @@ config :courier, CourierWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
 # ---------------------------------------------------------------------------
+# THE SSL REDIRECT, AND IT IS OFF UNLESS A DEPLOYER SAYS OTHERWISE.
+#
+# Genuine prod sets `COURIER_FORCE_SSL=true` (or `1`): `CourierWeb.Plugs.ForceSSL`
+# then redirects every plain-HTTP request to https, exactly as compile-time
+# `force_ssl` in `config/prod.exs` used to — except that key is COMPILE-time
+# endpoint configuration and has no effect here, so prod.exs sets nothing and
+# this flag is the whole mechanism. Everything without the signal — local
+# compose, the launch tier, CI — serves plain HTTP, which is what the
+# courier-to-courier traffic inside those networks needs.
+#
+# `true`/`1`, and nothing else counts: an unset or misspelled value is plain
+# HTTP rather than a crash, because the failure direction of a wrong redirect
+# setting is every mail step 307'd, while the failure direction of plain HTTP
+# behind a TLS-terminating proxy is a redirect the proxy already performs.
+# NOT a boot requirement for the same reason: refusing to start over an
+# unset HTTPS preference would take a healthy release down for something no
+# request needs.
+#
+# The probes stay exempt regardless — `/healthz` and `/readyz` answer plain
+# HTTP in every environment, enforced in the plug itself rather than here, so
+# a second setting cannot disagree with this one about what is exempt.
+# ---------------------------------------------------------------------------
+config :courier,
+  :force_ssl_enabled,
+  System.get_env("COURIER_FORCE_SSL") in ~w(true 1)
+
+# ---------------------------------------------------------------------------
 # OPENTELEMETRY. In every environment, and that is the point.
 #
 # A developer running `mix phx.server` exports into the collector that ships with

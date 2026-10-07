@@ -14,6 +14,19 @@ document lands in both files in one commit, because core asserts the two agree.
 
 ### Added
 
+- **The SSL redirect is a runtime opt-in — `COURIER_FORCE_SSL` — so the
+  launch stack can send mail.** `config/prod.exs` set compile-time
+  `force_ssl` excluding only `localhost`/`127.0.0.1`, and the compose network
+  talks courier-to-courier over plain HTTP on a private network: every
+  `POST /v1/messages` on a non-localhost peer got `307 → https → 405`, which
+  is what kept verify, reset and invitation mail RED in the site loop-proof.
+  Genuine prod sets `COURIER_FORCE_SSL=true` and gets the redirect;
+  everything without it serves plain HTTP. `/healthz` and `/readyz` answer
+  plain HTTP either way. Proved red-first in
+  `test/courier_web/plugs/force_ssl_test.exs` (9 tests: the compile-time key
+  is gone, the signal maps onto the flag, the plug passes with it absent and
+  307s with it present, the probes exempt in both).
+
 - **A push to master now publishes courier's image and chart — the publish
   loop's missing end.** The substrate's Argo `Application` reads
   `repoURL: oci://ghcr.io/cafaye/charts` with `chart: courier` and
