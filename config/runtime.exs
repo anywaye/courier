@@ -103,11 +103,20 @@ if config_env() != :test do
   # 503 on every authenticated request: loud, diagnosable, retriable, and it does
   # not stop the process — so making a dependency's address a boot requirement
   # would turn "identity moved" into a stop-the-world upgrade gate for a service
-  # that is otherwise fine. `http://identity:4000` is the compose-network name,
-  # the same shape as `COURIER_OTEL_ENDPOINT`'s default.
+  # that is otherwise fine. `http://identity:8080` is the compose-network name
+  # AND identity's own port: identity's Dockerfile `EXPOSE 8080` and its compose
+  # file sets `PORT: "8080"`. (4000 is courier's OWN Phoenix port — the
+  # copy-paste source of the bug this packet fixes.)
+  #
+  # THIS DEFAULT IS THE SINGLE AUTHORITY, and the other statements of it defer
+  # or agree: `docker-compose.yml` deliberately does not restate it, and
+  # `Courier.Principal.Introspection.url/0`'s own fallback is the same value.
+  # `test/courier/principal/introspection_url_test.exs` holds all of them —
+  # runtime.exs, url/0, the compose file, `config/deploy.yml`, this README's
+  # table — to the one port, and greps the tree for the two wrong values.
   config :courier,
          :identity_url,
-         System.get_env("COURIER_IDENTITY_URL", "http://identity:4000")
+         System.get_env("COURIER_IDENTITY_URL", "http://identity:8080")
 end
 
 if config_env() == :prod do
@@ -121,6 +130,18 @@ if config_env() == :prod do
   # new key, redeploy with the new value, revoke the old one. There is no cache
   # to invalidate — see `Courier.Principal.Introspection`'s moduledoc for why
   # there is not one, which is a security property and not an oversight.
+  #
+  # THE PROVISIONING REQUIREMENT, AND IT IS THE ONE THING AN OPERATOR CANNOT
+  # INFER FROM THIS REPOSITORY: this variable must hold the SAME identity-issued
+  # API key that identity presents as its own `COURIER_TOKEN` when it calls
+  # courier. identity's introspection endpoint lets a token caller introspect
+  # ONLY ITSELF ("an api key may only introspect itself",
+  # identity/internal/httpapi/apikeys.go), so the seam works when one key is
+  # held by both services: identity presents it outbound, courier presents it
+  # to introspect the inbound request. Two distinct keys produce identity's 403
+  # and courier's 503 — and the failure looks exactly like a network fault.
+  # Tightening identity's rule is identity's decision (packet m65), not
+  # courier's; courier's side of the contract is this sentence.
   #
   # IT IS A SECRET AND IT IS HERE, not in `config/config.exs`: a committed
   # credential is a credential in git, and every deployment which forgot to set

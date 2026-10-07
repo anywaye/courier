@@ -40,7 +40,7 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
   @answer :courier_introspection_answer
   @failure_path "/v1/introspections/__transport_failure__"
 
-  @origin "http://identity.test:4000"
+  @origin "http://identity.test:8080"
   @url @origin <> "/v1/introspections"
   @service_token "cafaye_couriers-own-service-credential"
   @caller_token "cafaye_caller-token-for-the-suite"

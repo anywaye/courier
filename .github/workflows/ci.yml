@@ -206,7 +206,16 @@ jobs:
           # database 855 -> 874 (47 files). 1544 is 670 + 874, re-measured by
           # running the tier greps on this tree, not by adding the two branches'
           # deltas on paper.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1544
+          #
+          # REMEASURED on the tree carrying the introspection seam's address and
+          # key (w64): whole 1544 -> 1551, no-database 670 -> 677 (31 files),
+          # database unchanged at 874 (47 files). All 7 are in
+          # `test/courier/principal/introspection_url_test.exs`, which reads
+          # files from disk and touches no `Courier.Repo` — the same placement
+          # rule as the backup packet's cross-file contract test: a claim about
+          # what the tree STATES is a claim no database can check. 1551 is
+          # 677 + 874, so the parts still sum to the whole.
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1551
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -479,7 +488,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (670 tests, 30 files)
+      - name: tier — no database (677 tests, 31 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -493,6 +502,11 @@ jobs:
         # tested with no database at all. `CourierWeb.ErrorReportingTest` is in
         # the other tier because it stops `Courier.Repo` under the application
         # supervisor to prove the same thing from the other side — and
+        # `test/courier/principal/introspection_url_test.exs` joined this tier
+        # with w64: its subject is what the TREE states (the port identity is
+        # dialed on, in four files that disagreed), which is a claim about files
+        # on disk and not about a row — and its tree-wide grep is the one check
+        # that would catch a wrong value in a file no thought of.
         # `test/courier/telemetry_canary_test.exs` joined it, because the
         # one-click unsubscribe's 404 is the first request in that file that
         # reaches a repo at all.
@@ -513,7 +527,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 670
+          bin/assert-suite "$log" "no database" 677
 
       - name: tier — database (874 tests, 47 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -614,8 +628,8 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1544 passed | \`bin/assert-suite\` |"
-            echo "| no database, 30 files | 670 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1551 passed | \`bin/assert-suite\` |"
+            echo "| no database, 31 files | 677 passed | tier step |"
             echo "| database, 47 files | 874 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"

@@ -174,8 +174,10 @@ config :courier, :introspection_req_options, plug: {Req.Test, :courier_introspec
 
 # Where identity is, for the resolver's own assertions. Never dialled in this
 # environment — the transport above answers instead — so a test that reached the
-# network would fail rather than pass quietly.
-config :courier, :identity_url, "http://identity.test:4000"
+# network would fail rather than pass quietly. The port is identity's own
+# (8080), the same fact `config/runtime.exs` defaults; a test holds the two
+# together.
+config :courier, :identity_url, "http://identity.test:8080"
 
 # courier's OWN credential for introspection, and this is a FIXTURE and not a
 # default, on the same terms as `COURIER_SECRET_BOX_KEY` above: `config/runtime.exs`

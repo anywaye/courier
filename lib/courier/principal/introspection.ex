@@ -26,6 +26,19 @@ defmodule Courier.Principal.Introspection do
       (`POST /v1/accounts/{account_id}/api-keys`), redeploy with the new value,
       revoke the old one. There is no cache to invalidate, which is the second
       half of why there is no cache (below).
+    * **It must be the same key identity presents as its `COURIER_TOKEN`.**
+      This is the one provisioning requirement of the seam, and it cannot be
+      inferred from courier's source. identity's introspection endpoint lets a
+      token caller introspect **only itself** — "an api key may only introspect
+      itself" (`identity/internal/httpapi/apikeys.go`) — so the seam works when
+      ONE key is held by both services: identity presents it outbound on its
+      call to `POST /v1/messages`, and courier presents it to introspect the
+      inbound request. The rule then reads exactly right: courier is asking "is
+      this bearer a live key, and is it the one I hold?", and only identity's
+      own key answers yes. **Two distinct keys produce identity's 403 and
+      courier's 503**, and the symptom is indistinguishable from a network
+      fault. Tightening identity's rule is identity's decision (packet m65),
+      not courier's; courier reports the 403 as a 503 and says so here.
 
   ## Why the credential is not the caller's own token, forwarded
 
@@ -122,9 +135,15 @@ defmodule Courier.Principal.Introspection do
   an unset variable would turn a dependency's address into a stop-the-world
   upgrade gate. The **credential** has no default, because a default credential is
   a credential in version control.
+
+  The fallback is `http://identity:8080` — the same value `config/runtime.exs`
+  defaults the variable to, and identity's own port. The two statements of one
+  fact are held together by
+  `test/courier/principal/introspection_url_test.exs`; a third default that
+  disagrees is a resolver pointed at a port nobody listens on.
   """
   @spec url() :: String.t()
-  def url, do: Application.get_env(:courier, :identity_url, "http://localhost:4001")
+  def url, do: Application.get_env(:courier, :identity_url, "http://identity:8080")
 
   @doc """
   The introspection path, appended to `url/0`.

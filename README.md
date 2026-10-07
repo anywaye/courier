@@ -244,8 +244,8 @@ identity's, and identity's outage is courier's outage.** Both surface as a `503`
 
 | environment variable | required | what it is |
 | --- | --- | --- |
-| `COURIER_IDENTITY_TOKEN` | **in prod** | courier's own scoped API token, presented as the `Authorization` header on the introspection call. A credential: mint one with `POST /v1/accounts/{account_id}/api-keys` in an account that belongs to courier and nothing else, and rotate by minting a new one, redeploying, and revoking the old. |
-| `COURIER_IDENTITY_URL` | no | identity's base URL. Defaults to `http://identity:4000`, the compose-network name. A wrong URL is a loud `503`, not a crash. |
+| `COURIER_IDENTITY_TOKEN` | **in prod** | courier's own scoped API token, presented as the `Authorization` header on the introspection call. A credential: mint one with `POST /v1/accounts/{account_id}/api-keys` in an account that belongs to courier and nothing else, and rotate by minting a new one, redeploying, and revoking the old. **It must be the same key identity presents as its own `COURIER_TOKEN`** — identity lets a token caller introspect only itself, so two distinct keys produce identity's `403` and courier's `503`, and the symptom looks like a network fault. |
+| `COURIER_IDENTITY_URL` | no | identity's base URL. Defaults to `http://identity:8080` — the compose-network name and identity's own port. A wrong URL is a loud `503`, not a crash. |
 
 Four things about the boundary, each one tested:
 
