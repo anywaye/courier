@@ -30,23 +30,25 @@ defmodule CourierWeb.Router do
   # why a seam that authenticates nobody is the right default until identity's
   # JWT verifier lands.
   #
-  # **The second plug is the database half of the same question, and the order is
-  # the mechanism.** `CourierWeb.Plugs.TenantIdentity` puts
-  # `conn.assigns.current_account` where Postgres can see it — `Principal` is what
-  # puts it on the `conn`, and without it `TenantIdentity` has nothing to write —
-  # so the row-level-security policies on `idempotency_keys`,
-  # `notification_preferences` and `webhook_endpoints` have an identity to key on.
-  # It is in THIS pipeline and not a second one because a pipeline somebody can
-  # list in either order is a pipeline that can be wrong in the order that matters:
-  # "the query ran before the identity was set" is one of the two ways this
-  # control fails, and the other is a connection that carries one account's
-  # identity into the next request.
+  # **The database half of the same question lives in each action, not in this
+  # pipeline, and the placement is the mechanism.** `CourierWeb.Plugs.Principal`
+  # puts the account on the `conn`; each controller action and
+  # `CourierWeb.Plugs.Idempotency` then opens its own `Courier.Tenancy.
+  # with_account/3` transaction around its database work, so the
+  # row-level-security policies on `idempotency_keys`,
+  # `notification_preferences`, `webhook_endpoints`, `notification_events` and
+  # `notifications` have an identity to key on. A plug in THIS pipeline cannot
+  # do it for them: a plug's `call/2` returns before the downstream plugs and
+  # the controller run, so a transaction it opened is already committed — and a
+  # commit discards the transaction-local identity — by the time the first
+  # protected write happens. The previous shape did exactly that
+  # (`CourierWeb.Plugs.TenantIdentity`, removed), and every authenticated
+  # request died on its first protected write with a 42501.
   #
-  # `Principal` halts a 401, so an unauthenticated request never opens the
-  # transaction `TenantIdentity` would have opened.
+  # `Principal` halts a 401, so an unauthenticated request never reaches a
+  # scoped action.
   pipeline :authenticated do
     plug CourierWeb.Plugs.Principal
-    plug CourierWeb.Plugs.TenantIdentity
   end
 
   # `Idempotency-Key`, on the mutating POSTs and nothing else. Core requires it on
@@ -269,8 +271,9 @@ defmodule CourierWeb.Router do
   #     was ever protected, so there is no policy being loosened to keep this URL
   #     working.
   #
-  # The arrangement is therefore: `/v1/*` is identity-scoped by
-  # `CourierWeb.Plugs.TenantIdentity`; `/unsubscribe/:token`, `/inbound/resend`
+  # The arrangement is therefore: `/v1/*` is identity-scoped by each action's
+  # own `Courier.Tenancy.with_account/3` transaction (and the `:idempotent`
+  # plug's, for its claim); `/unsubscribe/:token`, `/inbound/resend`
   # and the two probes reach no policy and so need no identity. If a future change
   # makes one of them touch `notification_preferences` or `webhook_endpoints`,
   # `reports/courier-row-level-security/prove-unauthenticated.sh` goes red on its

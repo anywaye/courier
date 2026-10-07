@@ -232,6 +232,30 @@ defmodule Courier.Deliver do
   # whole thing — a transactional type comes back untouched with no row, a bulk one
   # comes back with the two RFC 8058 headers and a token — so the conditional does
   # not live in this module and cannot drift from the kind table.
+  #
+  # **The failure paths below return values, and never `Repo.rollback/1`.**
+  # A rollback is control flow here — on every path that reaches one, nothing
+  # has been written yet (`decorate_for/3` mints nothing for the transactional
+  # types courier sends today, and a failed insert wrote nothing) — so
+  # committing an empty transaction is observably identical to rolling one
+  # back. The reason it is written this way rather than the shorter way is
+  # that this transaction nests: `POST /v1/messages` runs it inside the
+  # request's own `Courier.Tenancy.with_account/3` scope, and nested Ecto
+  # transactions are NOT savepoints — an inner rollback fails the OUTER
+  # commit as `{:error, :rollback}`, turning a provider refusal the caller
+  # should retry into a 503 about scoping and crashing the idempotency store
+  # in `before_send` on the already-doomed transaction. Measured, not
+  # reasoned: those are the two red tests this shape answers.
+  # (`Courier.Idempotency.claim/1` keeps the same rule for the same reason,
+  # with `mode: :savepoint` on the operation rather than a transaction.)
+  #
+  # The one direction this is weaker than a rollback, stated rather than
+  # hidden: a FUTURE bulk type's token row, minted by `decorate_for/3`
+  # before the provider is dialled, would COMMIT on a provider refusal
+  # instead of rolling back with the send. No bulk type exists today, and
+  # adding one is a change in `cafaye/core` (the event enum) plus one row in
+  # `Courier.Mailers.kinds/0` — whoever makes that change must revisit this
+  # function, and this paragraph is how they will know.
   defp send_and_record(type, user_id, email) do
     message_id = "courier-" <> Ecto.UUID.generate()
 
@@ -240,28 +264,38 @@ defmodule Courier.Deliver do
              {:ok, email} ->
                case Mailer.deliver(tag(email, message_id)) do
                  {:ok, _metadata} -> record(type, user_id, message_id, email)
-                 {:error, reason} -> Repo.rollback({:provider, reason})
+                 {:error, reason} -> {:error, {:provider, reason}}
                end
 
              {:error, reason} ->
-               Repo.rollback({:unsubscribe, reason})
+               {:error, {:unsubscribe, reason}}
            end
          end) do
-      {:ok, result} ->
+      {:ok, {:ok, result}} ->
         {:ok, result}
 
       # The three failures are kept apart on the way out, because a caller acts on
       # them differently: a provider that said no is worth retrying, a row that
       # could not be written is an incident, and a token that could not be minted
       # is neither — nothing was sent, and the identical request is safe to repeat.
-      {:error, {:provider, reason}} ->
+      {:ok, {:error, {:provider, reason}}} ->
         {:error, {:delivery_failed, reason}}
 
-      {:error, {:unsubscribe, reason}} ->
+      {:ok, {:error, {:unsubscribe, reason}}} ->
         {:error, {:unsubscribe_failed, reason}}
 
-      {:error, %Ecto.Changeset{} = changeset} ->
+      {:ok, {:error, %Ecto.Changeset{} = changeset}} ->
         {:error, {:event_not_recorded, changeset}}
+
+      # A genuine commit failure rather than a refusal carried as data: the
+      # transaction did not commit, so by the contract above nothing was sent
+      # and nothing was recorded. Unreachable on every path the suite drives —
+      # every refusal above arrives inside `{:ok, …}` — and handled as the
+      # incident it would be rather than matched away, because a control that
+      # raises `CaseClauseError` on a shape it cannot explain is one whose
+      # failure nobody has diagnosed.
+      {:error, reason} ->
+        {:error, {:event_not_recorded, reason}}
     end
   end
 
@@ -282,10 +316,16 @@ defmodule Courier.Deliver do
            })
          ) do
       {:ok, event} ->
-        %{notification_type: type, message_id: message_id, event_id: event.id}
+        {:ok, %{notification_type: type, message_id: message_id, event_id: event.id}}
 
+      # A value, not a rollback, for the reason `send_and_record/3` gives: a
+      # failed insert wrote nothing, so there is nothing to undo, and a nested
+      # rollback would fail the request's own scoped commit. (`outbox_events`
+      # carries no database-level uniqueness for a valid changeset to trip —
+      # only indexes — so this failure is an Elixir-side changeset, decided
+      # before any statement ran, and the enclosing transaction is healthy.)
       {:error, changeset} ->
-        Repo.rollback(changeset)
+        {:error, changeset}
     end
   end
 

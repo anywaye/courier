@@ -87,10 +87,11 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
   # on a test whose two requests both did the right thing.
   #
   # Second: **a count taken from the test body is scoped to whatever identity the
-  # body happens to hold, and `CourierWeb.Plugs.TenantIdentity` changes it.** The
-  # plug opens its transaction with `begin_account/2`, and inside the sandbox that
-  # is a SAVEPOINT whose RELEASE does not discard a transaction-local setting.
-  # Measured, on a driver test that printed the identity at each step:
+  # body happens to hold, and each request's scoped transactions change it.**
+  # Every controller action and the `:idempotent` plug opens its own
+  # `with_account/3`, and inside the sandbox each is a SAVEPOINT whose RELEASE
+  # does not discard a transaction-local setting. Measured, on a driver test
+  # that printed the identity at each step:
   #
   #     identity at start:          6f5d4c3b-...  (@account)
   #     identity after OWNER post:  6f5d4c3b-...  (unchanged)
@@ -98,10 +99,9 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
   #
   # **That is a property of the sandbox, not a production leak**, and the
   # difference is the whole of `Courier.Tenancy`'s argument for `is_local := true`:
-  # in production the plug's transaction is the OUTERMOST one, so `COMMIT`
-  # discards the setting in the database with nothing in courier to forget. The
-  # sandbox's transaction sits OUTSIDE the plug's and nothing commits it until the
-  # test ends.
+  # in production each scoped transaction COMMITS, which discards the setting
+  # in the database with nothing in courier to forget. The sandbox's
+  # transaction sits OUTSIDE them and nothing commits it until the test ends.
   #
   # So each count asks for the identity it wants rather than inheriting one, and
   # `as_account/2` puts the previous one back so one count cannot colour the next.

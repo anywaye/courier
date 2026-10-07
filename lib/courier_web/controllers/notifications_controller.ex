@@ -60,6 +60,8 @@ defmodule CourierWeb.NotificationsController do
   use CourierWeb, :controller
 
   alias Courier.Notifications
+  alias Courier.Repo
+  alias Courier.Tenancy
   alias CourierWeb.Problem
 
   @doc """
@@ -81,27 +83,31 @@ defmodule CourierWeb.NotificationsController do
       reason `limit` is.
   """
   def index(conn, params) do
-    account_id = conn.assigns.current_account
-    recipient = recipient(conn)
+    scoped(conn, fn ->
+      account_id = conn.assigns.current_account
+      recipient = recipient(conn)
 
-    notifications =
-      Notifications.list(account_id, recipient,
-        unread: parse_unread(params["unread"]),
-        limit: parse_limit(params["limit"]),
-        after: parse_after(params["after"])
-      )
+      notifications =
+        Notifications.list(account_id, recipient,
+          unread: parse_unread(params["unread"]),
+          limit: parse_limit(params["limit"]),
+          after: parse_after(params["after"])
+        )
 
-    json(conn, %{data: Enum.map(notifications, &notification_json/1)})
+      json(conn, %{data: Enum.map(notifications, &notification_json/1)})
+    end)
   end
 
   @doc """
   How many of the caller's notifications have not been read — the badge number.
   """
   def unread_count(conn, _params) do
-    account_id = conn.assigns.current_account
-    recipient = recipient(conn)
+    scoped(conn, fn ->
+      account_id = conn.assigns.current_account
+      recipient = recipient(conn)
 
-    json(conn, %{data: %{unread: Notifications.unread_count(account_id, recipient)}})
+      json(conn, %{data: %{unread: Notifications.unread_count(account_id, recipient)}})
+    end)
   end
 
   @doc """
@@ -112,13 +118,15 @@ defmodule CourierWeb.NotificationsController do
   the moduledoc gives.
   """
   def mark_seen(conn, %{"id" => id}) do
-    account_id = conn.assigns.current_account
-    recipient = recipient(conn)
+    scoped(conn, fn ->
+      account_id = conn.assigns.current_account
+      recipient = recipient(conn)
 
-    case Notifications.mark_seen(account_id, recipient, id) do
-      {:ok, notification} -> json(conn, %{data: notification_json(notification)})
-      {:error, :not_found} -> not_found(conn)
-    end
+      case Notifications.mark_seen(account_id, recipient, id) do
+        {:ok, notification} -> json(conn, %{data: notification_json(notification)})
+        {:error, :not_found} -> not_found(conn)
+      end
+    end)
   end
 
   @doc """
@@ -126,13 +134,15 @@ defmodule CourierWeb.NotificationsController do
   the stronger statement. Answers with the row, or a 404.
   """
   def mark_read(conn, %{"id" => id}) do
-    account_id = conn.assigns.current_account
-    recipient = recipient(conn)
+    scoped(conn, fn ->
+      account_id = conn.assigns.current_account
+      recipient = recipient(conn)
 
-    case Notifications.mark_read(account_id, recipient, id) do
-      {:ok, notification} -> json(conn, %{data: notification_json(notification)})
-      {:error, :not_found} -> not_found(conn)
-    end
+      case Notifications.mark_read(account_id, recipient, id) do
+        {:ok, notification} -> json(conn, %{data: notification_json(notification)})
+        {:error, :not_found} -> not_found(conn)
+      end
+    end)
   end
 
   # The recipient is the caller's own identity subject, and it is read from the
@@ -142,6 +152,35 @@ defmodule CourierWeb.NotificationsController do
   # place is an empty inbox, not an error and not a guess.
   defp recipient(conn) do
     {"user", conn.assigns.current_principal.subject}
+  end
+
+  # The whole action runs inside one transaction carrying the caller's account,
+  # so the row-level-security policies on `notification_events` and
+  # `notifications` have an identity to key on. A plug cannot hold such a
+  # transaction open across the controller — see `Courier.Tenancy` — so each
+  # action opens its own, with the account `CourierWeb.Plugs.Principal`
+  # stashed.
+  #
+  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable
+  # by construction: the context rolls back only inside its own inner
+  # transaction. Handled as a 503 rather than matched away, on the same rule
+  # as `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller
+  # retries.
+  defp scoped(conn, fun) do
+    case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
+      {:ok, conn} -> conn
+      {:error, _reason} -> unavailable(conn)
+    end
+  end
+
+  defp unavailable(conn) do
+    conn
+    |> Problem.send(
+      503,
+      :unavailable,
+      "courier could not scope this request to an account, so it is not serving it."
+    )
+    |> halt()
   end
 
   # The five fields the API promises, and no others. `id` is courier's row id,

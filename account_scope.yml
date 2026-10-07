@@ -47,23 +47,27 @@
 #    written. The reason it is the right symbol and not the plug is in courier's
 #    own words: `lib/courier/tenancy.ex` says "`with_account/3` is the only way to
 #    obtain an identity", and it is the only function in the tree that opens the
-#    transaction the identity lives in. The plug is the wiring; this is the
-#    function that resolves the account as the DATABASE sees it, which is what
-#    "this entry point resolves the caller's account" has to mean on a service
-#    whose row-level-security policies key on that GUC.
+#    transaction the identity lives in. Each `/v1` controller action and the
+#    `:idempotent` plug calls it around its own database work — there is no
+#    single call site, because a plug cannot hold one transaction open across
+#    the controller — and `via` names the function rather than any one of them.
+#    It is the function that resolves the account as the DATABASE sees it, which
+#    is what "this entry point resolves the caller's account" has to mean on a
+#    service whose row-level-security policies key on that GUC.
 #
 # 4. `POST /inbound/resend` AND BOTH HALVES OF `/unsubscribe/{token}` ARE
 #    `unauthenticated-callback`, AND THEY ARE THE ROWS THIS FILE MOST WANTS TO BE
 #    WRONG ABOUT. The first is a provider's signed webhook and the second is an
 #    RFC 8058 one-click door; between them they reach `email_suppressions`,
 #    `unsubscribe_tokens` and `outbox_events`. Both resolve NO account, and that
-#    is not a claim — it is measured: `with_account/3` has exactly one call site in
-#    this tree (`lib/courier_web/plugs/tenant_identity.ex`), that plug is in the
-#    `:authenticated` pipeline, and neither route pipes through it. core's checker
-#    re-derives the same answer from the router and is the reason these three rows
-#    are `false`: `REPORT-courier-account-scope-01.md` shows it reading courier's
-#    sixteen routes and naming nine as account-resolving and five as not, which is
-#    the same nine and the same five this file declares.
+#    is not a claim — it is measured: `with_account/3` is called only on the
+#    authenticated paths (each `/v1` controller action, and the `:idempotent`
+#    plug's claim/lookup/store), and neither route reaches any of those call
+#    sites. core's checker re-derives the same answer from the router and is the
+#    reason these three rows are `false`: `REPORT-courier-account-scope-01.md`
+#    shows it reading courier's sixteen routes and naming nine as
+#    account-resolving and five as not, which is the same nine and the same five
+#    this file declares.
 #
 # 5. THE THREE OBAN WORKERS ARE `system`, AND THAT IS THE ROW GROUP MOST LIKELY TO
 #    BE MISREAD. Nothing enqueues them (see the report: `Oban.insert` appears zero
@@ -94,8 +98,8 @@ surface:
 
 entryPoints:
   # ==========================================================================
-  # THE CUSTOMER API — `/v1`, behind `CourierWeb.Plugs.Principal` (401) and
-  # `CourierWeb.Plugs.TenantIdentity` (the database identity).
+  # THE CUSTOMER API — `/v1`, behind `CourierWeb.Plugs.Principal` (401); the
+  # database identity is each action's own `with_account/3` transaction.
   # ==========================================================================
   - id: messages-create
     kind: http

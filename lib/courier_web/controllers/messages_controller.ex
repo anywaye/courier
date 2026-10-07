@@ -103,6 +103,8 @@ defmodule CourierWeb.MessagesController do
 
   alias Courier.Deliver
   alias Courier.MailerAdapter
+  alias Courier.Repo
+  alias Courier.Tenancy
   alias CourierWeb.Messages
   alias CourierWeb.Problem
 
@@ -110,50 +112,52 @@ defmodule CourierWeb.MessagesController do
   Sends one message, or says exactly why it was not sent.
   """
   def create(conn, params) do
-    with :ok <- deliverable(),
-         {:ok, payload} <- Messages.validate(params),
-         {:ok, result} <- Deliver.email(params["type"], payload) do
-      json(conn, accepted(result, payload))
-    else
-      {:error, :adapter_cannot_deliver} ->
-        adapter_cannot_deliver(conn)
+    scoped(conn, fn ->
+      with :ok <- deliverable(),
+           {:ok, payload} <- Messages.validate(params),
+           {:ok, result} <- Deliver.email(params["type"], payload) do
+        json(conn, accepted(result, payload))
+      else
+        {:error, :adapter_cannot_deliver} ->
+          adapter_cannot_deliver(conn)
 
-      {:error, fields} when is_list(fields) ->
-        validation_failed(conn, fields)
+        {:error, fields} when is_list(fields) ->
+          validation_failed(conn, fields)
 
-      {:error, {:invalid_payload, changeset}} ->
-        invalid_payload(conn, changeset)
+        {:error, {:invalid_payload, changeset}} ->
+          invalid_payload(conn, changeset)
 
-      {:error, :unknown_notification_type} ->
-        unknown_type(conn)
+        {:error, :unknown_notification_type} ->
+          unknown_type(conn)
 
-      {:error, :missing_user_id} ->
-        missing_user_id(conn)
+        {:error, :missing_user_id} ->
+          missing_user_id(conn)
 
-      {:error, :suppressed} ->
-        declined(conn)
+        {:error, :suppressed} ->
+          declined(conn)
 
-      {:error, {:unsubscribed, _type}} ->
-        unsubscribed(conn)
+        {:error, {:unsubscribed, _type}} ->
+          unsubscribed(conn)
 
-      {:error, {:suppressed_address, state}} ->
-        suppressed(conn, state)
+        {:error, {:suppressed_address, state}} ->
+          suppressed(conn, state)
 
-      {:error, {:delivery_failed, reason}} ->
-        provider_refused(conn, reason)
+        {:error, {:delivery_failed, reason}} ->
+          provider_refused(conn, reason)
 
-      {:error, {:unsubscribe_failed, reason}} ->
-        unsubscribe_failed(conn, reason)
+        {:error, {:unsubscribe_failed, reason}} ->
+          unsubscribe_failed(conn, reason)
 
-      {:error, {:event_not_recorded, detail}} ->
-        not_recorded(conn, detail)
+        {:error, {:event_not_recorded, detail}} ->
+          not_recorded(conn, detail)
 
-      {:error, :empty_message} ->
-        empty_message(conn)
+        {:error, :empty_message} ->
+          empty_message(conn)
 
-      {:error, reason} when reason in [:from_not_configured, :subject_misconfigured] ->
-        misconfigured(conn, reason)
-    end
+        {:error, reason} when reason in [:from_not_configured, :subject_misconfigured] ->
+          misconfigured(conn, reason)
+      end
+    end)
   end
 
   # `type` is the one piece of the request the context takes as an argument rather
@@ -175,6 +179,33 @@ defmodule CourierWeb.MessagesController do
   end
 
   # --- the refusals ---------------------------------------------------------
+
+  # The whole action runs inside one transaction carrying the caller's account,
+  # so the row-level-security policies on `notification_preferences` (read by
+  # `Courier.Deliver`) have an identity to key on. A plug cannot hold such a
+  # transaction open across the controller — see `Courier.Tenancy` — so each
+  # action opens its own, with the account `CourierWeb.Plugs.Principal` stashed.
+  #
+  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable
+  # by construction: every context rolls back only inside its own inner
+  # transaction. Handled as a 503 rather than matched away, on the same rule as
+  # `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller retries.
+  defp scoped(conn, fun) do
+    case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
+      {:ok, conn} -> conn
+      {:error, _reason} -> unavailable(conn)
+    end
+  end
+
+  defp unavailable(conn) do
+    conn
+    |> Problem.send(
+      503,
+      :unavailable,
+      "courier could not scope this request to an account, so it is not serving it."
+    )
+    |> halt()
+  end
 
   defp deliverable do
     if adapter_deliverable?(), do: :ok, else: {:error, :adapter_cannot_deliver}

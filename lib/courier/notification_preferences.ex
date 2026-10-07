@@ -347,10 +347,19 @@ defmodule Courier.NotificationPreferences do
   #
   #     ** (CompileError) __STACKTRACE__ is available only inside catch and
   #        rescue clauses of try expressions
+  #
+  # The insert carries `mode: :savepoint` — a savepoint under a scoped request
+  # transaction, a no-op otherwise. A refused insert is a STATEMENT error, and
+  # Postgres aborts the enclosing transaction on one: without the savepoint the
+  # refusal would poison the request's own commit and turn a cross-tenant 404
+  # into a 500. An inner `Repo.transaction/1` with `Repo.rollback/1` is NOT
+  # the remedy — nested Ecto transactions are not savepoints, and an inner
+  # rollback fails the outer commit (measured as `{:error, :rollback}`).
   defp insert_or_refuse(changeset, replace) do
     case Repo.insert(changeset,
            on_conflict: conflict(replace),
-           conflict_target: [:user_id, :notification_type]
+           conflict_target: [:user_id, :notification_type],
+           mode: :savepoint
          ) do
       {:ok, _preference} -> {:cont, :ok}
       # `{:error, changeset}` is NOT treated as a failure. It is Ecto's answer to a

@@ -45,6 +45,8 @@ defmodule CourierWeb.WebhookEndpointsController do
 
   use CourierWeb, :controller
 
+  alias Courier.Repo
+  alias Courier.Tenancy
   alias Courier.WebhookEndpoint
   alias Courier.WebhookEndpoints
   alias Courier.Webhooks.Payload
@@ -55,112 +57,124 @@ defmodule CourierWeb.WebhookEndpointsController do
   Registers an endpoint and answers 201 with the signing secret.
   """
   def create(conn, params) do
-    attrs = %{
-      url: params["url"],
-      description: params["description"],
-      account_id: conn.assigns.current_account
-    }
+    scoped(conn, fn ->
+      attrs = %{
+        url: params["url"],
+        description: params["description"],
+        account_id: conn.assigns.current_account
+      }
 
-    case WebhookEndpoints.create(attrs) do
-      {:ok, endpoint, secret} ->
-        conn
-        |> put_status(:created)
-        |> json(%{data: endpoint_json(endpoint, secret)})
+      case WebhookEndpoints.create(attrs) do
+        {:ok, endpoint, secret} ->
+          conn
+          |> put_status(:created)
+          |> json(%{data: endpoint_json(endpoint, secret)})
 
-      {:error, %Ecto.Changeset{} = changeset} ->
-        validation_failed(conn, changeset)
+        {:error, %Ecto.Changeset{} = changeset} ->
+          validation_failed(conn, changeset)
 
-      {:error, reason} ->
-        blocked(conn, reason)
-    end
+        {:error, reason} ->
+          blocked(conn, reason)
+      end
+    end)
   end
 
   @doc """
   One page of the caller's endpoints.
   """
   def index(conn, params) do
-    account_id = conn.assigns.current_account
+    scoped(conn, fn ->
+      account_id = conn.assigns.current_account
 
-    case WebhookEndpoints.page(account_id, params["limit"], params["cursor"]) do
-      {:ok, page} ->
-        json(conn, %{
-          data: Enum.map(page.data, &endpoint_json/1),
-          page: page.page
-        })
+      case WebhookEndpoints.page(account_id, params["limit"], params["cursor"]) do
+        {:ok, page} ->
+          json(conn, %{
+            data: Enum.map(page.data, &endpoint_json/1),
+            page: page.page
+          })
 
-      {:error, :invalid_limit} ->
-        invalid_param(conn, "limit", "is not a positive integer")
+        {:error, :invalid_limit} ->
+          invalid_param(conn, "limit", "is not a positive integer")
 
-      {:error, :invalid_cursor} ->
-        invalid_param(conn, "cursor", "is not a cursor courier issued")
-    end
+        {:error, :invalid_cursor} ->
+          invalid_param(conn, "cursor", "is not a cursor courier issued")
+      end
+    end)
   end
 
   @doc """
   One of the caller's endpoints, or 404.
   """
   def show(conn, %{"id" => id}) do
-    case fetch(conn, id) do
-      {:ok, endpoint} -> json(conn, %{data: endpoint_json(endpoint)})
-      :error -> not_found(conn)
-    end
+    scoped(conn, fn ->
+      case fetch(conn, id) do
+        {:ok, endpoint} -> json(conn, %{data: endpoint_json(endpoint)})
+        :error -> not_found(conn)
+      end
+    end)
   end
 
   @doc """
   Changes one of the caller's endpoints.
   """
   def update(conn, %{"id" => id} = params) do
-    with {:ok, endpoint} <- fetch(conn, id) do
-      attrs =
-        params
-        |> Map.take(["url", "description", "status"])
-        |> Map.new(fn {key, value} -> {String.to_existing_atom(key), value} end)
+    scoped(conn, fn ->
+      with {:ok, endpoint} <- fetch(conn, id) do
+        attrs =
+          params
+          |> Map.take(["url", "description", "status"])
+          |> Map.new(fn {key, value} -> {String.to_existing_atom(key), value} end)
 
-      case WebhookEndpoints.update(endpoint, attrs) do
-        {:ok, updated} -> json(conn, %{data: endpoint_json(updated)})
-        {:error, %Ecto.Changeset{} = changeset} -> validation_failed(conn, changeset)
-        {:error, reason} -> blocked(conn, reason)
+        case WebhookEndpoints.update(endpoint, attrs) do
+          {:ok, updated} -> json(conn, %{data: endpoint_json(updated)})
+          {:error, %Ecto.Changeset{} = changeset} -> validation_failed(conn, changeset)
+          {:error, reason} -> blocked(conn, reason)
+        end
+      else
+        :error -> not_found(conn)
       end
-    else
-      :error -> not_found(conn)
-    end
+    end)
   end
 
   @doc """
   Removes one of the caller's endpoints, answering 204.
   """
   def delete(conn, %{"id" => id}) do
-    with {:ok, endpoint} <- fetch(conn, id) do
-      case WebhookEndpoints.delete(endpoint) do
-        {:ok, _deleted} -> send_resp(conn, 204, "")
-        {:error, :not_found} -> not_found(conn)
+    scoped(conn, fn ->
+      with {:ok, endpoint} <- fetch(conn, id) do
+        case WebhookEndpoints.delete(endpoint) do
+          {:ok, _deleted} -> send_resp(conn, 204, "")
+          {:error, :not_found} -> not_found(conn)
+        end
+      else
+        :error -> not_found(conn)
       end
-    else
-      :error -> not_found(conn)
-    end
+    end)
   end
 
   @doc """
   Sends a signed `ping` to one of the caller's endpoints and reports the answer.
   """
   def ping(conn, %{"id" => id}) do
-    with {:ok, endpoint} <- fetch(conn, id) do
-      case ping(endpoint) do
-        {:ok, result} ->
-          json(conn, %{
-            data: %{
-              delivered: result.success?,
-              status_code: result.status_code,
-              duration_ms: result.duration_ms
-            }
-          })
+    scoped(conn, fn ->
+      with {:ok, endpoint} <- fetch(conn, id) do
+        case ping(endpoint) do
+          {:ok, result} ->
+            json(conn, %{
+              data: %{
+                delivered: result.success?,
+                status_code: result.status_code,
+                duration_ms: result.duration_ms
+              }
+            })
 
-        {:error, reason} ->
-          blocked(conn, reason)
+          {:error, reason} ->
+            blocked(conn, reason)
+        end
+      else
+        :error -> not_found(conn)
       end
-    else
-      :error -> not_found(conn)
-    end
+    end)
   end
 
   # A signed ping, sent on the same path a real delivery uses: the same signature,
@@ -185,6 +199,34 @@ defmodule CourierWeb.WebhookEndpointsController do
       nil -> :error
       endpoint -> {:ok, endpoint}
     end
+  end
+
+  # The whole action runs inside one transaction carrying the caller's account,
+  # so the row-level-security policies on `webhook_endpoints` have an identity
+  # to key on. A plug cannot hold such a transaction open across the
+  # controller — see `Courier.Tenancy` — so each action opens its own, with the
+  # account `CourierWeb.Plugs.Principal` stashed.
+  #
+  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable
+  # by construction: the context rolls back only inside its own inner
+  # transactions. Handled as a 503 rather than matched away, on the same rule
+  # as `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller
+  # retries.
+  defp scoped(conn, fun) do
+    case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
+      {:ok, conn} -> conn
+      {:error, _reason} -> unavailable(conn)
+    end
+  end
+
+  defp unavailable(conn) do
+    conn
+    |> Problem.send(
+      503,
+      :unavailable,
+      "courier could not scope this request to an account, so it is not serving it."
+    )
+    |> halt()
   end
 
   # The seven fields the API promises, and no others.

@@ -56,6 +56,8 @@ defmodule CourierWeb.Plugs.Idempotency do
 
   alias Courier.Idempotency
   alias Courier.IdempotencyKey
+  alias Courier.Repo
+  alias Courier.Tenancy
   alias CourierWeb.Problem
 
   @key_header "idempotency-key"
@@ -105,30 +107,73 @@ defmodule CourierWeb.Plugs.Idempotency do
   # The claim is taken *here*, before the controller, and the answer is stored in
   # `before_send` — the only ordering in which a second request with this key can
   # find a row rather than run the action again.
+  #
+  # Each database call below runs inside its own `Tenancy.with_account/3`: the
+  # claim, the lookup, and the store each open the transaction that carries the
+  # caller's account to the row-level-security policies on `idempotency_keys`.
+  # A plug cannot hold one transaction open across the plugs and the controller
+  # that run after it returns — `CourierWeb.Plugs.TenantIdentity` tried exactly
+  # that, and every authenticated request's protected-table access died on the
+  # first write with a 42501 — so the scope lives where a transaction can
+  # legitimately wrap the work: around each unit of it. `conn.assigns.
+  # current_account` is the tenancy key in every case, put there by
+  # `CourierWeb.Plugs.Principal`, which runs before this plug and halts a 401
+  # for a caller that has none.
   defp guarded(conn, key) do
     account_id = conn.assigns.current_account
     endpoint = conn.request_path
     hash = request_hash(conn)
 
-    case Idempotency.claim(%{
-           account_id: account_id,
-           endpoint: endpoint,
-           idempotency_key: key,
-           request_hash: hash
-         }) do
+    case scoped(conn, fn ->
+           Idempotency.claim(%{
+             account_id: account_id,
+             endpoint: endpoint,
+             idempotency_key: key,
+             request_hash: hash
+           })
+         end) do
       {:ok, claim} -> register(conn, claim)
       {:error, :taken} -> decided(conn, account_id, endpoint, key, hash)
       {:error, {:error, changeset}} -> changeset_error(conn, changeset)
+      :unavailable -> unavailable(conn)
     end
   end
 
+  # `{:error, _}` from `with_account/3` means the scoped transaction itself
+  # failed to commit — a genuine rollback, not a refusal carried as data.
+  # Refusals that are data (`{:error, :taken}`, changesets) arrive inside the
+  # `{:ok, …}` wrap: `Repo.transaction/1` commits on any normal return, so the
+  # wrap only keeps the two shapes distinct. A security control that raises
+  # `MatchError` on a shape it cannot explain is one whose failure nobody has
+  # diagnosed, and the answer is the same shape the rest of courier uses for
+  # "a dependency did not work": a 503 the caller may retry.
+  defp scoped(conn, fun) do
+    case Tenancy.with_account(Repo, conn.assigns.current_account, fn -> {:ok, fun.()} end) do
+      {:ok, {:ok, value}} -> value
+      {:error, _reason} -> :unavailable
+    end
+  end
+
+  defp unavailable(conn) do
+    conn
+    |> Problem.send(
+      503,
+      :unavailable,
+      "courier could not scope this request to an account, so it is not serving it."
+    )
+    |> halt()
+  end
+
   defp decided(conn, account_id, endpoint, key, hash) do
-    case Idempotency.fetch(account_id, endpoint, key) do
+    case scoped(conn, fn -> Idempotency.fetch(account_id, endpoint, key) end) do
       %IdempotencyKey{state: :completed} = stored ->
         if stored.request_hash == hash, do: replay(conn, stored), else: reused(conn)
 
       %IdempotencyKey{state: :in_flight} ->
         in_flight(conn)
+
+      :unavailable ->
+        unavailable(conn)
 
       nil ->
         # Not reachable, and the reason is worth writing down rather than
@@ -152,10 +197,17 @@ defmodule CourierWeb.Plugs.Idempotency do
   end
 
   defp store(conn, claim) do
-    case body(conn) do
-      nil -> Idempotency.release(claim.id)
-      stored -> complete(claim, conn, stored)
-    end
+    # The store runs in `before_send`, after the controller's own scoped
+    # transaction has committed, so it opens its own — same account, new
+    # transaction. The result is deliberately ignored: the response is already
+    # built, and nothing here may turn it into a 500 (see `complete/3`'s
+    # rescue, which is the same rule one layer down).
+    scoped(conn, fn ->
+      case body(conn) do
+        nil -> Idempotency.release(claim.id)
+        stored -> complete(claim, conn, stored)
+      end
+    end)
 
     conn
   end
