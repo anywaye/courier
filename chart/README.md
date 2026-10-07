@@ -35,6 +35,25 @@ The box pulls it with the read-only secret `values.yaml` names
 (`imagePullSecrets`), created on the box once, out of band. The chart
 names the secret and never contains a credential.
 
+## Reaching the service
+
+The chart installs no Ingress until a values commit says so:
+`ingress.enabled` is `false`, and with it false `helm template` emits
+no Ingress at all — a chart that suddenly routes traffic is a
+defect. The services the fleet exposes (gateway, parlor) turn it
+on in their values commit:
+
+    ingress:
+      enabled: true
+      host: courier.example.com
+
+`className` is traefik, k3s's default (DEPLOYMENT.md:28). The chart
+names `clusterIssuer: letsencrypt-prod` — the cert-manager
+ClusterIssuer the substrate's install creates once per cluster, not
+by the chart — and `tls: true` writes the `spec.tls` block, so
+cert-manager provisions the certificate. An empty issuer would mean
+no TLS: a secret nothing writes.
+
 ## Secrets
 
 The service's environment arrives by reference: the Deployment reads

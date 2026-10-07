@@ -78,6 +78,41 @@ service:
   type: ClusterIP
   port: 4000
 
+# How the service is reached from outside the cluster: an Ingress,
+# gated on `ingress.enabled`, which is FALSE by default.
+#
+# A chart that suddenly routes traffic is a defect: the substrate's
+# first sync happens before any operator has set a host, and an
+# Ingress with no host is a silent misroute — the class of defect
+# kit's /up healthcheck was. The services the fleet exposes (gateway,
+# parlor) turn the knob on in their values commit; identity and
+# courier stay internal.
+#
+# The edge is Traefik, k3s's default ingress controller, with
+# cert-manager in front of it (DEPLOYMENT.md:28 — "Ingress + TLS |
+# Traefik (k3s default) + cert-manager | declarative, no edge
+# box"). The ClusterIssuer is created ONCE PER CLUSTER by the
+# substrate's install (kit step 7, W83); this block only NAMES it —
+# the same "names the secret and never contains a credential"
+# discipline the imagePullSecrets block uses.
+#
+# DEVIATION from the generator, deliberate and documented: the
+# generator emits `clusterIssuer: ""` (no TLS until a values commit
+# names an issuer — "Empty means no TLS: a secret nothing writes").
+# This chart names `letsencrypt-prod`, the ClusterIssuer the
+# substrate's install creates once per cluster, so an enabled Ingress
+# gets a certificate without a second values edit. One line, here
+# rather than in the generator, because fixing the generator is a caf
+# packet (m88), not this one.
+ingress:
+  enabled: false
+  className: traefik
+  host: ""
+  clusterIssuer: letsencrypt-prod
+  tls: true
+  path: /
+  pathType: Prefix
+
 # The service's environment, as NAME: value pairs.
 #
 # Only NON-SECRET values live here. Every secret is in `courier-secrets`

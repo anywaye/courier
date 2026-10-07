@@ -21,6 +21,11 @@ defmodule Courier.ChartTest do
     `values.yaml` is a credential in git.
   * The image tag is not `latest` — a floating tag is a deploy that
     changes when somebody else pushes.
+  * The chart has an Ingress — the way in — gated on `ingress.enabled`
+    and off by default, with the traefik edge and the cluster's
+    `letsencrypt-prod` issuer named in values. W81 landed the Ingress in
+    the generator after W85 generated this chart, so the chart had to be
+    brought forward to match.
 
   ## Every absence assertion is paired with a presence one
 
@@ -109,6 +114,64 @@ defmodule Courier.ChartTest do
       # kit/templates/substrate/manifests/applications/courier.yaml.
       # Two Applications named `courier` in `argocd` fight each other.
       refute File.exists?(Path.join(@chart_dir, "templates/application.yaml"))
+    end
+  end
+
+  describe "the ingress" do
+    test "exists — the chart's way in, which W81 added to the generator after W85 generated this chart" do
+      assert File.exists?(Path.join(@chart_dir, "templates/ingress.yaml"))
+    end
+
+    test "is gated on ingress.enabled — an ungated Ingress is always-on" do
+      ingress = read_file("templates/ingress.yaml")
+
+      # The guard is there.
+      assert ingress =~ ~r/\{\{- if \.Values\.ingress\.enabled \}\}/
+
+      # It precedes any apiVersion, so the whole document is inside the
+      # gate — with the knob off, `helm template` emits no Ingress at all.
+      # The `s` flag lets `.` span the lines between the guard and the
+      # apiVersion (the no-host guard and the fail sit between them).
+      assert ingress =~ ~r/\{\{- if \.Values\.ingress\.enabled \}\}\n.*apiVersion: networking\.k8s\.io\/v1/ms
+
+      # And the gate closes the document.
+      assert ingress =~ ~r/\{\- end \}\}\s*$/
+    end
+
+    test "refuses to render an enabled Ingress with no host — a silent misroute" do
+      ingress = read_file("templates/ingress.yaml")
+
+      # An enabled Ingress with no host fails the render rather than
+      # misrouting — the class of defect kit's /up healthcheck was.
+      assert ingress =~ ~r/\{\{- if not \.Values\.ingress\.host \}\}/
+      assert ingress =~ ~r/\{\{- fail /
+    end
+
+    test "carries the generator's values block — off by default, traefik edge, the cluster's issuer" do
+      values = read_file("values.yaml")
+
+      # Off by default: the substrate's first sync happens before any
+      # operator has set a host, and a chart that suddenly routes
+      # traffic is a defect.
+      assert values =~ ~r/^ingress:\n  enabled: false$/m
+
+      # The edge is Traefik, k3s's default ingress controller
+      # (DEPLOYMENT.md).
+      assert values =~ ~r/^  className: traefik$/m
+
+      # The ClusterIssuer the substrate's install creates once per
+      # cluster (kit step 7) — the chart names it and never creates it.
+      assert values =~ ~r/^  clusterIssuer: letsencrypt-prod$/m
+    end
+
+    test "wires the Ingress's ingressClassName from the traefik value" do
+      ingress = read_file("templates/ingress.yaml")
+      values = read_file("values.yaml")
+
+      # The template takes the class from the value, so the Ingress and
+      # the values cannot disagree about the edge.
+      assert ingress =~ ~r/ingressClassName: \{\{ \.Values\.ingress\.className \}\}/
+      assert values =~ ~r/^  className: traefik$/m
     end
   end
 end
