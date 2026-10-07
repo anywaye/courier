@@ -241,7 +241,7 @@ jobs:
           # `COURIER_MAIL_ADAPTER` naming `Swoosh.Adapters.Local` is refused
           # in `:dev` and `:test` as well as `:prod`. 1576 is 698 + 878, so
           # the parts still sum to the whole.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1576
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1582
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -514,7 +514,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (698 tests, 31 files)
+      - name: tier — no database (704 tests, 31 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -553,7 +553,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 698
+          bin/assert-suite "$log" "no database" 704
 
       - name: tier — database (878 tests, 47 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -654,8 +654,8 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1576 passed | \`bin/assert-suite\` |"
-            echo "| no database, 31 files | 698 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1582 passed | \`bin/assert-suite\` |"
+            echo "| no database, 31 files | 704 passed | tier step |"
             echo "| database, 47 files | 878 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
