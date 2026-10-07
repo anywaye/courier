@@ -384,7 +384,26 @@ gate:
       # **1544 is 670 + 874**, so the parts still sum to the whole — re-measured
       # by running the tier greps on this tree, not by adding the two branches'
       # deltas on paper.
-      minimum: 1544
+      #
+      # REMEASURED on the tree carrying the introspection seam's address and key:
+      # whole suite 1544 -> 1551, no-database 670 -> 677 across 30 -> 31 files,
+      # database tier UNCHANGED at 874 across the same 47 files.
+      #
+      # **The +7 are one file, `test/courier/principal/introspection_url_test.exs`,
+      # and it is a plain `ExUnit.Case` because its subject is what the TREE
+      # states** — the port identity is dialed on, in four files that disagreed
+      # about it — and a claim about files on disk is a claim no database can
+      # check. The placement is the rule `compose_config_test.exs` and
+      # `backup_config_test.exs` established, and the tree-wide grep in that
+      # file is the one check that would catch a wrong value in a file no
+      # thought of.
+      #
+      # **1551 is 677 + 874**, so the parts still sum to the whole — re-measured
+      # by running the tier greps on this tree, not by adding the two branches'
+      # deltas on paper. The floor sits AT the measurement with zero headroom,
+      # for the reason the telemetry paragraph gives: the next packet that adds
+      # a test goes red until it raises this number.
+      minimum: 1551
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
