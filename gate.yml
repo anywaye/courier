@@ -456,7 +456,24 @@ gate:
       # refusal that only fired in prod would let a developer configure the
       # silent adapter and prove to themselves that "it works". 1576 is
       # 698 + 878, so the parts still sum to the whole.
-      minimum: 1576
+      # REMEASURED on the tree carrying the HELM CHART: whole suite
+  # 1576 -> 1582, no-database 698 -> 704 across the same 31 files,
+  # database UNCHANGED at 878 across the same 47 files.
+  #
+  # **The +6 are one file, `test/courier/chart_test.exs`, and it is a
+  # plain `ExUnit.Case` because its subject is what the chart FILES
+  # state** — the readiness path baked into the deployment template,
+  # the secret reference in values.yaml, the image tag, and the
+  # Chart.yaml identity. A claim about files on disk is a claim no
+  # database can check, so it belongs to the no-database tier.
+  #
+  # **1582 is 704 + 878**, so the parts still sum to the whole —
+  # re-measured by running the tier greps on this tree, not by adding
+  # the two branches' deltas on paper. The floor sits AT the
+  # measurement with zero headroom, for the reason the telemetry
+  # paragraph gives: the next packet that adds a test goes red until
+  # it raises this number.
+  minimum: 1582
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
