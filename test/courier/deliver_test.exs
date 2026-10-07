@@ -149,20 +149,32 @@ defmodule Courier.DeliverTest do
       assert {:ok, invitation} =
                Deliver.team_invitation(payload(%{account_name: "Moon", invited_by: "Ruto"}))
 
+      assert {:ok, security} =
+               Deliver.account_security(payload(%{reason: "password reset"}))
+
+      assert {:ok, change_current} =
+               Deliver.email_change_current(payload(%{url: "https://cafaye.com/email-changes/c?t=1"}))
+
+      assert {:ok, change_new} =
+               Deliver.email_change_new(payload(%{previous_email: "kaka@example.com"}))
+
       assert welcome.notification_type == "welcome"
       assert reset.notification_type == "password_reset"
       assert invitation.notification_type == "team_invitation"
+      assert security.notification_type == "account_security"
+      assert change_current.notification_type == "email_change_current"
+      assert change_new.notification_type == "email_change_new"
 
       # Sorted on both sides, and that is the whole point of this assertion. What
-      # courier promises is that each of the three sends recorded a row under its
-      # own notification type — a set of three, one per type. `outbox/0` reads
+      # courier promises is that each of the six sends recorded a row under its
+      # own notification type — a set of six, one per type. `outbox/0` reads
       # with no `ORDER BY`, so the order rows come back in is PostgreSQL's choice
       # and not a contract; comparing sequences here asserted an ordering nobody
       # promised and failed in roughly one run in eight. Sorting keeps the
-      # assertion exactly as strong (all three types present, each exactly once,
+      # assertion exactly as strong (all six types present, each exactly once,
       # nothing else) while dropping the part that was never courier's promise.
       assert outbox() |> Enum.map(& &1.data["notification_type"]) |> Enum.sort() ==
-               Enum.sort(~w(welcome password_reset team_invitation))
+               Enum.sort(~w(welcome password_reset team_invitation account_security email_change_current email_change_new))
     end
 
     test "a password reset and a team invitation are different messages" do

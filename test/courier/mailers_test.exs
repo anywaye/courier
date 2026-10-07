@@ -251,9 +251,104 @@ defmodule Courier.MailersTest do
     end
   end
 
+  describe "email_change_current" do
+    defp email_change_current_payload(overrides \\ %{}) do
+      Map.merge(
+        %{
+          user_id: @user_id,
+          email: "kaka@example.com",
+          name: "Kaka",
+          url: "https://cafaye.com/email-changes/confirm?token=ch4nge"
+        },
+        overrides
+      )
+    end
+
+    test "the subject is the configured one" do
+      assert {:ok, email} = Mailers.build(:email_change_current, email_change_current_payload())
+
+      assert email.subject == "Confirm an email address change on your caFaye account"
+    end
+
+    test "the body names the account's address and carries the confirmation link" do
+      # The security notice's whole content: who must act, and the one link that
+      # acts on it. Asserted on both formats, because a text-only reader is a
+      # reader too and the link is the point of the mail.
+      assert {:ok, email} = Mailers.build(:email_change_current, email_change_current_payload())
+
+      assert email.html_body =~ "kaka@example.com"
+      assert email.html_body =~ "https://cafaye.com/email-changes/confirm?token=ch4nge"
+      assert email.text_body =~ "kaka@example.com"
+      assert email.text_body =~ "https://cafaye.com/email-changes/confirm?token=ch4nge"
+    end
+
+    test "a payload with no link is an error, not a mail with no way to confirm" do
+      # The link is the action the notice asks for; a mail without it tells the
+      # reader something happened and gives them nothing to do about it.
+      assert {:error, {:invalid_payload, changeset}} =
+               Mailers.build(:email_change_current, email_change_current_payload(%{url: nil}))
+
+      assert %{url: ["can't be blank"]} = errors_on(changeset)
+    end
+
+    test "a payload with no address is an error, not an email to nobody" do
+      assert {:error, {:invalid_payload, changeset}} =
+               Mailers.build(:email_change_current, email_change_current_payload(%{email: nil}))
+
+      assert %{email: ["can't be blank"]} = errors_on(changeset)
+    end
+  end
+
+  describe "email_change_new" do
+    defp email_change_new_payload(overrides \\ %{}) do
+      Map.merge(
+        %{
+          user_id: @user_id,
+          email: "new@example.com",
+          name: "Kaka",
+          previous_email: "kaka@example.com"
+        },
+        overrides
+      )
+    end
+
+    test "the subject is the configured one" do
+      assert {:ok, email} = Mailers.build(:email_change_new, email_change_new_payload())
+
+      assert email.subject == "Confirm your new caFaye email address"
+    end
+
+    test "the body names the address the account is moving from" do
+      # The one fact the new address's owner is owed: where the account lived
+      # before. Asserted on both formats, like its sibling.
+      assert {:ok, email} = Mailers.build(:email_change_new, email_change_new_payload())
+
+      assert email.html_body =~ "kaka@example.com"
+      assert email.text_body =~ "kaka@example.com"
+    end
+
+    test "a payload with no previous address is an error" do
+      # Without it the mail cannot say what it is about: "somebody asked to move
+      # the account on <nothing> to this address" is not a sentence a person can
+      # act on, and rendering it would be a mail with a hole in it.
+      assert {:error, {:invalid_payload, changeset}} =
+               Mailers.build(:email_change_new, email_change_new_payload(%{previous_email: nil}))
+
+      assert %{previous_email: ["can't be blank"]} = errors_on(changeset)
+    end
+
+    test "a payload with no address is an error, not an email to nobody" do
+      assert {:error, {:invalid_payload, changeset}} =
+               Mailers.build(:email_change_new, email_change_new_payload(%{email: nil}))
+
+      assert %{email: ["can't be blank"]} = errors_on(changeset)
+    end
+  end
+
   describe "types" do
-    test "the notification types are exactly the four courier sends" do
-      assert Mailers.types() == ~w(welcome password_reset team_invitation account_security)
+    test "the notification types are exactly the six courier sends" do
+      assert Mailers.types() ==
+               ~w(welcome password_reset team_invitation account_security email_change_current email_change_new)
     end
 
     test "a type courier does not have is an error rather than a fallback" do

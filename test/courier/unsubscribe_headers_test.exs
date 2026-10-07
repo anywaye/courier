@@ -5,7 +5,7 @@ defmodule Courier.UnsubscribeHeadersTest do
 
   ## The negative, on the messages courier composes today
 
-  All three of courier's notification types are transactional, so **no message
+  All six of courier's notification types are transactional, so **no message
   courier can currently send carries `List-Unsubscribe` or
   `List-Unsubscribe-Post`.** That is asserted over a real composed message per
   type, through the function `Courier.Deliver` actually calls, with a paired
@@ -45,8 +45,9 @@ defmodule Courier.UnsubscribeHeadersTest do
   freezes that field to an enum of the names courier sends. This repository
   does not own those schemas, and a type the enum does not hold would put a
   value on the bus that four payload schemas reject. The fourth type,
-  `account_security`, is exactly that reported divergence — it is
-  `:transactional`, so it changes nothing here, and the gap is recorded in
+  `account_security`, and the two email-change notices are exactly that
+  reported divergence — all three are `:transactional`, so they change nothing
+  here, and the gap is recorded in
   `REPORT-courier-consumer-sessionsrevoked-01.md` rather than hidden by this
   file's "no bulk mail" claim, which is about the `:bulk` arm and still holds.
 
@@ -86,7 +87,7 @@ defmodule Courier.UnsubscribeHeadersTest do
   end
 
   describe "every type courier can send today carries no unsubscribe" do
-    test "on the composed message, for each of the three types" do
+    test "on the composed message, for each of the six types" do
       # Driven through `Courier.Deliver`, not through `Courier.Mailers.build/2`:
       # the claim is that the SEND PATH leaves the message alone, and a test that
       # stopped one layer short would pass against a `Deliver` that decorated
@@ -197,10 +198,12 @@ defmodule Courier.UnsubscribeHeadersTest do
       account_name: "Acme",
       invited_by: "Kaka",
       role: "member",
-      # `account_security` requires a reason; the other types ignore it. One
-      # payload shape for the whole `Mailers.types()` iteration, so the fourth
-      # type is covered by the same arms as the first three.
-      reason: "password reset"
+      # `account_security` requires a reason and `email_change_new` requires a
+      # previous address; the other types ignore both. One payload shape for
+      # the whole `Mailers.types()` iteration, so the fourth, fifth and sixth
+      # types are covered by the same arms as the first three.
+      reason: "password reset",
+      previous_email: "previous@example.com"
     }
   end
 

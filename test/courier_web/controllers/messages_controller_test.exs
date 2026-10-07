@@ -380,6 +380,79 @@ defmodule CourierWeb.MessagesControllerTest do
     end
   end
 
+  describe "the two email-change notices" do
+    # identity's email-change flow reaches courier through this door, so these
+    # two types are asserted here and not only in `Courier.MailersTest`: a type
+    # that renders and a type that is SENDABLE are different claims, and the
+    # second one is the one the flow depends on.
+
+    test "the current-address notice sends, and carries the confirmation link" do
+      url = "https://cafaye.com/email-changes/confirm?token=ch4nge"
+
+      conn =
+        post_authed(body(%{
+          "type" => "email_change_current",
+          "to" => address(),
+          "url" => url,
+          "name" => nil
+        }))
+
+      assert conn.status == 200
+
+      assert [%Swoosh.Email{} = email] = sent()
+      assert email.subject == "Confirm an email address change on your caFaye account"
+      assert email.text_body =~ url
+      assert email.html_body =~ url
+      assert data(conn)["notification_type"] == "email_change_current"
+    end
+
+    test "the new-address notice sends, and names the address the account is moving from" do
+      conn =
+        post_authed(body(%{
+          "type" => "email_change_new",
+          "to" => address(),
+          "previous_email" => "kaka@example.com",
+          "name" => nil
+        }))
+
+      assert conn.status == 200
+
+      assert [%Swoosh.Email{} = email] = sent()
+      assert email.subject == "Confirm your new caFaye email address"
+      assert email.text_body =~ "kaka@example.com"
+      assert email.html_body =~ "kaka@example.com"
+      assert data(conn)["notification_type"] == "email_change_new"
+    end
+
+    test "a type's required fields are enforced at the door, not only in the library" do
+      # The per-type required list is `Courier.Mailers`' own, and this is the
+      # proof that a body missing one of them is refused HERE rather than
+      # rendered into a mail with a hole in it.
+      conn = post_authed(body(%{"type" => "email_change_current", "name" => nil}))
+
+      assert conn.status == 422
+      assert fields(conn) == ["url"]
+      assert sent() == []
+    end
+
+    test "a misspelled field is a 422 naming it, not one courier silently drops" do
+      # The closed vocabulary is the point of the door: `previous_emai` is not
+      # a field, and a body carrying it must be refused by NAME rather than
+      # accepted with the previous address silently discarded — which over
+      # HTTP is how a caller believes a mail was addressed that was not.
+      conn =
+        post_authed(body(%{
+          "type" => "email_change_new",
+          "previous_emai" => "kaka@example.com",
+          "name" => nil
+        }))
+
+      assert conn.status == 422
+      assert fields(conn) == ["previous_emai"]
+      assert sent() == []
+    end
+  end
+
   describe "it consults the suppression list before it sends" do
     test "a hard-bounced mailbox is a 409 and no mail is sent" do
       email = address()
