@@ -618,6 +618,35 @@ document lands in both files in one commit, because core asserts the two agree.
 
 ### Security
 
+- **The tenant identity now spans each authenticated request's database work —
+  the `TenantIdentity` plug's transaction never did.** `CourierWeb.Plugs.
+  TenantIdentity` opened `Tenancy.with_account/3` around `fn -> conn end` —
+  no database work — and committed before the `:idempotent` plug and the
+  controller ran, discarding the transaction-local `cafaye.account_id`. Every
+  authenticated request then ran with no identity: protected writes raised
+  `42501` and protected reads returned zero rows. The plug is removed; each
+  `/v1` action and the `:idempotent` plug opens its own `with_account/3`
+  around its own work, with the account `CourierWeb.Plugs.Principal`
+  stashed. A request-lifetime checked-out connection was refused: the only
+  connection-holding Ecto offers is function-scoped, and a session-level
+  `set_config` on a pooled connection leaks one account's identity to the
+  next checkout. Statement errors under a scope are contained with
+  `mode: :savepoint` on the operation (Ecto's documented remedy) — an inner
+  `Repo.transaction/1` with `Repo.rollback/1` is not containment, measured:
+  nested Ecto transactions are not savepoints and an inner rollback fails the
+  outer commit as `{:error, :rollback}`. Proved in
+  `test/courier_web/plugs/tenant_scope_test.exs` (6 tests: write+read with no
+  ambient identity, pool recovery after 32 mid-transaction failures, a full
+  send plus idempotent replay, and the pipeline shape).
+  - **What this does *not* do, stated rather than glossed:** the pre-existing
+    control-flow rollbacks in `Courier.Deliver`, `Courier.Unsubscribes`,
+    `Courier.Notifications` and `Courier.InboundReports` now nest inside the
+    per-action scope, so their failure paths (provider refused, concurrent
+    duplicate) fail the scoped commit rather than mapping to their documented
+    statuses. The happy paths are green; the failure-path statuses under
+    scope are the known exposure a successor must re-verify with the full
+    gate, not a shape this packet proved.
+
 - **`GET` and `PUT /v1/notification_preferences/{user_id}` are authenticated, and
   tenant-scoped.** Both were reachable with no credential at all, which meant any
   caller could read or overwrite any other tenant's notification preferences by
