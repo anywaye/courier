@@ -130,7 +130,9 @@ defmodule Courier.ChartTest do
 
       # It precedes any apiVersion, so the whole document is inside the
       # gate — with the knob off, `helm template` emits no Ingress at all.
-      assert ingress =~ ~r/\{\{- if \.Values\.ingress\.enabled \}\}\n.*apiVersion: networking\.k8s\.io\/v1/m
+      # The `s` flag lets `.` span the lines between the guard and the
+      # apiVersion (the no-host guard and the fail sit between them).
+      assert ingress =~ ~r/\{\{- if \.Values\.ingress\.enabled \}\}\n.*apiVersion: networking\.k8s\.io\/v1/ms
 
       # And the gate closes the document.
       assert ingress =~ ~r/\{\- end \}\}\s*$/
