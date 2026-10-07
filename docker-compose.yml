@@ -318,13 +318,26 @@ services:
       # `/readyz` and the provider surface, and answers 503 with
       # `code: unavailable` on everything behind `CourierWeb.Plugs.Principal`.
       #
-      # `COURIER_IDENTITY_URL` is by compose service name, like the collector
-      # above. `COURIER_IDENTITY_TOKEN` is courier's OWN scoped API token —
+      # `COURIER_IDENTITY_URL` IS DELIBERATELY NOT RESTATE HERE, and that is
+      # the whole of the fix for how it drifted. The single authority is
+      # `config/runtime.exs`'s default, `http://identity:8080` — the
+      # compose-network name AND identity's own port (its Dockerfile
+      # `EXPOSE 8080`, its compose `PORT: "8080"`). This stack runs the prod
+      # release, so that default applies the moment the variable is unset.
+      # Restating the value here is how the port ended up wrong in two places
+      # at once: 4000 is courier's own Phoenix port, and a compose file that
+      # agrees with a wrong default is a wrong default with a comment on it.
+      # `test/courier/principal/introspection_url_test.exs` holds the two
+      # together.
+      #
+      # `COURIER_IDENTITY_TOKEN` is courier's OWN scoped API token —
       # a credential, so it is required from the host environment and never
       # committed here. Mint one with `POST /v1/accounts/{account_id}/api-keys`
-      # against an identity account that belongs to courier and to nothing else.
+      # against an identity account that belongs to courier and to nothing
+      # else. It must be the SAME key identity presents as its own
+      # `COURIER_TOKEN`: identity lets a token caller introspect only itself,
+      # so two distinct keys produce identity's 403 and courier's 503.
       # ---------------------------------------------------------------------
-      COURIER_IDENTITY_URL: http://identity:4000
       COURIER_IDENTITY_TOKEN: "${COURIER_IDENTITY_TOKEN:?set COURIER_IDENTITY_TOKEN, or mint one with POST /v1/accounts/{account_id}/api-keys}"
 
       # ---------------------------------------------------------------------

@@ -188,10 +188,13 @@ env:
     COURIER_SMTP_SSL: "false"
     # Where identity is. An ADDRESS and not a secret, so it lives here rather
     # than in `.kamal/secrets` — the same reasoning as COURIER_OTEL_ENDPOINT
-    # above. `config/runtime.exs` defaults it to `http://identity:4000`, and this
+    # above. `config/runtime.exs` defaults it to `http://identity:8080`, and this
     # line is written out so that the file says what a deploy of courier will
     # authenticate against rather than leaving it to be inferred from a default.
-    COURIER_IDENTITY_URL: http://identity:4000
+    # 8080 is identity's own port (its Dockerfile `EXPOSE 8080`, its compose
+    # `PORT: "8080"`); 4000 is courier's own Phoenix port, and a deployed courier
+    # pointed there answers 503 to every authenticated request.
+    COURIER_IDENTITY_URL: http://identity:8080
   secret:
     # The database URL. It carries a password, which is why it is a secret and
     # never a clear value: at runtime it will be in the container's
@@ -228,8 +231,13 @@ env:
     #   COURIER_IDENTITY_TOKEN       raises when unset; courier's own scoped API
     #                                token, which it presents to identity's
     #                                introspection endpoint to learn who is
-    #                                calling. See `Courier.Principal.Introspection`
-    #                                for what it is and how it is rotated.
+    #                                calling. It must be the SAME key identity
+    #                                presents as its own COURIER_TOKEN: identity
+    #                                lets a token caller introspect only itself,
+    #                                so two distinct keys produce identity's 403
+    #                                and courier's 503. See
+    #                                `Courier.Principal.Introspection` for what
+    #                                it is and how it is rotated.
     #
     # WHAT IS DELIBERATELY NOT LISTED, because listing it is a trap:
     # `COURIER_ERROR_REPORTING_DSN` and `COURIER_ERROR_SINK_DSN` are optional

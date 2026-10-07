@@ -1390,13 +1390,25 @@ asymmetry between them is the decision**:
   account that belongs to courier and to nothing else; rotate by minting a new
   one, redeploying and revoking the old — there is no cache to invalidate.
   `config/test.exs` sets a fixed one, on the same terms as
-  `COURIER_SECRET_BOX_KEY`.
+  `COURIER_SECRET_BOX_KEY`. **It must be the same key identity presents as its
+  own `COURIER_TOKEN`**: identity's introspection endpoint lets a token caller
+  introspect only itself, so one key is held by both services — identity
+  presents it outbound, courier presents it to introspect the inbound request.
+  Two distinct keys produce identity's 403 and courier's 503, and the symptom is
+  indistinguishable from a network fault. Tightening identity's rule is
+  identity's decision (packet m65), not courier's.
 - **`COURIER_IDENTITY_URL`** — identity's base URL, defaulted to
-  `http://identity:4000` (the compose-network name, and the same shape as
+  `http://identity:8080` (the compose-network name, and identity's own port —
+  its Dockerfile `EXPOSE 8080`, its compose `PORT: "8080"`; the same shape as
   `COURIER_OTEL_ENDPOINT`'s default). A wrong URL is a **503 on every
   authenticated request**: loud, diagnosable and retriable — which is why
   making a dependency's address a boot requirement would turn "identity moved"
   into a stop-the-world upgrade gate for a service that is otherwise fine.
+  `config/runtime.exs`'s default is the single authority: the compose file
+  deliberately does not restate it, `Introspection.url/0`'s fallback agrees with
+  it, and `config/deploy.yml` states it explicitly because that is the one a
+  production courier reads. `test/courier/principal/introspection_url_test.exs`
+  holds all of them together and greps the tree for the two wrong values.
 
 - **`COURIER_MAIL_ADAPTER`** — `smtp`, the only adapter courier ships. `none` is
   `Swoosh.Adapters.Local` and is **refused in production**. Unset is a boot
