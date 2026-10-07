@@ -12,17 +12,25 @@ defmodule Courier.Mailers do
   with no adapter, no mailbox, and no network. `deliver/2` is `build/2` plus
   `Courier.Mailer.deliver/1`.
 
-  ## The three types
+  ## The four types
 
-  `welcome`, `password_reset`, and `team_invitation` are courier's whole
-  catalog — the same three the platform triggers. Each has its own required
-  fields, and each says so:
+  `welcome`, `password_reset`, `team_invitation`, and `account_security` are
+  courier's whole catalog. Each has its own required fields, and each says so:
 
-  | type             | required                                |
-  | ---------------- | --------------------------------------- |
-  | `welcome`        | `email`                                 |
-  | `password_reset` | `email`, `url`                          |
-  | `team_invitation`| `email`, `url`, `account_name`, `invited_by` |
+  | type               | required                                |
+  | ------------------ | --------------------------------------- |
+  | `welcome`          | `email`                                 |
+  | `password_reset`   | `email`, `url`                          |
+  | `team_invitation`  | `email`, `url`, `account_name`, `invited_by` |
+  | `account_security` | `email`, `reason`                       |
+
+  `account_security` is the password-reset notice's sibling: the notice a
+  person is owed when their credentials end. It is rendered from one template
+  that branches on `reason` — `password reset` ("your password was changed")
+  or `email address changed` ("the email address on your account was moved") —
+  because the two facts have different remediations and a notice that does not
+  name which one happened forces the reader to guess. The `reason` is required
+  because the template cannot render a branch for a reason it was not given.
 
   A payload courier cannot send is `{:error, {:invalid_payload, changeset}}`
   rather than a mail with a hole in it: a reset mail with no link, or an
@@ -84,9 +92,13 @@ defmodule Courier.Mailers do
   """
   @type kind :: :transactional | :bulk
 
-  @fields ~w(user_id email name url account_name invited_by role)a
+  # `reason` is the one field not every type uses: only `account_security`
+  # branches on it. It is in the shared list rather than the type's own because
+  # the payload is normalised over one vocabulary, and a second per-type list
+  # would be a second place for a field to be dropped.
+  @fields ~w(user_id email name url account_name invited_by role reason)a
   @payload_types Map.new(@fields, &{&1, :string})
-  @types ~w(welcome password_reset team_invitation)
+  @types ~w(welcome password_reset team_invitation account_security)
 
   # **The kind of every type courier sends, and nothing else.** This table is the
   # deliverability gate's input and it is here — in the module that composes the
@@ -94,14 +106,14 @@ defmodule Courier.Mailers do
   # because the question "may this message carry an unsubscribe link?" has to have
   # exactly one answer in the codebase.
   #
-  # **All three are `:transactional` today, and that is not a gap.** There is no
+  # **All four are `:transactional` today, and that is not a gap.** There is no
   # bulk type in courier's catalog, and adding one is a change in **core**, not
   # here: every payload courier publishes carries `notification_type`, and
   # `core/schemas/events/courier/email/*.schema.json` freezes that field to an
-  # enum of exactly these three names. A fourth type in this list would put a
-  # value on the bus that four payload schemas reject. So the switch is one row
-  # here plus one enum value in core, and `Courier.MailersTest` asserts the table
-  # covers `types/0` so neither half can be forgotten.
+  # enum of the names courier sent when core last froze it. A bulk type in this
+  # list would put a value on the bus that four payload schemas reject. So the
+  # switch is one row here plus one enum value in core, and `Courier.MailersTest`
+  # asserts the table covers `types/0` so neither half can be forgotten.
   #
   # **The default for a type with no row is `:transactional`,** and the direction
   # of that default is the whole decision. A new type nobody classified would
@@ -123,7 +135,8 @@ defmodule Courier.Mailers do
   @kinds [
     {"welcome", :transactional},
     {"password_reset", :transactional},
-    {"team_invitation", :transactional}
+    {"team_invitation", :transactional},
+    {"account_security", :transactional}
   ]
 
   @doc """
@@ -285,6 +298,7 @@ defmodule Courier.Mailers do
       "welcome" -> [:email]
       "password_reset" -> [:email, :url]
       "team_invitation" -> [:email, :url, :account_name, :invited_by]
+      "account_security" -> [:email, :reason]
     end
   end
 
@@ -306,7 +320,8 @@ defmodule Courier.Mailers do
       url: fields.url,
       account_name: escape(fields.account_name),
       invited_by: escape(fields.invited_by),
-      role: escape(fields.role)
+      role: escape(fields.role),
+      reason: escape(fields.reason)
     ]
 
     "#{type}.#{format}"

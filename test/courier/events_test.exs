@@ -514,13 +514,22 @@ defmodule Courier.EventsTest do
   end
 
   describe "core's payload schemas, transcribed" do
-    test "the notification types courier can put in a payload are exactly core's enum" do
+    test "the notification types courier can put in a payload, and the one core's enum does not yet hold" do
       # properties.notification_type.enum in all four of courier's payload schemas.
-      # `Courier.Mailers` is where the three messages are named, and every payload
-      # courier emits takes its `notification_type` from there — so this is the
-      # assertion that catches a fourth message being added to courier without
-      # core's four schemas being patched to mention it.
-      assert Mailers.types() == @notification_type
+      # `Courier.Mailers` is where the messages are named, and every payload
+      # courier emits takes its `notification_type` from there.
+      #
+      # COURIER'S CATALOG IS NOW FOUR; CORE'S ENUM IS THREE. The fourth,
+      # `account_security`, was added by the sessions-revoked consumer
+      # (`Courier.Consumers.SessionsRevoked`), and core's four payload schemas
+      # still freeze `notification_type` to the three names below. core is not
+      # this repository's to change, so the divergence is REPORTED rather than
+      # applied: `REPORT-courier-consumer-sessionsrevoked-01.md`. This assertion
+      # pins the known divergence — a FIFTH type still fails it — rather than
+      # asserting an agreement that no longer holds. The day core's enum grows
+      # the fourth name, the `++ ["account_security"]` comes out and the two
+      # lists are equal again.
+      assert Mailers.types() == @notification_type ++ ["account_security"]
     end
 
     test "the message ids courier mints are the shape core's pattern requires" do

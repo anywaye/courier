@@ -39,12 +39,16 @@ defmodule Courier.UnsubscribeHeadersTest do
 
   **courier sends no bulk mail, so `Courier.Deliver` never takes the `:bulk` arm
   of `Courier.Unsubscribes.decorate_for/3`.** It cannot: a bulk type would have to
-  be a fourth entry in `Courier.Mailers.kinds/0`, and adding a notification type
+  be a new entry in `Courier.Mailers.kinds/0`, and adding a notification type
   is a change in **core** — every payload courier publishes carries
   `notification_type`, and `core/schemas/events/courier/email/*.schema.json`
-  freezes that field to an enum of the three names courier sends. This repository
-  does not own those schemas, and a fourth type would put a value on the bus that
-  four payload schemas reject.
+  freezes that field to an enum of the names courier sends. This repository
+  does not own those schemas, and a type the enum does not hold would put a
+  value on the bus that four payload schemas reject. The fourth type,
+  `account_security`, is exactly that reported divergence — it is
+  `:transactional`, so it changes nothing here, and the gap is recorded in
+  `REPORT-courier-consumer-sessionsrevoked-01.md` rather than hidden by this
+  file's "no bulk mail" claim, which is about the `:bulk` arm and still holds.
 
   So the positive case is proved where it can be proved honestly: on a real
   composed message through the real `decorate/2`, and on the wire through the real
@@ -192,7 +196,11 @@ defmodule Courier.UnsubscribeHeadersTest do
       url: "https://cafaye.test/#{type}",
       account_name: "Acme",
       invited_by: "Kaka",
-      role: "member"
+      role: "member",
+      # `account_security` requires a reason; the other types ignore it. One
+      # payload shape for the whole `Mailers.types()` iteration, so the fourth
+      # type is covered by the same arms as the first three.
+      reason: "password reset"
     }
   end
 

@@ -91,6 +91,21 @@ defmodule Courier.Deliver do
   def team_invitation(payload), do: deliver(:team_invitation, payload)
 
   @doc """
+  Sends the `account_security` mail — the notice a person is owed when their
+  credentials end: "your password was changed", or "the email address on your
+  account was moved".
+
+  The payload carries `user_id`, `email` and `reason`; the template branches on
+  `reason` into the two wordings. The reason is validated against its closed set
+  by the caller (`Courier.Consumers.SessionsRevoked`) before it reaches here —
+  this function renders what it is given, and `Courier.Mailers` requires the
+  `reason` so a payload without one is refused rather than rendered into the
+  wrong branch.
+  """
+  @spec account_security(map()) :: {:ok, map()} | {:error, term()}
+  def account_security(payload), do: deliver(:account_security, payload)
+
+  @doc """
   Sends the mail for `type`, for a caller that has the type as data rather than
   as a function to call.
   """

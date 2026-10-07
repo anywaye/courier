@@ -156,6 +156,21 @@
 #     subscription to a type no publisher declares fails on somebody else's
 #     deploy (core's rule 6) — and the divergence is reported rather than
 #     renamed: `REPORT-courier-consumer-memberaccepted-01.md`.
+#
+#   - `identity.session.revoked` is the third entry, and the first one that
+#     sends mail. identity publishes it from `internal/outbox/recovery.go`
+#     (`NewSessionsRevoked`) in the same transaction as the revocation it
+#     describes, for the password-reset flow and the email-change flow, with
+#     payload `user_id`, `email`, `reason` and a closed `reason` set (`password
+#     reset`, `email address changed`). The handler is
+#     `Courier.Consumers.SessionsRevoked`, and it sends the account-security
+#     notice through `Courier.Deliver` — the payload carries the recipient and
+#     the fact, so nothing is looked up and the reason is validated against the
+#     closed set before anything is dialled. **This is the first event courier
+#     consumes whose payload is sufficient for a mail**: the invitation was
+#     missing the one field that mattered and the acceptance carried no address
+#     at all. The reason-branching decision and the core enum gap are reported
+#     in `REPORT-courier-consumer-sessionsrevoked-01.md`.
 
 name: courier
 description: cafaye courier — transactional email, notification preferences, and every outbound webhook.
@@ -223,6 +238,7 @@ exposes:
 consumes:
     - identity.member.invited
     - identity.member.accepted
+    - identity.session.revoked
 
 # Other cafaye services. Empty: courier depends on postgres, not on a sibling
 # service, and the services that will depend on it depend the other way round.

@@ -192,9 +192,68 @@ defmodule Courier.MailersTest do
     end
   end
 
+  describe "account_security" do
+    defp account_security_payload(overrides \\ %{}) do
+      Map.merge(
+        %{
+          user_id: @user_id,
+          email: "kaka@example.com",
+          name: "Kaka",
+          reason: "password reset"
+        },
+        overrides
+      )
+    end
+
+    test "the subject is the configured one, and reason-agnostic" do
+      # One subject for both reasons, because the configuration is one line per
+      # type and the body is where the reason-specific wording lives.
+      assert {:ok, email} = Mailers.build(:account_security, account_security_payload())
+
+      assert email.subject == "Security notice for your caFaye account"
+    end
+
+    test "the password-reset reason renders the password wording" do
+      assert {:ok, email} = Mailers.build(:account_security, account_security_payload())
+
+      assert email.html_body =~ "Your password was changed."
+      assert email.text_body =~ "Your password was changed."
+      refute email.text_body =~ "The email address on your account was changed."
+    end
+
+    test "the email-address reason renders the email wording, from the one template" do
+      # The branch is on the mail, not on the type: one template, two renderings.
+      assert {:ok, email} =
+               Mailers.build(
+                 :account_security,
+                 account_security_payload(%{reason: "email address changed"})
+               )
+
+      assert email.html_body =~ "The email address on your account was changed."
+      assert email.text_body =~ "The email address on your account was changed."
+      refute email.text_body =~ "Your password was changed."
+    end
+
+    test "a payload with no reason is an error, not a mail in the wrong branch" do
+      # The template cannot render a branch for a reason it was not given, so
+      # the renderer refuses a payload without one rather than defaulting.
+      assert {:error, {:invalid_payload, changeset}} =
+               Mailers.build(:account_security, account_security_payload(%{reason: nil}))
+
+      assert %{reason: ["can't be blank"]} = errors_on(changeset)
+    end
+
+    test "a payload with no address is an error, not an email to nobody" do
+      assert {:error, {:invalid_payload, changeset}} =
+               Mailers.build(:account_security, account_security_payload(%{email: nil}))
+
+      assert %{email: ["can't be blank"]} = errors_on(changeset)
+    end
+  end
+
   describe "types" do
-    test "the notification types are exactly the three courier sends" do
-      assert Mailers.types() == ~w(welcome password_reset team_invitation)
+    test "the notification types are exactly the four courier sends" do
+      assert Mailers.types() == ~w(welcome password_reset team_invitation account_security)
     end
 
     test "a type courier does not have is an error rather than a fallback" do
