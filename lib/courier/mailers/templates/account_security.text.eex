@@ -1,0 +1,11 @@
+<%= @greeting %>
+
+<%= if @reason == "password reset" do %>
+Your password was changed.
+<% else %>
+The email address on your account was changed.
+<% end %>
+
+If this was you, you can ignore this message.
+
+If this was not you, your account may be compromised. Contact support right away.

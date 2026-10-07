@@ -37,7 +37,14 @@ config :courier, :mailing,
   subjects: %{
     welcome: "Welcome to caFaye",
     password_reset: "Reset your caFaye password",
-    team_invitation: "%{invited_by} invited you to join %{account_name}"
+    team_invitation: "%{invited_by} invited you to join %{account_name}",
+    # Reason-agnostic on purpose: the subject is one line per TYPE in this
+    # configuration, and `account_security` covers two reasons. The body is
+    # where the reason-specific wording lives; a subject that tried to branch
+    # would need a `%{reason}` placeholder the two values would fill clumsily
+    # ("…: password reset"). A label that names the fact's kind is the honest
+    # subject for a type that is one shape with two renderings.
+    account_security: "Security notice for your caFaye account"
   }
 
 # `api_client: false` is still correct, and now for a real reason rather than
@@ -123,7 +130,14 @@ config :courier, :consumers, %{
   # production caller. The invited handler refuses by design (the accept URL is
   # unrecoverable from any event); this one needs no refusal, because the
   # payload's three fields are exactly what the notification surface takes.
-  "identity.member.accepted" => Courier.Consumers.MemberAccepted
+  "identity.member.accepted" => Courier.Consumers.MemberAccepted,
+  # The third subscription, and the first one that sends MAIL. The payload
+  # carries `user_id`, `email` and `reason` — the recipient and the fact — so
+  # the handler sends the account-security notice through `Courier.Deliver`
+  # and nothing is looked up. The reason is validated against its closed set
+  # (`password reset`, `email address changed`) before anything is dialled, and
+  # an unknown reason is a refusal, never a default.
+  "identity.session.revoked" => Courier.Consumers.SessionsRevoked
 }
 
 # The consumer's own tuning, in `:consumer` and not `:consumers` — the registry

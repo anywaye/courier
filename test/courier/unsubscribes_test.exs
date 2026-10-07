@@ -91,7 +91,7 @@ defmodule Courier.UnsubscribesTest do
       # to declare, and **adding one is a change in core**: every payload courier
       # publishes carries `notification_type`, and
       # `core/schemas/events/courier/email/*.schema.json` freezes that field to an
-      # enum of exactly the three names in `types/0`. This is the half of the
+      # enum of the names in `types/0`. This is the half of the
       # deliverability gate that is not courier's to close, and asserting it here
       # is what makes the report's "no bulk mail today" a measurement.
       assert Mailers.kinds() |> Map.values() |> Enum.uniq() == [:transactional]
