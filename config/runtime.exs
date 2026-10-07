@@ -233,10 +233,12 @@ if config_env() == :prod do
     api_client: Courier.MailerAdapter.api_client(mailer_adapter[:adapter]) || false
 
   # The one startup line an operator reads to confirm which relay courier is
-  # pointed at. It names the host, the port and whether auth is on — never the
-  # username and never the password, because at SMTP a "username" is very often
-  # the API key. See `Courier.MailerAdapter.describe/1` and the credential tests
-  # that assert the absence rather than trusting this comment.
+  # pointed at. It names the host, the port and whether auth is on for SMTP, or
+  # the provider and whether its token is set for Postmark — never a
+  # credential, because at SMTP a "username" is very often the API key and a
+  # Postmark token is the whole secret. See `Courier.MailerAdapter.describe/1`
+  # and the credential tests that assert the absence rather than trusting this
+  # comment.
   require Logger
 
   Logger.info("mailer: #{Courier.MailerAdapter.describe(mailer_adapter)}")
