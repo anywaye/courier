@@ -14,6 +14,37 @@ document lands in both files in one commit, because core asserts the two agree.
 
 ### Added
 
+- **A push to master now publishes courier's image and chart — the publish
+  loop's missing end.** The substrate's Argo `Application` reads
+  `repoURL: oci://ghcr.io/cafaye/charts` with `chart: courier` and
+  `targetRevision: 0.1.0`, and kit's `m84` (W84) landed the publish half in
+  kit itself: a reusable `publish.reusable.yml` and a caller template
+  (`kit/templates/publish/publish.yml`) whose header says to copy it to
+  `.github/workflows/publish.yml` in the service repository, verbatim. Measured
+  on the merged trees: courier had not copied it, so the chart
+  (`chart/`, `version: 0.1.0`) and the image its chart references were
+  published by nothing — the substrate's `courier` Application pointed at a
+  registry nothing wrote to. This packet copies the caller verbatim and proves
+  it in courier's own gate, red-first.
+  - **`.github/workflows/publish.yml` is kit's template, byte for byte.** No
+    paraphrase, no re-derived permissions, no split: it is one `uses:` of the
+    composed `publish.reusable.yml`, which builds and pushes the image and
+    packages and pushes the chart. The composition lives in kit; a caller that
+    inlines the steps has forked it. Courier's chart directory is `chart/`,
+    which is the reusable workflow's own default, so the verbatim copy carries
+    no `chart-dir:` input.
+  - **`test/courier/chart_test.exs` proves the loop, red-first.** Six tests,
+    all in the no-database tier: the caller exists, triggers on a push to
+    master, calls `cafaye/kit/.github/workflows/publish.reusable.yml@master`,
+    grants `packages: write` (a reusable workflow can request a permission but
+    cannot grant itself one — omitting it is a 401 at the push that reads
+    like a wrong password), passes `push: true` (the reusable workflows
+    default to `false`, so a caller that omits it publishes nothing and says
+    nothing), and names the chart directory whose `Chart.yaml` version equals
+    the substrate's `targetRevision: 0.1.0` — the chart version IS the OCI
+    tag, and the failure message names both sides. Three red controls, each
+    run rather than described: the caller removed (6 red), `push: false`
+    (1 red), the chart version bumped to `0.1.1` (2 red).
 - **courier's chart has a way in — the Ingress W81 added to the generator,
   applied to a chart that predated it.** W85 generated `chart/` from a
   generator that had no Ingress, so the chart shipped with a `ClusterIP`
