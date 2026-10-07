@@ -68,8 +68,9 @@ defmodule Courier.ChartTest do
 
   use ExUnit.Case, async: true
 
-  @chart_dir Path.join(__DIR__, "../../chart")
-  @workflow_path Path.join(__DIR__, "../../.github/workflows/publish.yml")
+  @repo_root Path.join(__DIR__, "../..")
+  @chart_dir Path.join(@repo_root, "chart")
+  @workflow_path Path.join(@repo_root, ".github/workflows/publish.yml")
 
   # The substrate's `Application` pins this targetRevision
   # (`kit/templates/substrate/manifests/applications/courier.yaml`). It is a
@@ -147,8 +148,8 @@ defmodule Courier.ChartTest do
   # workflow's own default. `chart.reusable.yml` reads the chart's name and
   # version from the `Chart.yaml` in that directory and takes neither as an
   # input, so this is the directory the push actually publishes.
-  defp chart_dir(with_block) do
-    case with_block do
+  defp chart_dir(inputs) do
+    case inputs do
       %{"chart-dir" => dir} -> dir
       %{} -> "chart/"
     end
@@ -200,8 +201,10 @@ defmodule Courier.ChartTest do
     end
 
     test "the chart directory it names holds Chart.yaml at the version the substrate's Application pulls" do
+      # `chart-dir` is relative to the repository root, which is where the
+      # reusable workflow checks it out — not relative to `chart/`.
       dir = chart_dir(with_block(workflow()))
-      chart_path = Path.join([@chart_dir, dir, "Chart.yaml"])
+      chart_path = Path.join([@repo_root, dir, "Chart.yaml"])
       chart_yaml = File.read!(chart_path)
 
       chart_version =
@@ -218,9 +221,9 @@ defmodule Courier.ChartTest do
                   "does not state one is a chart that publishes nothing."
 
       assert chart_version == @target_revision,
-        "#{chart_path}'s version is #{inspect(chart_version)} and the substrate's Application pins " <>
-          "targetRevision #{@target_revision} — the chart version IS the OCI tag, so the two must be " <>
-          "equal: a service that bumps one and not the other is a service that never deploys"
+             "#{chart_path}'s version is #{inspect(chart_version)} and the substrate's Application pins " <>
+               "targetRevision #{@target_revision} — the chart version IS the OCI tag, so the two must be " <>
+               "equal: a service that bumps one and not the other is a service that never deploys"
     end
   end
 
@@ -297,7 +300,8 @@ defmodule Courier.ChartTest do
       # gate — with the knob off, `helm template` emits no Ingress at all.
       # The `s` flag lets `.` span the lines between the guard and the
       # apiVersion (the no-host guard and the fail sit between them).
-      assert ingress =~ ~r/\{\{- if \.Values\.ingress\.enabled \}\}\n.*apiVersion: networking\.k8s\.io\/v1/ms
+      assert ingress =~
+               ~r/\{\{- if \.Values\.ingress\.enabled \}\}\n.*apiVersion: networking\.k8s\.io\/v1/ms
 
       # And the gate closes the document.
       assert ingress =~ ~r/\{\- end \}\}\s*$/

@@ -241,7 +241,38 @@ jobs:
           # `COURIER_MAIL_ADAPTER` naming `Swoosh.Adapters.Local` is refused
           # in `:dev` and `:test` as well as `:prod`. 1576 is 698 + 878, so
           # the parts still sum to the whole.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1582
+          #
+          # AND IT MOVES AGAIN for the HELM CHART (w85): whole 1576 -> 1582,
+          # no-database 698 -> 704 (31 files), database UNCHANGED at 878 (47
+          # files). The +6 are one file, `chart_test.exs`, a plain
+          # `ExUnit.Case` because its subject is what the chart FILES state.
+          # 1582 is 704 + 878, so the parts still sum to the whole.
+          #
+          # AND IT MOVES AGAIN for the PUBLISH LOOP'S MISSING END (w96):
+          # whole 1587 -> 1593, no-database 709 -> 715 (32 files), database
+          # UNCHANGED at 878 (47 files). The +6 are the same file,
+          # `chart_test.exs`, and for the same reason: the publish workflow's
+          # contract is what two files on disk state — the caller at
+          # `.github/workflows/publish.yml` and `chart/Chart.yaml` — and a
+          # claim about files is a claim no database can check. The six
+          # assert the caller exists, triggers on a push to master, calls
+          # kit's composed `publish.reusable.yml@master`, grants
+          # `packages: write`, passes `push: true`, and names the chart
+          # directory whose `Chart.yaml` version equals the substrate's
+          # `targetRevision: 0.1.0`. 1593 is 715 + 878, so the parts still
+          # sum to the whole.
+          #
+          # **AND THE BASELINE ITSELF WAS STALE BY FIVE, which this raise
+          # catches up rather than papers over.** The w90 ingress packet
+          # added 5 tests to `chart_test.exs` and raised nothing, so the
+          # floor said 1582/704 while the tree measured 1587/709 — green
+          # throughout, because a floor is a decrease detector and cannot
+          # see tests that were added. Measured on this tree before the
+          # first commit of this packet: 1587 whole (709 + 878), and the
+          # no-database tier's file count is 32, not the 31 the w85
+          # paragraph records. The raise is to the measurement, not to
+          # the measurement plus the old floor's error.
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1593
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -514,7 +545,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (704 tests, 31 files)
+      - name: tier — no database (715 tests, 32 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -553,7 +584,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 704
+          bin/assert-suite "$log" "no database" 715
 
       - name: tier — database (878 tests, 47 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -654,8 +685,8 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1582 passed | \`bin/assert-suite\` |"
-            echo "| no database, 31 files | 704 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1593 passed | \`bin/assert-suite\` |"
+            echo "| no database, 32 files | 715 passed | tier step |"
             echo "| database, 47 files | 878 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"

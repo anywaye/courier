@@ -473,7 +473,41 @@ gate:
   # measurement with zero headroom, for the reason the telemetry
   # paragraph gives: the next packet that adds a test goes red until
   # it raises this number.
-  minimum: 1582
+  #
+  # REMEASURED on the tree carrying the PUBLISH LOOP'S MISSING END:
+  # whole suite 1587 -> 1593, no-database 709 -> 715 across 31 ->
+  # 32 files, database UNCHANGED at 878 across the same 47 files.
+  #
+  # **The +6 are the same file, `test/courier/chart_test.exs`, and
+  # for the same reason: the publish workflow's contract is what two
+  # files on disk state** — the caller at
+  # `.github/workflows/publish.yml` and `chart/Chart.yaml` — and a
+  # claim about files is a claim no database can check. The six
+  # assert the caller exists, triggers on a push to master, calls
+  # kit's composed `publish.reusable.yml@master`, grants
+  # `packages: write`, passes `push: true`, and names the chart
+  # directory whose `Chart.yaml` version equals the substrate's
+  # `targetRevision: 0.1.0` — the chart version IS the OCI tag, and
+  # the equality's failure message names both sides.
+  #
+  # **AND THE BASELINE ITSELF WAS STALE BY FIVE, which this raise
+  # catches up rather than papers over.** The w90 ingress packet
+  # added 5 tests to `chart_test.exs` and raised nothing, so the
+  # floor said 1582/704 while the tree measured 1587/709 — green
+  # throughout, because a floor is a decrease detector and cannot
+  # see tests that were added. Measured on this tree before this
+  # packet's first commit: 1587 whole (709 + 878). The no-database
+  # tier's file count is 32, not the 31 the w85 paragraph records.
+  # The raise is to the measurement, not to the measurement plus the
+  # old floor's error.
+  #
+  # **1593 is 715 + 878**, so the parts still sum to the whole —
+  # re-measured by running the tier greps on this tree, not by adding
+  # the two branches' deltas on paper. The floor sits AT the
+  # measurement with zero headroom, for the reason the telemetry
+  # paragraph gives: the next packet that adds a test goes red until
+  # it raises this number.
+  minimum: 1593
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

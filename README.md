@@ -159,8 +159,8 @@ half and adds the two jobs kit cannot own:
 
 Two things a reader should know before trusting a green run:
 
-- **The floors are decrease detectors, not targets.** 1458 tests, 651 of them
-  without a database, 807 with it, and 62 in the SSRF table. Delete one and CI
+- **The floors are decrease detectors, not targets.** 1593 tests, 715 of them
+  without a database, 878 with it, and 62 in the SSRF table. Delete one and CI
   goes red. Add one and CI goes red until the floor is raised, which is the
   intended direction.
 - **The `ci` job is expected to be red today**, on `test` (kit runs a bare
@@ -170,6 +170,34 @@ Two things a reader should know before trusting a green run:
   `MIX_ENV=test`). Both are in kit's file. The floor is enforced in `gate`, where
   it can be. Delete the `ci` job when kit's Elixir job grows a `services`/`env`
   seam — and not before.
+
+## Publishing
+
+A push to `master` publishes two artifacts, both through kit's reusable
+workflows and one caller, `.github/workflows/publish.yml` — kit's caller
+template (`kit/templates/publish/publish.yml`), copied verbatim:
+
+- **the image** at `ghcr.io/cafaye/courier:sha-<full 40 chars>` (plus
+  `<branch>`, plus `latest` on the default branch) — what `config/deploy.yml`
+  deploys;
+- **the chart** at `oci://ghcr.io/cafaye/charts/courier:<chart version>` — what
+  the substrate's Argo `Application` pulls.
+
+The caller grants `packages: write` — a reusable workflow can request a
+permission but cannot grant itself one, and omitting it is a 401 at the push
+that reads like a wrong password — and passes `push: true`: the reusable
+workflows default to `push: false`, so a caller that omits the input publishes
+nothing and says nothing. The composition lives in kit; the caller is one
+`uses:` of `cafaye/kit/.github/workflows/publish.reusable.yml@master`, and a
+caller that inlines the steps has forked it.
+
+**The chart's `version` is the tag.** `chart/Chart.yaml`'s `version` is the
+OCI tag the workflow pushes, and it must equal the `targetRevision` the
+substrate's `Application` pins (`0.1.0` today): a service that bumps one and
+not the other is a service that never deploys, and Argo reports no error — it
+just never finds the artifact. The equality is asserted in
+`test/courier/chart_test.exs`, red-first, with both sides named in the failure
+message.
 
 ## Probes
 
