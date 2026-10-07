@@ -108,6 +108,28 @@ defmodule CourierWeb.Plugs.PrincipalConfigTest do
                "#{CourierWeb.Plugs.Principal.account_header()} header said #{@other_account}"
     end
 
+    test "and assigns the whole principal, so a controller can read the subject" do
+      # The account is not the only fact a controller needs about the caller. The
+      # notifications reader addresses a recipient by the principal's `subject` —
+      # the user the token names — and that field is discarded if only the account
+      # is kept. This is the assertion that the plug change is load-bearing: the
+      # struct is on the conn, with the subject the introspection answer carried.
+      live()
+
+      conn =
+        build_conn()
+        |> bearer(@caller_token)
+        |> get(~p"/v1/webhook_endpoints")
+
+      assert conn.status in [200, 304]
+
+      assert %Courier.Principal{
+               account_id: @account,
+               subject: "ab000000-0000-0000-0000-000000000001",
+               scopes: ["accounts:read"]
+             } = conn.assigns[:current_principal]
+    end
+
     test "and `x-courier-account` alone authenticates nobody in this configuration" do
       # A header that becomes a fast path is an authentication bypass with a
       # config file attached, so this is a property rather than a convention: the

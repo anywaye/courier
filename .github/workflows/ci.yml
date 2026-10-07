@@ -199,7 +199,7 @@ jobs:
             echo "::error::bin/prime exited $status — the gate is red" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1488
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1520
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -481,7 +481,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 665
 
-      - name: tier — database (823 tests, 45 files)
+      - name: tier — database (855 tests, 46 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -505,7 +505,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 823
+          bin/assert-suite "$log" "database" 855
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -580,9 +580,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1488 passed | \`bin/assert-suite\` |"
-            echo "| no database, 29 files | 659 passed | tier step |"
-            echo "| database, 42 files | 764 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1520 passed | \`bin/assert-suite\` |"
+            echo "| no database, 30 files | 665 passed | tier step |"
+            echo "| database, 46 files | 855 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"

@@ -335,7 +335,26 @@ gate:
       # **1488 is 665 + 823**, so the parts still sum to the whole — re-measured
       # by running the tier greps on this tree, not by adding the two branches'
       # deltas on paper.
-      minimum: 1488
+      #
+      # REMEASURED on the tree carrying the NOTIFICATIONS READER — the HTTP surface
+      # over the in-app notification record: whole suite 1488 -> 1520, no-database
+      # UNCHANGED at 665 across the same 30 files, database tier 823 -> 855 across
+      # 45 -> 46 files.
+      #
+      # **The +32 are two files, and both are in the database tier**: 31 from
+      # `test/courier_web/controllers/notifications_controller_test.exs`, a
+      # `CourierWeb.ConnCase` because every claim in it is a claim about a ROW
+      # through the real router — the notifications the controller lists, the
+      # marks it applies, and the 404s it answers for a row in another account.
+      # The other is one test in `test/courier_web/plugs/principal_config_test.exs`,
+      # which is already in the database tier: it asserts the plug assigns the
+      # whole principal, not just the account, which is the load-bearing half of
+      # the reader's recipient resolution.
+      #
+      # **1520 is 665 + 855**, so the parts still sum to the whole — re-measured
+      # by running the tier greps on this tree, not by adding the two branches'
+      # deltas on paper.
+      minimum: 1520
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

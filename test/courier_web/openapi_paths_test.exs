@@ -807,7 +807,14 @@ defmodule CourierWeb.OpenAPIPathsTest do
       # describing an operation is the failure `CourierWeb.OpenAPIDocumentTest`
       # exists to catch, and this file is the reader that would stop understanding
       # the document first.
-      assert map_size(responses) == 12
+      #
+      # 12 → 16 with the four notification operations: `GET /v1/notifications`,
+      # `GET /v1/notifications/unread_count`, `POST /v1/notifications/{id}/seen`
+      # and `POST /v1/notifications/{id}/read`. Four operations on two new paths,
+      # and the two POSTs declare a 400 for the reason every other operation with
+      # a body-reading verb does: the parser reads a body on `POST`, so a body
+      # that is not JSON is refused before the controller runs.
+      assert map_size(responses) == 16
 
       for {_operation, declared} <- responses, {status, response} <- declared do
         if not String.starts_with?(status, "2") do
