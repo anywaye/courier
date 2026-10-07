@@ -639,13 +639,18 @@ document lands in both files in one commit, because core asserts the two agree.
   ambient identity, pool recovery after 32 mid-transaction failures, a full
   send plus idempotent replay, and the pipeline shape).
   - **What this does *not* do, stated rather than glossed:** the pre-existing
-    control-flow rollbacks in `Courier.Deliver`, `Courier.Unsubscribes`,
-    `Courier.Notifications` and `Courier.InboundReports` now nest inside the
-    per-action scope, so their failure paths (provider refused, concurrent
-    duplicate) fail the scoped commit rather than mapping to their documented
-    statuses. The happy paths are green; the failure-path statuses under
-    scope are the known exposure a successor must re-verify with the full
-    gate, not a shape this packet proved.
+    control-flow rollbacks in `Courier.Unsubscribes`, `Courier.Notifications`
+    and `Courier.InboundReports` now nest inside the per-action scope, so their
+    failure paths (concurrent duplicate) fail the scoped commit rather than
+    mapping to their documented statuses. `Courier.Deliver`'s send path is
+    not in that list: `send_and_record/3` returns its failures (provider
+    refused, token unmintable, row unwritable) as values rather than rolling
+    back — a rollback there is control flow over nothing written, and nested
+    it fails the request's own scoped commit. The two provider-retry tests in
+    `messages_controller_config_test.exs` prove the mapping under scope. The
+    remaining failure-path statuses under scope are the known exposure a
+    successor must re-verify with the full gate, not a shape this packet
+    proved.
 
 - **`GET` and `PUT /v1/notification_preferences/{user_id}` are authenticated, and
   tenant-scoped.** Both were reachable with no credential at all, which meant any

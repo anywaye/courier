@@ -79,11 +79,14 @@ defmodule Courier.Tenancy do
       itself (Ecto's documented remedy) rather than with an inner transaction
       that rolls back: an inner rollback under a scoped request was measured
       failing the outer commit as `{:error, :rollback}` — every retry a 503.
-      The pre-existing control-flow rollbacks in `Courier.Deliver`,
-      `Courier.Unsubscribes`, `Courier.Notifications` and
-      `Courier.InboundReports` predate per-action scoping and now nest inside
-      it; their failure paths are the known exposure (see the W105 handoff),
-      not a shape this packet re-verified.
+      The pre-existing control-flow rollbacks in `Courier.Unsubscribes`,
+      `Courier.Notifications` and `Courier.InboundReports` predate per-action
+      scoping and now nest inside it; their failure paths are the known
+      exposure (see the W105 handoff), not a shape this packet re-verified.
+      (`Courier.Deliver`'s send path is the exception: `send_and_record/3`
+      returns its failures as values rather than rolling back, because a
+      nested rollback fails the request's own scoped commit — measured as
+      two red provider-retry tests, fixed where the rollback was.)
     * **The response leaves before the COMMIT.** This is the honest cost and it
       is the one place this arrangement is weaker than it could be: the
       controller calls `send_resp` inside the transaction, so a client can be
