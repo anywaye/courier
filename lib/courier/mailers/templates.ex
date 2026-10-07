@@ -25,6 +25,10 @@ defmodule Courier.Mailers.Templates do
   @external_resource Path.join(@root, "team_invitation.text.eex")
   @external_resource Path.join(@root, "account_security.html.eex")
   @external_resource Path.join(@root, "account_security.text.eex")
+  @external_resource Path.join(@root, "email_change_current.html.eex")
+  @external_resource Path.join(@root, "email_change_current.text.eex")
+  @external_resource Path.join(@root, "email_change_new.html.eex")
+  @external_resource Path.join(@root, "email_change_new.text.eex")
 
   @templates Map.new(Path.wildcard(Path.join(@root, "*.eex")), fn path ->
                {Path.basename(path, ".eex"), EEx.compile_file(path)}

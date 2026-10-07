@@ -119,6 +119,15 @@ agreement that no longer holds. A fifth type still fails it. The day core's
 enum grows the fourth name, the `++ ["account_security"]` comes out and the two
 lists are equal again.
 
+**The gap is now three names, not one.** The email-change packet (w70) added
+`email_change_current` and `email_change_new` for the same reason identity
+refused the other two halves of an email change: courier had no message that
+told the truth. The assertion became `++ ["account_security",
+"email_change_current", "email_change_new"]`, and a seventh type still fails
+it. The report is one finding, not one packet: the day core's enum grows the
+three missing names, the `++ [...]` comes out and the two lists are equal
+again.
+
 ## The `bound/1` fix: a tuple refusal must not kill the loop
 
 `Courier.Consumers.bound/1` renders a handler's refusal reason into the

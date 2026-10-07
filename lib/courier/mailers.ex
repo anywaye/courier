@@ -12,10 +12,11 @@ defmodule Courier.Mailers do
   with no adapter, no mailbox, and no network. `deliver/2` is `build/2` plus
   `Courier.Mailer.deliver/1`.
 
-  ## The four types
+  ## The six types
 
-  `welcome`, `password_reset`, `team_invitation`, and `account_security` are
-  courier's whole catalog. Each has its own required fields, and each says so:
+  `welcome`, `password_reset`, `team_invitation`, `account_security`,
+  `email_change_current` and `email_change_new` are courier's whole catalog.
+  Each has its own required fields, and each says so:
 
   | type               | required                                |
   | ------------------ | --------------------------------------- |
@@ -23,6 +24,8 @@ defmodule Courier.Mailers do
   | `password_reset`   | `email`, `url`                          |
   | `team_invitation`  | `email`, `url`, `account_name`, `invited_by` |
   | `account_security` | `email`, `reason`                       |
+  | `email_change_current` | `email`, `url`                     |
+  | `email_change_new` | `email`, `previous_email`               |
 
   `account_security` is the password-reset notice's sibling: the notice a
   person is owed when their credentials end. It is rendered from one template
@@ -31,6 +34,15 @@ defmodule Courier.Mailers do
   because the two facts have different remediations and a notice that does not
   name which one happened forces the reader to guess. The `reason` is required
   because the template cannot render a branch for a reason it was not given.
+
+  The two email-change notices are the two halves of one event, and they are
+  two types because they are mailed to **two different addresses** with two
+  different jobs: `email_change_current` warns the address the account uses
+  today that somebody asked to move it (and carries the confirmation link),
+  `email_change_new` tells the address the account is moving to where it is
+  moving from. Both are security notices, so both are `:transactional` and
+  neither carries an unsubscribe header — a person who must act on an address
+  change must always be able to receive the mail about it.
 
   A payload courier cannot send is `{:error, {:invalid_payload, changeset}}`
   rather than a mail with a hole in it: a reset mail with no link, or an
@@ -92,13 +104,14 @@ defmodule Courier.Mailers do
   """
   @type kind :: :transactional | :bulk
 
-  # `reason` is the one field not every type uses: only `account_security`
-  # branches on it. It is in the shared list rather than the type's own because
-  # the payload is normalised over one vocabulary, and a second per-type list
-  # would be a second place for a field to be dropped.
-  @fields ~w(user_id email name url account_name invited_by role reason)a
+  # `reason` and `previous_email` are the fields not every type uses: only
+  # `account_security` branches on the first, only `email_change_new` needs the
+  # second. Both are in the shared list rather than the type's own because the
+  # payload is normalised over one vocabulary, and a second per-type list would
+  # be a second place for a field to be dropped.
+  @fields ~w(user_id email name url account_name invited_by role reason previous_email)a
   @payload_types Map.new(@fields, &{&1, :string})
-  @types ~w(welcome password_reset team_invitation account_security)
+  @types ~w(welcome password_reset team_invitation account_security email_change_current email_change_new)
 
   # **The kind of every type courier sends, and nothing else.** This table is the
   # deliverability gate's input and it is here — in the module that composes the
@@ -106,7 +119,7 @@ defmodule Courier.Mailers do
   # because the question "may this message carry an unsubscribe link?" has to have
   # exactly one answer in the codebase.
   #
-  # **All four are `:transactional` today, and that is not a gap.** There is no
+  # **All six are `:transactional` today, and that is not a gap.** There is no
   # bulk type in courier's catalog, and adding one is a change in **core**, not
   # here: every payload courier publishes carries `notification_type`, and
   # `core/schemas/events/courier/email/*.schema.json` freezes that field to an
@@ -136,7 +149,9 @@ defmodule Courier.Mailers do
     {"welcome", :transactional},
     {"password_reset", :transactional},
     {"team_invitation", :transactional},
-    {"account_security", :transactional}
+    {"account_security", :transactional},
+    {"email_change_current", :transactional},
+    {"email_change_new", :transactional}
   ]
 
   @doc """
@@ -299,6 +314,8 @@ defmodule Courier.Mailers do
       "password_reset" -> [:email, :url]
       "team_invitation" -> [:email, :url, :account_name, :invited_by]
       "account_security" -> [:email, :reason]
+      "email_change_current" -> [:email, :url]
+      "email_change_new" -> [:email, :previous_email]
     end
   end
 
@@ -317,11 +334,13 @@ defmodule Courier.Mailers do
   defp body(type, format, fields) do
     assigns = [
       greeting: greeting(fields.name),
+      email: escape(fields.email),
       url: fields.url,
       account_name: escape(fields.account_name),
       invited_by: escape(fields.invited_by),
       role: escape(fields.role),
-      reason: escape(fields.reason)
+      reason: escape(fields.reason),
+      previous_email: escape(fields.previous_email)
     ]
 
     "#{type}.#{format}"

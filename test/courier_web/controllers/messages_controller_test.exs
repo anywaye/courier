@@ -440,9 +440,16 @@ defmodule CourierWeb.MessagesControllerTest do
       # a field, and a body carrying it must be refused by NAME rather than
       # accepted with the previous address silently discarded — which over
       # HTTP is how a caller believes a mail was addressed that was not.
+      #
+      # The correctly-spelled `previous_email` travels beside it, so the
+      # misspelling is the ONLY thing wrong with the body: a 422 naming both
+      # an unknown field and a missing required one would pass against a door
+      # that reported only the first, and the claim is that the unknown field
+      # is named.
       conn =
         post_authed(body(%{
           "type" => "email_change_new",
+          "previous_email" => "kaka@example.com",
           "previous_emai" => "kaka@example.com",
           "name" => nil
         }))

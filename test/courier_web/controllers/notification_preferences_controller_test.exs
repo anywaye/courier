@@ -368,7 +368,7 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert conn.status == 200
 
-      assert %{"data" => %{"preferences" => [_welcome, _reset, _invitation, _security]}} =
+      assert %{"data" => %{"preferences" => [_welcome, _reset, _invitation, _security, _change_current, _change_new]}} =
                body(conn)
     end
   end

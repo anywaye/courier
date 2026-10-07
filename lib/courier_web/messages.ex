@@ -51,7 +51,7 @@ defmodule CourierWeb.Messages do
   alias Courier.Mailers
 
   # The keys a body may carry, in the order `openapi.yaml` lists them.
-  @wire_fields ~w(type user_id to name url account_name invited_by role)
+  @wire_fields ~w(type user_id to name url account_name invited_by role reason previous_email)
 
   # The subset that becomes a `Courier.Deliver` payload, paired with its atom
   # rather than derived from its string: `type` is deliberately absent (the
@@ -65,7 +65,9 @@ defmodule CourierWeb.Messages do
     url: "url",
     account_name: "account_name",
     invited_by: "invited_by",
-    role: "role"
+    role: "role",
+    reason: "reason",
+    previous_email: "previous_email"
   ]
 
   @doc """
