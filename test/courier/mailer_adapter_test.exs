@@ -32,7 +32,7 @@ defmodule Courier.MailerAdapterTest do
         ~w(
         COURIER_MAIL_ADAPTER COURIER_SMTP_HOST COURIER_SMTP_PORT
         COURIER_SMTP_USERNAME COURIER_SMTP_PASSWORD COURIER_SMTP_AUTH
-        COURIER_SMTP_TLS COURIER_SMTP_SSL
+        COURIER_SMTP_TLS COURIER_SMTP_SSL COURIER_POSTMARK_API_TOKEN
       ),
         fn name -> {name, System.get_env(name)} end
       )
@@ -135,6 +135,39 @@ defmodule Courier.MailerAdapterTest do
       assert_raise RuntimeError, ~r/is not an adapter courier ships/, fn ->
         MailerAdapter.adapter!(:prod)
       end
+    end
+
+    test "the silent adapters are refused by name in dev too, not only in prod" do
+      # The closed set stays closed in EVERY environment. Dev is where a
+      # courier is usually pointed at `Local`, and the escape hatch is the
+      # explicit `none` — naming the module is a different thing and is refused
+      # here exactly as it is in prod, because the unknown-adapter branch has
+      # no environment guard. Asserted in both environments rather than
+      # assumed: a refusal that only fired in prod would let a developer
+      # configure the silent adapter and prove to themselves that "it works".
+      for env <- [:dev, :test] do
+        System.put_env("COURIER_MAIL_ADAPTER", "Swoosh.Adapters.Local")
+
+        assert_raise RuntimeError, ~r/is not an adapter courier ships/, fn ->
+          MailerAdapter.adapter!(env)
+        end
+      end
+    end
+
+    test "the unknown-adapter refusal lists every provider in the table" do
+      # The supported-values list is generated from the provider table, so a
+      # third provider appears here without a branch in the refusal. Asserted
+      # rather than assumed: a hand-written list would go stale the day a
+      # provider is added, and the staleness would be invisible.
+      System.put_env("COURIER_MAIL_ADAPTER", "smtpp")
+
+      error = assert_raise RuntimeError, fn -> MailerAdapter.adapter!(:prod) end
+      message = Exception.message(error)
+
+      assert message =~ "smtp"
+      assert message =~ "postmark"
+      assert message =~ "Swoosh.Adapters.SMTP"
+      assert message =~ "Swoosh.Adapters.Postmark"
     end
   end
 
@@ -270,6 +303,74 @@ defmodule Courier.MailerAdapterTest do
       System.put_env("COURIER_SMTP_TLS", "Always")
 
       assert MailerAdapter.adapter!(:prod)[:tls] == :always
+    end
+  end
+
+  describe "Postmark is configured from the environment" do
+    # The second provider, and the proof that "email through more than one
+    # provider" is configuration rather than a code change. The shape is
+    # SMTP's exactly: the adapter name selects a builder, the builder reads
+    # that provider's variables, and a missing one is a boot failure naming
+    # the variable.
+    setup do
+      System.put_env("COURIER_MAIL_ADAPTER", "postmark")
+      System.put_env("COURIER_POSTMARK_API_TOKEN", @sentinel)
+      :ok
+    end
+
+    test "a complete configuration produces the adapter Swoosh will call" do
+      config = MailerAdapter.adapter!(:prod)
+
+      assert config[:adapter] == Swoosh.Adapters.Postmark
+      assert config[:api_key] == @sentinel
+    end
+
+    test "a missing token is a boot failure naming the variable" do
+      System.delete_env("COURIER_POSTMARK_API_TOKEN")
+
+      assert_raise RuntimeError, ~r/COURIER_POSTMARK_API_TOKEN is missing/, fn ->
+        MailerAdapter.adapter!(:prod)
+      end
+    end
+
+    test "the refusal names the adapter the variable belongs to" do
+      # An operator reading this at boot needs to know WHICH provider's
+      # variable is missing, not just the variable — the same refusal shape
+      # SMTP's has, and the reason `required!/2` takes the provider name.
+      System.delete_env("COURIER_POSTMARK_API_TOKEN")
+
+      error = assert_raise RuntimeError, fn -> MailerAdapter.adapter!(:prod) end
+
+      assert Exception.message(error) =~ "COURIER_POSTMARK_API_TOKEN"
+      assert Exception.message(error) =~ "postmark"
+    end
+
+    test "an empty token is treated as missing, not sent to the provider" do
+      # `COURIER_POSTMARK_API_TOKEN=` in a compose file produces "". Sending
+      # that to Postmark is a 421 the operator cannot explain; refusing to
+      # start is not.
+      System.put_env("COURIER_POSTMARK_API_TOKEN", "")
+
+      assert_raise RuntimeError, ~r/COURIER_POSTMARK_API_TOKEN is missing/, fn ->
+        MailerAdapter.adapter!(:prod)
+      end
+    end
+
+    test "Postmark is deliverable" do
+      # The second boot gate (`verify_boot!/1`) asks this. A provider courier
+      # ships has to pass it, or a correct deployment refuses to start — the
+      # gate that must NOT fire.
+      assert MailerAdapter.deliverable?(Swoosh.Adapters.Postmark)
+    end
+
+    test "the Swoosh HTTP client is wired for Postmark and not for SMTP" do
+      # SMTP speaks the protocol over `gen_smtp` and never calls Swoosh's HTTP
+      # client; Postmark posts through it. `config/runtime.exs` reads this to
+      # decide whether to turn the client on — see the provider table.
+      assert MailerAdapter.api_client(Swoosh.Adapters.Postmark) == Swoosh.ApiClient.Req
+      assert MailerAdapter.api_client(Swoosh.Adapters.SMTP) == nil
+      assert MailerAdapter.api_client(nil) == nil
+      assert MailerAdapter.api_client(Swoosh.Adapters.Local) == nil
     end
   end
 

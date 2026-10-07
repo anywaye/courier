@@ -424,7 +424,39 @@ gate:
       # deltas on paper. The floor sits AT the measurement with zero headroom,
       # for the reason the telemetry paragraph gives: the next packet that adds
       # a test goes red until it raises this number.
-      minimum: 1563
+      #
+      # REMEASURED on the tree carrying the SECOND PROVIDER: whole suite
+      # 1563 -> 1575, no-database 685 -> 697 across the same 31 files, database
+      # UNCHANGED at 878 across the same 47 files.
+      #
+      # **The +12 are two files, and both are in the no-database tier** — a
+      # plain `ExUnit.Case` because their subject is configuration mapping and
+      # refusals, which need no row. 7 in `test/courier/mailer_adapter_test.exs`:
+      # the 6 of the "Postmark is configured from the environment" block (the
+      # complete configuration, the missing-token refusal naming the variable
+      # and the adapter it belongs to, the empty-token refusal, the deliverable
+      # assertion, and the Swoosh HTTP client wiring) plus the unknown-adapter
+      # refusal now listing every provider in the table. 5 in
+      # `test/courier/mailer_adapter_credentials_test.exs`: the three Postmark
+      # startup-line assertions (token absent, provider named, token=unset when
+      # unset) and the two repository scans (the missing-token refusal prints
+      # no token; no committed config file carries an `api_key`).
+      #
+      # **1575 is 697 + 878**, so the parts still sum to the whole — re-measured
+      # by running the tier greps on this tree, not by adding the two branches'
+      # deltas on paper. The floor sits AT the measurement with zero headroom,
+      # for the reason the telemetry paragraph gives: the next packet that adds
+      # a test goes red until it raises this number.
+      #
+      # AND IT MOVES AGAIN for the proof that the closed set stays closed in
+      # every environment: 1575 -> 1576, no-database 697 -> 698, database
+      # UNCHANGED at 878. The one test asserts `COURIER_MAIL_ADAPTER` naming
+      # `Swoosh.Adapters.Local` is refused in `:dev` and `:test` as well as
+      # `:prod` — the unknown-adapter branch has no environment guard, and a
+      # refusal that only fired in prod would let a developer configure the
+      # silent adapter and prove to themselves that "it works". 1576 is
+      # 698 + 878, so the parts still sum to the whole.
+      minimum: 1576
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

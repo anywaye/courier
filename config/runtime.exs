@@ -222,11 +222,23 @@ if config_env() == :prod do
 
   config :courier, Courier.Mailer, mailer_adapter
 
+  # Whether Swoosh's HTTP client is on, and it is a function of the adapter
+  # rather than a second setting an operator could forget. SMTP dials
+  # `gen_smtp` directly and never calls it; Postmark posts through
+  # `Swoosh.ApiClient.Req`. `false` is the same "off" value `config/config.exs`
+  # uses, so the two files agree on what off means — and `nil` from the table
+  # is mapped to it here rather than configured, because `nil` would read as
+  # "unset" to `Application.fetch_env!` and as a crash to whatever calls it.
+  config :swoosh,
+    api_client: Courier.MailerAdapter.api_client(mailer_adapter[:adapter]) || false
+
   # The one startup line an operator reads to confirm which relay courier is
-  # pointed at. It names the host, the port and whether auth is on — never the
-  # username and never the password, because at SMTP a "username" is very often
-  # the API key. See `Courier.MailerAdapter.describe/1` and the credential tests
-  # that assert the absence rather than trusting this comment.
+  # pointed at. It names the host, the port and whether auth is on for SMTP, or
+  # the provider and whether its token is set for Postmark — never a
+  # credential, because at SMTP a "username" is very often the API key and a
+  # Postmark token is the whole secret. See `Courier.MailerAdapter.describe/1`
+  # and the credential tests that assert the absence rather than trusting this
+  # comment.
   require Logger
 
   Logger.info("mailer: #{Courier.MailerAdapter.describe(mailer_adapter)}")
