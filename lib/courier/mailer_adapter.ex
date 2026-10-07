@@ -41,7 +41,8 @@ defmodule Courier.MailerAdapter do
   required rather than defaulted where a default would be a working-but-wrong
   configuration.
 
-      COURIER_MAIL_ADAPTER        smtp — the only adapter that reaches a provider
+      COURIER_MAIL_ADAPTER        smtp | postmark — the adapters that reach a
+                                  provider
       COURIER_SMTP_HOST           required when the adapter is smtp
       COURIER_SMTP_PORT           default 587, the submission port
       COURIER_SMTP_USERNAME       required unless COURIER_SMTP_AUTH is `never`
@@ -49,16 +50,28 @@ defmodule Courier.MailerAdapter do
       COURIER_SMTP_AUTH           always (default) | never | if_available
       COURIER_SMTP_TLS            always (default) | never | if_available
       COURIER_SMTP_SSL            false (default); true for implicit TLS on 465
+      COURIER_POSTMARK_API_TOKEN  required when the adapter is postmark
 
   ## A credential is never in a log line
 
   `describe/1` is the only function in courier that renders adapter
   configuration for a human, and it prints the host, the port and whether auth is
-  on — never the username and never the password. `smtp_adapter/0` is what the
-  configuration actually receives; `describe/1` is what a startup line gets.
-  They are separate functions precisely so that a change to one cannot leak into
-  the other, and `test/courier/mailer_adapter_credentials_test.exs` asserts the
-  password is absent from a captured log rather than trusting this comment.
+  on for SMTP — never the username and never the password — and for Postmark the
+  provider and whether its token is set, never the token. Each provider's builder
+  is what the configuration actually receives; `describe/1` is what a startup
+  line gets. They are separate functions precisely so that a change to one cannot
+  leak into the other, and `test/courier/mailer_adapter_credentials_test.exs`
+  asserts the credential is absent from a captured log rather than trusting this
+  comment.
+
+  ## The provider set is data
+
+  `providers()` is the one table a third provider is added to. Each entry names
+  the Swoosh adapter module, the Swoosh HTTP client it posts through (or `nil`
+  for one that speaks its own protocol), a builder that reads that provider's
+  variables, and a describer for the startup line. `adapter!/1` and `describe/1`
+  look the table up; neither has a per-provider branch, so a third provider is an
+  entry here plus two functions rather than a fourth branch in the case.
   """
 
   @default_port 587
@@ -75,6 +88,24 @@ defmodule Courier.MailerAdapter do
   @doc "The default SMTP submission port."
   @spec default_port() :: pos_integer()
   def default_port, do: @default_port
+
+  @doc """
+  The Swoosh HTTP client the named adapter posts through, or `nil` for one that
+  speaks its own protocol.
+
+  `config/runtime.exs` reads this to decide whether to turn Swoosh's HTTP
+  client on. SMTP dials `gen_smtp` directly and never calls it, so leaving it
+  off keeps a dependency courier does not use out of the release; Postmark
+  posts through `Swoosh.ApiClient.Req`, and a deployment that forgot this
+  would boot with the adapter configured and the client dark.
+  """
+  @spec api_client(module() | nil) :: module() | nil
+  def api_client(adapter) do
+    case Enum.find(providers(), fn {_, module, _, _, _, _} -> module == adapter end) do
+      {_, _, api_client, _, _, _} -> api_client
+      nil -> nil
+    end
+  end
 
   @doc """
   The `Swoosh` adapter configuration courier runs with, read from the
@@ -133,22 +164,23 @@ defmodule Courier.MailerAdapter do
       "none" ->
         [adapter: Swoosh.Adapters.Local]
 
-      "smtp" ->
-        smtp_adapter()
-
       other ->
-        raise """
-        COURIER_MAIL_ADAPTER=#{inspect(other)} is not an adapter courier ships.
+        case Enum.find(providers(), fn {provider, _, _, _, _, _} -> to_string(provider) == other end) do
+          nil ->
+            raise """
+            COURIER_MAIL_ADAPTER=#{inspect(other)} is not an adapter courier ships.
 
-        Supported values:
+            Supported values:
 
-            smtp    Swoosh.Adapters.SMTP — the universal one. Every serious
-                    provider (SES, Postmark, Mailgun, SendGrid, Resend) speaks
-                    SMTP or has an SMTP front.
-            none    Local, development only. Refused in production.
+            #{supported_values()}
+                none    Local, development only. Refused in production.
 
-        See Courier.MailerAdapter.
-        """
+            See Courier.MailerAdapter.
+            """
+
+          {_, _, _, _, build, _describe} ->
+            build.()
+        end
     end
   end
 
@@ -237,20 +269,51 @@ defmodule Courier.MailerAdapter do
   @spec describe(keyword()) :: String.t()
   def describe(config) do
     case Keyword.fetch(config, :adapter) do
-      {:ok, Swoosh.Adapters.SMTP} ->
-        "adapter=smtp host=#{Keyword.get(config, :relay, "?")} " <>
-          "port=#{Keyword.get(config, :port, @default_port)} " <>
-          "auth=#{Keyword.get(config, :auth, :always)}"
-
       {:ok, nil} ->
         "adapter=none"
 
       {:ok, adapter} ->
-        "adapter=#{inspect(adapter)}"
+        case Enum.find(providers(), fn {_, module, _, _, _, _} -> module == adapter end) do
+          {_, _, _, _, _, describe} -> describe.(config)
+          nil -> "adapter=#{inspect(adapter)}"
+        end
 
       :error ->
         "adapter=unset"
     end
+  end
+
+  # One describer per provider, named by the provider table, so `describe/1`
+  # has no per-provider branch. Each prints the facts that tell two deployments
+  # apart and none of the facts that are credentials.
+
+  # SMTP: the host, the port, whether auth is on. Never the username and never
+  # the password — at SMTP a "username" is very often the API key.
+  defp describe_smtp(config) do
+    "adapter=smtp host=#{Keyword.get(config, :relay, "?")} " <>
+      "port=#{Keyword.get(config, :port, @default_port)} " <>
+      "auth=#{Keyword.get(config, :auth, :always)}"
+  end
+
+  # Postmark: the provider and whether its token is set. The token itself is
+  # never rendered — "set" is the fact an operator needs, and the token is the
+  # credential.
+  defp describe_postmark(config) do
+    token = if Keyword.get(config, :api_key), do: "set", else: "unset"
+
+    "adapter=postmark token=#{token}"
+  end
+
+  # The provider list in the unknown-adapter refusal, generated from the table
+  # rather than written out. A hand-written list would go stale the day a
+  # provider is added, and the staleness would be invisible — the refusal would
+  # keep naming the old set and every deployment would believe it.
+  defp supported_values do
+    providers()
+    |> Enum.map(fn {name, module, _api_client, blurb, _build, _describe} ->
+      "#{name}  #{inspect(module)} — #{blurb}"
+    end)
+    |> Enum.join("\n")
   end
 
   @doc """
@@ -268,7 +331,7 @@ defmodule Courier.MailerAdapter do
   """
   @spec smtp_adapter() :: keyword()
   def smtp_adapter do
-    relay = required!("COURIER_SMTP_HOST")
+    relay = required!("COURIER_SMTP_HOST", "smtp")
     port = port()
     auth = auth()
     credentials = credentials(auth)
@@ -278,6 +341,55 @@ defmodule Courier.MailerAdapter do
       [tls: tls(), ssl: ssl()]
   end
 
+  @doc """
+  The Swoosh adapter configuration for Postmark, read from the environment.
+
+  Public for the same reason `smtp_adapter/0` is: `adapter!/1` is the only
+  caller in production, and a test asserts on the shape without going through
+  the refusal. One variable, required rather than defaulted — a default token
+  would be a credential in version control that every deployment which forgot
+  to set one would send mail under.
+  """
+  @spec postmark_adapter() :: keyword()
+  def postmark_adapter do
+    [
+      adapter: Swoosh.Adapters.Postmark,
+      api_key: required!("COURIER_POSTMARK_API_TOKEN", "postmark")
+    ]
+  end
+
+  # The provider set, as data. One entry per provider courier can send through,
+  # and a third provider is an entry here plus the two functions its entry names
+  # — not a branch in `adapter!/1`, `describe/1` or the refusal messages.
+  #
+  #   name       — the value of COURIER_MAIL_ADAPTER
+  #   module     — the Swoosh adapter courier configures
+  #   api_client — the Swoosh HTTP client this provider posts through, or nil
+  #                for one that speaks its own protocol (SMTP dials `gen_smtp`
+  #                directly and never calls Swoosh's HTTP client)
+  #   blurb      — one line for the "supported values" refusal
+  #   build      — reads this provider's variables from the environment and
+  #                returns the Swoosh adapter configuration
+  #   describe   — renders the resolved configuration for the startup line
+  #
+  # A FUNCTION and not a module attribute, and that is forced rather than
+  # stylistic: a module attribute is expanded where it is written, and a capture
+  # of a local function inside one is a compile error no matter how the
+  # definitions are ordered (measured on Elixir 1.20.4 — `def bar; @f &bar/0`
+  # fails with "undefined function bar/0"). A function body is compiled with the
+  # whole module in scope, so the captures below resolve. It is read only at
+  # runtime, so nothing else about its position matters.
+  defp providers do
+    [
+      {:smtp, Swoosh.Adapters.SMTP, nil,
+       "the universal one — every serious provider (SES, Postmark, Mailgun, SendGrid, Resend) speaks SMTP or has an SMTP front",
+       &smtp_adapter/0, &describe_smtp/1},
+      {:postmark, Swoosh.Adapters.Postmark, Swoosh.ApiClient.Req,
+       "transactional-only, API-token auth",
+       &postmark_adapter/0, &describe_postmark/1}
+    ]
+  end
+
   # `auth: :always` needs both halves or `gen_smtp` refuses the options before it
   # dials anything — `{error, :no_credentials}` from its own validation. Asking
   # for it and getting a clear message here beats an opaque error at the socket.
@@ -285,16 +397,20 @@ defmodule Courier.MailerAdapter do
 
   defp credentials(_auth) do
     [
-      username: required!("COURIER_SMTP_USERNAME"),
-      password: required!("COURIER_SMTP_PASSWORD")
+      username: required!("COURIER_SMTP_USERNAME", "smtp"),
+      password: required!("COURIER_SMTP_PASSWORD", "smtp")
     ]
   end
 
-  defp required!(name) do
+  # The provider name is a parameter rather than a hard-coded "smtp" because
+  # the refusal is raised for either provider's variables, and an operator
+  # reading "COURIER_POSTMARK_API_TOKEN is missing, and COURIER_MAIL_ADAPTER is
+  # smtp" would be looking at the wrong deployment.
+  defp required!(name, provider) do
     case env_string(name) do
       nil ->
         raise """
-        #{name} is missing, and COURIER_MAIL_ADAPTER is smtp.
+        #{name} is missing, and COURIER_MAIL_ADAPTER is #{provider}.
 
         courier will not guess a relay or a credential. Without them the adapter
         has nowhere to connect and cannot authenticate, and a send would fail at

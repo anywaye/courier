@@ -40,12 +40,13 @@ defmodule Courier.MailerAdapterCredentialsTest do
 
   @password "pw-courier-canary-4e1b-DO-NOT-LOG"
   @username "user-courier-canary-4e1b"
+  @token "tok-courier-canary-7c2d-DO-NOT-LOG"
 
   setup do
     names = ~w(
       COURIER_MAIL_ADAPTER COURIER_SMTP_HOST COURIER_SMTP_PORT
       COURIER_SMTP_USERNAME COURIER_SMTP_PASSWORD COURIER_SMTP_AUTH
-      COURIER_SMTP_TLS COURIER_SMTP_SSL
+      COURIER_SMTP_TLS COURIER_SMTP_SSL COURIER_POSTMARK_API_TOKEN
     )
 
     previous_env = Map.new(names, fn name -> {name, System.get_env(name)} end)
@@ -116,6 +117,52 @@ defmodule Courier.MailerAdapterCredentialsTest do
       assert MailerAdapter.describe(adapter: nil) =~ "adapter=none"
       assert MailerAdapter.describe(adapter: SomeOtherAdapter) =~ "SomeOtherAdapter"
       assert MailerAdapter.describe(adapter: Swoosh.Adapters.SMTP) =~ "host=?"
+      assert MailerAdapter.describe(adapter: Swoosh.Adapters.Postmark) =~ "adapter=postmark"
+    end
+  end
+
+  describe "the Postmark startup line" do
+    # The second provider's half of the same rule: `describe/1` names the
+    # provider and whether its token is set, and never the token. Postmark's
+    # credential is an API token, which at a provider is the whole secret —
+    # the same class of leak as an SMTP password, so it gets the same test.
+    test "describes the provider without the token" do
+      log =
+        capture_log(fn ->
+          Logger.warning("mailer: #{MailerAdapter.describe(postmark_config())}")
+        end)
+
+      refute log =~ @token, "the Postmark token reached a log line:\n#{log}"
+    end
+
+    test "still says which provider courier is pointed at" do
+      # The presence assertion, and it is the one that matters: a startup line
+      # that printed nothing would pass the refusal above and be useless. The
+      # two facts an operator needs are the provider and whether its token is
+      # set — neither of which is a secret.
+      log =
+        capture_log(fn ->
+          Logger.warning("mailer: #{MailerAdapter.describe(postmark_config())}")
+        end)
+
+      assert log =~ "adapter=postmark"
+      assert log =~ "token=set"
+    end
+
+    test "says when the token is unset" do
+      # The other half of the presence assertion: an operator who forgot the
+      # variable needs the startup line to say so. "token=unset" is the honest
+      # answer; a line that looked configured and was not would be the same
+      # silent-default failure this module exists to end, one layer out.
+      log =
+        capture_log(fn ->
+          Logger.warning(
+            "mailer: #{MailerAdapter.describe(adapter: Swoosh.Adapters.Postmark)}"
+          )
+        end)
+
+      assert log =~ "adapter=postmark"
+      assert log =~ "token=unset"
     end
   end
 
@@ -248,6 +295,22 @@ defmodule Courier.MailerAdapterCredentialsTest do
       refute message =~ @password, "the refusal printed the password:\n#{message}"
       refute message =~ @username, "the refusal printed the username:\n#{message}"
     end
+
+    test "a missing Postmark token is refused without printing any token" do
+      # The Postmark half of the same rule. The refusal quotes the variable
+      # that is missing; it must not quote the value of the one that is
+      # present, and there is no present value to leak here — the assertion is
+      # that the canary never appears, paired with the raise itself.
+      System.put_env("COURIER_MAIL_ADAPTER", "postmark")
+      System.put_env("COURIER_POSTMARK_API_TOKEN", "")
+
+      log =
+        capture_log(fn ->
+          assert_raise RuntimeError, fn -> MailerAdapter.adapter!(:prod) end
+        end)
+
+      refute log =~ @token
+    end
   end
 
   describe "no credential is in the repository" do
@@ -295,6 +358,26 @@ defmodule Courier.MailerAdapterCredentialsTest do
 
       assert offenders == [],
              "a committed config file names an SMTP relay:\n" <> Enum.join(offenders, "\n")
+    end
+
+    test "no committed config file carries a Postmark token" do
+      # The Postmark half of the credential scan. `api_key` is the same class
+      # of leak as `username`/`password` at SMTP — a provider credential in
+      # version control — so it gets the same scan over the same mailer
+      # blocks, and the same presence assertion below keeps it honest.
+      offenders =
+        "config/*.exs"
+        |> Path.wildcard()
+        |> Enum.flat_map(fn path ->
+          path
+          |> mailer_blocks()
+          |> Enum.filter(&String.match?(&1, ~r/^\s*api_key:/m))
+          |> Enum.map(&"#{path}: #{String.trim(&1)}")
+        end)
+
+      assert offenders == [],
+             "a committed config file carries a Postmark token:\n" <>
+               Enum.join(offenders, "\n")
     end
 
     test "the mailer IS configured in a committed file, so the two scans above are not vacuous" do
@@ -388,6 +471,18 @@ defmodule Courier.MailerAdapterCredentialsTest do
       username: @username,
       password: @password,
       auth: :always
+    ]
+  end
+
+  # The Postmark adapter configuration with its token present, for the
+  # `describe/1` assertions. Written out by hand rather than read from the
+  # environment, for the same reason `config/0` is: the test asserts about
+  # how `describe/1` handles a configuration, not about the environment
+  # reader.
+  defp postmark_config do
+    [
+      adapter: Swoosh.Adapters.Postmark,
+      api_key: @token
     ]
   end
 end

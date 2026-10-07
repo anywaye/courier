@@ -49,13 +49,16 @@ config :courier, :mailing,
     email_change_new: "Confirm your new caFaye email address"
   }
 
-# `api_client: false` is still correct, and now for a real reason rather than
-# because no provider had landed. SMTP is the adapter courier ships, and
-# `Swoosh.Adapters.SMTP` speaks the protocol over `gen_smtp` — it never calls
-# Swoosh's HTTP client, so leaving this false keeps a dependency courier does not
-# use out of the release. It would only need to change for an HTTP-API provider
-# (Postmark, SendGrid, Resend), and none of those is configured: they all have an
-# SMTP front, and one adapter is one fewer credential path to keep out of logs.
+# `api_client: false` is the default, and it is the right one for the adapter
+# courier configures out of the box: `Swoosh.Adapters.SMTP` speaks the protocol
+# over `gen_smtp` and never calls Swoosh's HTTP client, so leaving this false
+# keeps a dependency courier does not use out of the release.
+#
+# It is turned ON by `config/runtime.exs`, from the provider the adapter
+# resolved to — `Courier.MailerAdapter.api_client/1` — rather than by a second
+# variable. Postmark posts through `Swoosh.ApiClient.Req`; a deployment that
+# configured the adapter and forgot the client would boot with both halves dark,
+# and the failure would surface as a send error rather than at boot.
 config :swoosh, api_client: false
 
 # Job queue, and the crontab that is the FLOOR under it.

@@ -222,6 +222,17 @@ if config_env() == :prod do
 
   config :courier, Courier.Mailer, mailer_adapter
 
+  # Whether Swoosh's HTTP client is on, and it is a function of the adapter
+  # rather than a second setting an operator could forget. SMTP dials
+  # `gen_smtp` directly and never calls it; Postmark posts through
+  # `Swoosh.ApiClient.Req`. `false` is the same "off" value `config/config.exs`
+  # uses, so the two files agree on what off means — and `nil` from the table
+  # is mapped to it here rather than configured, because `nil` would read as
+  # "unset" to `Application.fetch_env!` and as a crash to whatever calls it.
+  config :swoosh,
+           api_client:
+             Courier.MailerAdapter.api_client(mailer_adapter[:adapter]) || false
+
   # The one startup line an operator reads to confirm which relay courier is
   # pointed at. It names the host, the port and whether auth is on — never the
   # username and never the password, because at SMTP a "username" is very often
