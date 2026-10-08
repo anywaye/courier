@@ -524,7 +524,35 @@ gate:
   #
   # **1601 is 723 + 878**, so the parts still sum to the whole —
   # re-measured by running the tier greps on this tree.
-  minimum: 1601
+  #
+  # REMEASURED on the tree carrying per-action TENANT SCOPE (w105):
+  # whole 1601 -> 1600, no-database UNCHANGED at 723 across the same 33
+  # files, database 878 -> 877 across the same 47 files.
+  #
+  # **The -1 is a file replaced, not a test lost, and the packet's own
+  # diff is the evidence.** `49de49b` deletes `TenantIdentity` — the plug
+  # (`lib/courier_web/plugs/tenant_identity.ex`) and its `:authenticated`
+  # pipeline slot — because the plug opened its transaction around
+  # `fn -> conn end` and committed before the controller ran, discarding
+  # the transaction-local identity every authenticated request depended
+  # on. Its 7 tests in `tenant_identity_config_test.exs` asserted that
+  # shape (pipeline order, identity-inside-the-plug's-transaction, three
+  # accounts, the 401 negative, the no-identity surfaces) and cannot
+  # survive it: restoring them would mean restoring the deleted plug.
+  # The replacement, `tenant_scope_test.exs`, carries 6 — the idempotency
+  # write+read from production's post-COMMIT state, the pool recovery
+  # over 32 failed transactions, the full POST /v1/messages send with its
+  # idempotent replay, the /v1 route coverage (9 -> 13 with the
+  # notification-reader routes), the unauthenticated surfaces, and the
+  # negative guard that no transaction-scoping plug returns to
+  # `:authenticated`. Both files are `CourierWeb.ConnCase`, so the file
+  # counts do not move and the no-database tier is untouched.
+  #
+  # **1600 is 723 + 877**, so the parts still sum to the whole —
+  # re-measured by running the tier greps on this tree, not by adding
+  # branch deltas on paper. The floor sits AT the measurement with zero
+  # headroom, for the reason the telemetry paragraph gives.
+  minimum: 1600
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
