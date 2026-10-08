@@ -8,13 +8,12 @@ defmodule Courier.MixProject do
       elixir: "~> 1.17",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
-      # MIT, and the `files:` list is what makes the grant travel. Without a
-      # `package` block Hex refuses to publish, and without `files:` the LICENSE
-      # file is not in the tarball even once it can — so the licence would be a
-      # fact about the repository and not about the package a consumer installs.
-      # MIT is fleet-wide: the platforms are consumed as a dependency graph
-      # through a service registry, and copyleft would make every downstream
-      # consumer inherit an obligation, which defeats the registry model.
+      # Courier is proprietary: see LICENSE. There is no open-source grant,
+      # so `package/0` names no `licenses:` SPDX identifier — one would claim a
+      # grant that does not exist. Without a `package` block Hex refuses to
+      # publish, and without `files:` the LICENSE file is not in the tarball
+      # even once it can — so the notice would be a fact about the repository
+      # and not about the package a consumer installs.
       package: package(),
       # The coverage tool, named here rather than discovered at run time.
       # `mix test --cover` writes `cover/` and enforces nothing; this is what
@@ -29,18 +28,18 @@ defmodule Courier.MixProject do
 
   # The Hex package metadata.
   #
-  # `licenses:` is the SPDX identifier and `files:` is the list that goes into
-  # the tarball. Both are needed and neither is implied by the other: `licenses:`
-  # without `files:` publishes a package carrying no licence text at all, which
-  # is the state this whole change exists to end.
+  # There is deliberately no `licenses:` SPDX identifier: courier is
+  # proprietary (see LICENSE) and no identifier describes that. `files:` is
+  # the list that goes into the tarball, and it still carries the LICENSE
+  # file, so the proprietary notice travels with the package rather than
+  # living only in the repository.
   #
   # `LICENSE` is in `files:` explicitly rather than by glob. A glob that stopped
-  # matching would publish successfully and quietly drop the grant, and a licence
+  # matching would publish successfully and quietly drop the notice, and a notice
   # that goes missing at publish time is the one failure mode here that nothing
   # else would catch.
   defp package do
     [
-      licenses: ["MIT"],
       files: [
         "lib",
         "priv",

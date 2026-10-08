@@ -357,9 +357,7 @@ info:
     name: courier
     email: courier@cafaye.com
   license:
-    name: MIT
-    identifier: MIT
-    url: https://opensource.org/license/mit
+    name: Proprietary - All rights reserved. See LICENSE in the cafaye/courier repository.
 
 servers:
   - url: https://courier.cafaye.com
