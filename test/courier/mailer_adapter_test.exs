@@ -33,6 +33,7 @@ defmodule Courier.MailerAdapterTest do
         COURIER_MAIL_ADAPTER COURIER_SMTP_HOST COURIER_SMTP_PORT
         COURIER_SMTP_USERNAME COURIER_SMTP_PASSWORD COURIER_SMTP_AUTH
         COURIER_SMTP_TLS COURIER_SMTP_SSL COURIER_POSTMARK_API_TOKEN
+        COURIER_CLOUDFLARE_API_KEY
       ),
         fn name -> {name, System.get_env(name)} end
       )
@@ -166,8 +167,10 @@ defmodule Courier.MailerAdapterTest do
 
       assert message =~ "smtp"
       assert message =~ "postmark"
+      assert message =~ "cloudflare"
       assert message =~ "Swoosh.Adapters.SMTP"
       assert message =~ "Swoosh.Adapters.Postmark"
+      assert message =~ "Courier.Adapters.CloudflareEmail"
     end
   end
 
@@ -371,6 +374,72 @@ defmodule Courier.MailerAdapterTest do
       assert MailerAdapter.api_client(Swoosh.Adapters.SMTP) == nil
       assert MailerAdapter.api_client(nil) == nil
       assert MailerAdapter.api_client(Swoosh.Adapters.Local) == nil
+    end
+  end
+
+  describe "Cloudflare is configured from the environment" do
+    # The third provider, and the proof that the seam is real: a second and a
+    # third provider are configuration rather than a code change. The shape is
+    # SMTP's and Postmark's exactly — the adapter name selects a builder, the
+    # builder reads that provider's variables, and a missing one is a boot
+    # failure naming the variable.
+    setup do
+      System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
+      System.put_env("COURIER_CLOUDFLARE_API_KEY", @sentinel)
+      :ok
+    end
+
+    test "a complete configuration produces the adapter Swoosh will call" do
+      config = MailerAdapter.adapter!(:prod)
+
+      assert config[:adapter] == Courier.Adapters.CloudflareEmail
+      assert config[:api_key] == @sentinel
+    end
+
+    test "a missing key is a boot failure naming the variable" do
+      System.delete_env("COURIER_CLOUDFLARE_API_KEY")
+
+      assert_raise RuntimeError, ~r/COURIER_CLOUDFLARE_API_KEY is missing/, fn ->
+        MailerAdapter.adapter!(:prod)
+      end
+    end
+
+    test "the refusal names the adapter the variable belongs to" do
+      # An operator reading this at boot needs to know WHICH provider's
+      # variable is missing, not just the variable — the same refusal shape
+      # SMTP's and Postmark's have, and the reason `required!/2` takes the
+      # provider name.
+      System.delete_env("COURIER_CLOUDFLARE_API_KEY")
+
+      error = assert_raise RuntimeError, fn -> MailerAdapter.adapter!(:prod) end
+
+      assert Exception.message(error) =~ "COURIER_CLOUDFLARE_API_KEY"
+      assert Exception.message(error) =~ "cloudflare"
+    end
+
+    test "an empty key is treated as missing, not sent to the provider" do
+      # `COURIER_CLOUDFLARE_API_KEY=` in a compose file produces "". Sending
+      # that to the provider is a 403 the operator cannot explain; refusing
+      # to start is not.
+      System.put_env("COURIER_CLOUDFLARE_API_KEY", "")
+
+      assert_raise RuntimeError, ~r/COURIER_CLOUDFLARE_API_KEY is missing/, fn ->
+        MailerAdapter.adapter!(:prod)
+      end
+    end
+
+    test "Cloudflare is deliverable" do
+      # The second boot gate (`verify_boot!/1`) asks this. A provider courier
+      # ships has to pass it, or a correct deployment refuses to start — the
+      # gate that must NOT fire.
+      assert MailerAdapter.deliverable?(Courier.Adapters.CloudflareEmail)
+    end
+
+    test "the Swoosh HTTP client is wired for Cloudflare" do
+      # Cloudflare posts through `Swoosh.ApiClient.Req`, the same client
+      # Postmark uses. `config/runtime.exs` reads this to decide whether to
+      # turn the client on — see the provider table.
+      assert MailerAdapter.api_client(Courier.Adapters.CloudflareEmail) == Swoosh.ApiClient.Req
     end
   end
 
