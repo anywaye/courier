@@ -247,10 +247,10 @@ defmodule Courier.WebhookEndpoints do
         # refused update must not poison the request's own scoped commit.
         # (An inner `Repo.transaction/1` with `Repo.rollback/1` is not the
         # remedy — see above.)
-        (case changeset |> Repo.update(mode: :savepoint) do
-           {:ok, updated} -> {:ok, updated}
-           {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
-         end)
+        case changeset |> Repo.update(mode: :savepoint) do
+          {:ok, updated} -> {:ok, updated}
+          {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
+        end
         # A customer re-enabling an endpoint clears courier's failure count and
         # reason with it: they looked at the endpoint courier gave up on and said
         # to try again, and leaving "5 consecutive failures, last: connection

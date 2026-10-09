@@ -47,6 +47,7 @@ defmodule Courier.MailerAdapterCredentialsTest do
       COURIER_MAIL_ADAPTER COURIER_SMTP_HOST COURIER_SMTP_PORT
       COURIER_SMTP_USERNAME COURIER_SMTP_PASSWORD COURIER_SMTP_AUTH
       COURIER_SMTP_TLS COURIER_SMTP_SSL COURIER_POSTMARK_API_TOKEN
+      COURIER_CLOUDFLARE_API_KEY
     )
 
     previous_env = Map.new(names, fn name -> {name, System.get_env(name)} end)
@@ -118,6 +119,9 @@ defmodule Courier.MailerAdapterCredentialsTest do
       assert MailerAdapter.describe(adapter: SomeOtherAdapter) =~ "SomeOtherAdapter"
       assert MailerAdapter.describe(adapter: Swoosh.Adapters.SMTP) =~ "host=?"
       assert MailerAdapter.describe(adapter: Swoosh.Adapters.Postmark) =~ "adapter=postmark"
+
+      assert MailerAdapter.describe(adapter: Courier.Adapters.CloudflareEmail) =~
+               "adapter=cloudflare"
     end
   end
 
@@ -160,6 +164,51 @@ defmodule Courier.MailerAdapterCredentialsTest do
         end)
 
       assert log =~ "adapter=postmark"
+      assert log =~ "token=unset"
+    end
+  end
+
+  describe "the Cloudflare startup line" do
+    # The third provider's half of the same rule: `describe/1` names the
+    # provider and whether its key is set, and never the key. The
+    # MailChannels API key is the whole secret — the same class of leak as
+    # an SMTP password or a Postmark token — so it gets the same test.
+    test "describes the provider without the key" do
+      log =
+        capture_log(fn ->
+          Logger.warning("mailer: #{MailerAdapter.describe(cloudflare_config())}")
+        end)
+
+      refute log =~ @token, "the Cloudflare key reached a log line:\n#{log}"
+    end
+
+    test "still says which provider courier is pointed at" do
+      # The presence assertion, and it is the one that matters: a startup line
+      # that printed nothing would pass the refusal above and be useless. The
+      # two facts an operator needs are the provider and whether its key is
+      # set — neither of which is a secret.
+      log =
+        capture_log(fn ->
+          Logger.warning("mailer: #{MailerAdapter.describe(cloudflare_config())}")
+        end)
+
+      assert log =~ "adapter=cloudflare"
+      assert log =~ "token=set"
+    end
+
+    test "says when the key is unset" do
+      # The other half of the presence assertion: an operator who forgot the
+      # variable needs the startup line to say so. "token=unset" is the honest
+      # answer; a line that looked configured and was not would be the same
+      # silent-default failure this module exists to end, one layer out.
+      log =
+        capture_log(fn ->
+          Logger.warning(
+            "mailer: #{MailerAdapter.describe(adapter: Courier.Adapters.CloudflareEmail)}"
+          )
+        end)
+
+      assert log =~ "adapter=cloudflare"
       assert log =~ "token=unset"
     end
   end
@@ -301,6 +350,22 @@ defmodule Courier.MailerAdapterCredentialsTest do
       # that the canary never appears, paired with the raise itself.
       System.put_env("COURIER_MAIL_ADAPTER", "postmark")
       System.put_env("COURIER_POSTMARK_API_TOKEN", "")
+
+      log =
+        capture_log(fn ->
+          assert_raise RuntimeError, fn -> MailerAdapter.adapter!(:prod) end
+        end)
+
+      refute log =~ @token
+    end
+
+    test "a missing Cloudflare key is refused without printing any key" do
+      # The Cloudflare half of the same rule. The refusal quotes the variable
+      # that is missing; it must not quote the value of the one that is
+      # present, and there is no present value to leak here — the assertion is
+      # that the canary never appears, paired with the raise itself.
+      System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
+      System.put_env("COURIER_CLOUDFLARE_API_KEY", "")
 
       log =
         capture_log(fn ->
@@ -480,6 +545,18 @@ defmodule Courier.MailerAdapterCredentialsTest do
   defp postmark_config do
     [
       adapter: Swoosh.Adapters.Postmark,
+      api_key: @token
+    ]
+  end
+
+  # The Cloudflare half, and THE KEY IS THE CANARY — `@token`, the same
+  # constant the SMTP and Postmark assertions use, because the assertion that
+  # matters is that the key `Courier.Adapters.CloudflareEmail` was configured
+  # with never reaches a log line. A test that invented a second string here
+  # would pass whatever the adapter printed.
+  defp cloudflare_config do
+    [
+      adapter: Courier.Adapters.CloudflareEmail,
       api_key: @token
     ]
   end

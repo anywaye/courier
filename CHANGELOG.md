@@ -14,6 +14,32 @@ document lands in both files in one commit, because core asserts the two agree.
 
 ### Added
 
+- **A third provider: Cloudflare Email, through the same
+  `COURIER_MAIL_ADAPTER` seam.** Cloudflare Email Routing is receive-only and
+  has no send API; the sending half of a Cloudflare Email connection is the
+  **MailChannels transactional API**, so `Courier.Adapters.CloudflareEmail`
+  posts to `POST https://api.mailchannels.net/tx/v1/send` with `X-Api-Key`
+  and a `personalizations` / `from` / `subject` / `content` body. One
+  variable, `COURIER_CLOUDFLARE_API_KEY`, required rather than defaulted and
+  refused at boot when missing or empty — the same refusal the SMTP and
+  Postmark variables get, generated from the same provider table rather than
+  a per-provider branch. `describe/1` says `adapter=cloudflare token=set` and
+  never the key. Domain authorisation (the `_mailchannels` TXT record and SPF)
+  is a later packet's scope.
+
+  **A provider that refuses a send is surfaced, never swallowed.** Every
+  non-2xx is `{:error, {code, body}}` — the status and the provider's own
+  error body, decoded when it is JSON — and a transport failure is
+  `{:error, reason}`. There is no code path that returns `{:ok, _}` for a
+  mail the provider did not accept, and that claim is proved against a REAL
+  Bandit listener on a kernel-assigned loopback port
+  (`Courier.TestSupport.MailChannelsServer`) rather than a stub: 14 tests in
+  `test/courier/cloudflare_delivery_test.exs` drive the real
+  `Courier.Adapters.CloudflareEmail` through the real
+  `Swoosh.ApiClient.Req`, and assert on the bytes that arrived. Both halves
+  of the contract are covered — the success receipt, and 403 / 500 / 400 with
+  a non-JSON body / an unreachable endpoint / a missing key.
+
 - **The SSL redirect is a runtime opt-in — `COURIER_FORCE_SSL` — so the
   launch stack can send mail.** `config/prod.exs` set compile-time
   `force_ssl` excluding only `localhost`/`127.0.0.1`, and the compose network

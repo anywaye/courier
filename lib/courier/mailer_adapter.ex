@@ -41,7 +41,7 @@ defmodule Courier.MailerAdapter do
   required rather than defaulted where a default would be a working-but-wrong
   configuration.
 
-      COURIER_MAIL_ADAPTER        smtp | postmark — the adapters that reach a
+      COURIER_MAIL_ADAPTER        smtp | postmark | cloudflare — the adapters that reach a
                                   provider
       COURIER_SMTP_HOST           required when the adapter is smtp
       COURIER_SMTP_PORT           default 587, the submission port
@@ -51,6 +51,9 @@ defmodule Courier.MailerAdapter do
       COURIER_SMTP_TLS            always (default) | never | if_available
       COURIER_SMTP_SSL            false (default); true for implicit TLS on 465
       COURIER_POSTMARK_API_TOKEN  required when the adapter is postmark
+      COURIER_CLOUDFLARE_API_KEY  required when the adapter is cloudflare —
+                                   the MailChannels API key the Cloudflare
+                                   Email connection sends through
 
   ## A credential is never in a log line
 
@@ -148,6 +151,9 @@ defmodule Courier.MailerAdapter do
 
             COURIER_MAIL_ADAPTER=postmark
             COURIER_POSTMARK_API_TOKEN=...
+
+            COURIER_MAIL_ADAPTER=cloudflare
+            COURIER_CLOUDFLARE_API_KEY=...
 
         `none` is accepted in development only, and means "render into memory and
         open no socket" — see Courier.MailerAdapter.
@@ -309,6 +315,15 @@ defmodule Courier.MailerAdapter do
     "adapter=postmark token=#{token}"
   end
 
+  # Cloudflare: the same two facts as Postmark — the provider and whether its
+  # key is set. The MailChannels API key is the whole secret, so "set" is the
+  # whole answer an operator gets.
+  defp describe_cloudflare(config) do
+    token = if Keyword.get(config, :api_key), do: "set", else: "unset"
+
+    "adapter=cloudflare token=#{token}"
+  end
+
   # The provider list in the unknown-adapter refusal, generated from the table
   # rather than written out. A hand-written list would go stale the day a
   # provider is added, and the staleness would be invisible — the refusal would
@@ -363,6 +378,29 @@ defmodule Courier.MailerAdapter do
     ]
   end
 
+  @doc """
+  The Swoosh adapter configuration for Cloudflare Email, read from the
+  environment.
+
+  Public for the same reason `smtp_adapter/0` and `postmark_adapter/0` are:
+  `adapter!/1` is the only caller in production, and a test asserts on the
+  shape without going through the refusal. One variable, required rather than
+  defaulted — a default key would be a credential in version control that
+  every deployment which forgot to set one would send mail under.
+
+  The adapter module is courier's own (`Courier.Adapters.CloudflareEmail`),
+  not a Swoosh one: Swoosh ships no MailChannels adapter, and the sending
+  half of a Cloudflare Email connection is the MailChannels transactional
+  API. See that module for the contract.
+  """
+  @spec cloudflare_adapter() :: keyword()
+  def cloudflare_adapter do
+    [
+      adapter: Courier.Adapters.CloudflareEmail,
+      api_key: required!("COURIER_CLOUDFLARE_API_KEY", "cloudflare")
+    ]
+  end
+
   # The provider set, as data. One entry per provider courier can send through,
   # and a third provider is an entry here plus the two functions its entry names
   # — not a branch in `adapter!/1`, `describe/1` or the refusal messages.
@@ -390,7 +428,10 @@ defmodule Courier.MailerAdapter do
        "the universal one — every serious provider (SES, Postmark, Mailgun, SendGrid, Resend) speaks SMTP or has an SMTP front",
        &smtp_adapter/0, &describe_smtp/1},
       {:postmark, Swoosh.Adapters.Postmark, Swoosh.ApiClient.Req,
-       "transactional-only, API-token auth", &postmark_adapter/0, &describe_postmark/1}
+       "transactional-only, API-token auth", &postmark_adapter/0, &describe_postmark/1},
+      {:cloudflare, Courier.Adapters.CloudflareEmail, Swoosh.ApiClient.Req,
+       "Cloudflare Email Routing — sends through the MailChannels transactional API",
+       &cloudflare_adapter/0, &describe_cloudflare/1}
     ]
   end
 

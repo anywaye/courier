@@ -466,12 +466,17 @@ is what its own comment instructs. A third status left that map (409 in courier-
 and the second departure is what shows the map is a list and not a constant.
 
 **A tier that CI cannot name is a tier nobody ran.** The suite partitions
-exactly, by the case template: 577 tests in the 25 files that never touch
-`Courier.Repo`, 579 in the 28 that do, and `mix test` is aliased to
-`ecto.create` first, so a runner with no database executes *zero* of the 1156 —
+exactly, by the case template: 748 tests in the 34 files that never touch
+`Courier.Repo`, 877 in the 47 that do, and `mix test` is aliased to
+`ecto.create` first, so a runner with no database executes *zero* of the 1625 —
 SSRF table included. Both counts are asserted in CI by `bin/assert-suite`, and
 the SSRF table gets its own 62-test run so the log carries a line that can only
-exist if that harness ran. **When you add or delete a test, raise the floor in
+exist if that harness ran. Re-measured on the tree carrying the third provider
+(the Cloudflare Email adapter), and again on every packet since — **these
+numbers were stale by 68 for eleven packets before somebody re-measured them**,
+which is the same finding `gate.yml` carries about its own floor: a floor is a
+decrease detector, so a stale number is green and silent. **When you add or
+delete a test, raise the floor in
 `.github/workflows/ci.yml` in the same commit.** Deleting a test to make CI green
 is caught by the floor; adding one is caught because CI goes red until you raise
 it. Both are one-line diffs, and only one of them changes what courier verifies.
@@ -1414,11 +1419,20 @@ asymmetry between them is the decision**:
   production courier reads. `test/courier/principal/introspection_url_test.exs`
   holds all of them together and greps the tree for the two wrong values.
 
-- **`COURIER_MAIL_ADAPTER`** — `smtp`, the only adapter courier ships. `none` is
+- **`COURIER_MAIL_ADAPTER`** — `smtp` | `postmark` | `cloudflare`. `none` is
   `Swoosh.Adapters.Local` and is **refused in production**. Unset is a boot
   failure, not a fallback to `none`. A module name is not a value: the variable
   names a provider from a fixed set, so `Swoosh.Adapters.Local` cannot be spelled
-  here even if somebody wants it to.
+  here even if somebody wants it to. `cloudflare` is not the Cloudflare
+  dashboard's own API: Email Routing is receive-only, and the sending half of a
+  Cloudflare Email connection is the **MailChannels transactional API**, which
+  is what `Courier.Adapters.CloudflareEmail` posts to. Domain authorisation is
+  W3-P5, not this variable.
+- **`COURIER_POSTMARK_API_TOKEN`** — required when the adapter is `postmark`.
+- **`COURIER_CLOUDFLARE_API_KEY`** — required when the adapter is `cloudflare`;
+  the MailChannels API key, required rather than defaulted for the same reason,
+  and never rendered by `describe/1`, which says only `token=set` /
+  `token=unset`.
 - **`COURIER_SMTP_HOST`** — required when the adapter is `smtp`.
 - **`COURIER_SMTP_USERNAME`** / **`COURIER_SMTP_PASSWORD`** — required unless
   `COURIER_SMTP_AUTH=never`, because `gen_smtp` refuses `auth: :always` without
