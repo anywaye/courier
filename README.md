@@ -364,7 +364,7 @@ provider is a deployment decision, read from the environment at boot, and
 courier **refuses to start** without one:
 
 ```sh
-COURIER_MAIL_ADAPTER=smtp | postmark
+COURIER_MAIL_ADAPTER=smtp | postmark | cloudflare
 
 # SMTP — the universal one; every serious provider speaks it or has an SMTP front
 COURIER_SMTP_HOST=smtp.your-provider.com
@@ -377,7 +377,25 @@ COURIER_SMTP_SSL=false             # true for implicit TLS, usually on 465
 
 # Postmark — transactional-only, API-token auth
 COURIER_POSTMARK_API_TOKEN=...     # required when the adapter is postmark
+
+# Cloudflare Email — sends through the MailChannels transactional API
+COURIER_CLOUDFLARE_API_KEY=...     # required when the adapter is cloudflare
 ```
+
+Cloudflare Email Routing itself is receive-only and has no send API. The
+sending half of a Cloudflare Email connection is the MailChannels
+transactional API, so that is the contract this adapter speaks:
+`POST https://api.mailchannels.net/tx/v1/send`, `X-Api-Key`, a
+`personalizations` / `from` / `subject` / `content` body. A Cloudflare sender
+also needs the domain authorised — the `_mailchannels` TXT record for Domain
+Lockdown and `include:relay.mailchannels.net` in SPF — which is the next
+packet's scope (W3-P5), not this variable's.
+
+**A provider that refuses a send is reported, never swallowed.** Every non-2xx
+is an error naming the status and the provider's own body, a transport failure
+is an error, and **a 202 carrying a per-message `status: "failed"` is an error
+too** — the request was accepted and the message was not, which is the one
+shape a status-code check alone would miss.
 
 `COURIER_MAIL_ADAPTER=none` renders mail into memory and opens no socket. It is
 refused in production: a courier that reports a message id for mail it never sent

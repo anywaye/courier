@@ -16,13 +16,31 @@ defmodule Courier.Adapters.CloudflareEmail do
 
   `POST https://api.mailchannels.net/tx/v1/send`, `X-Api-Key` header, JSON
   body. The payload is MailChannels' own shape — `personalizations` /
-  `from` / `subject` / `content` — documented at
+  `from` / `subject` / `content` — published at
   <https://docs.mailchannels.com/email-api/curl/quickstart> and pinned by
   the OpenAPI schema at
-  <https://docs.mailchannels.com/api-reference/send/send-an-email>. The
-  response is `202` with a `SendResults` body (`request_id` plus a
-  per-personalization `message_id`), or a non-2xx with an `ErrorResponse`
-  body (`{"errors": [...]}`).
+  <https://docs.mailchannels.com/api-reference/send/send-an-email> (Email API
+  reference v1.7.1). Read off that schema rather than remembered:
+
+    * required body fields: `personalizations`, `from`, `subject`, `content`
+    * `personalizations` (max 1000), each with `to` (min 1) plus optional
+      `cc` / `bcc` — which is why cc and bcc are merged into the one entry
+      `prepare_to/2` creates rather than appended as a second one
+    * `from` / `reply_to` are a root `EmailAddress` (`{email, name}`, `email`
+      required)
+    * `headers` is `additionalProperties: string` — a JSON object of header
+      name to value, which is what `prepare_custom_headers/2` puts on the
+      wire, and NOT the `[{Name, Value}]` array a Postmark-shaped adapter
+      would want
+    * `attachments` are `{content (base64), filename, type, content_id}`,
+      `content_id` being what marks one as inline — the shape
+      `prepare_attachment/1` builds
+    * responses: `202` with a `SendResults` body (`request_id` plus a
+      per-personalization `results`), `200` with a `Message` body for
+      `?dry-run=true`, and `400` / `403` / `413` / `500` / `502` with an
+      `ErrorResponse` body (`{"errors": [...]}`)
+
+  **And a 202 is not the only failure the provider reports.** See below.
 
   ## The failure this adapter exists to surface
 
@@ -78,6 +96,24 @@ defmodule Courier.Adapters.CloudflareEmail do
   sending domain, `413` for an over-large message, and `500`/`502` for
   transient failures. All of them are delivery failures the caller must be
   told about, and none of them is `{:ok, _}`.
+
+  ## The 202 that is not a success
+
+  A 2xx answers "your request was accepted", and the body then carries the
+  per-personalization verdict. MailChannels' `SendResult` is `{index,
+  message_id, reason, status}` with `status` in `sent | failed`, so **a 202
+  CAN contain a message that failed** — the request was well-formed and the
+  provider refused one message inside it. Returning `{:ok, _}` there would be
+  the silent default wearing a 2xx: courier would write an outbox row and
+  publish `courier.email.delivered` for a mail that was not sent. So a 2xx
+  whose `results` carry any `status: "failed"` is `{:error, {code,
+  failures}}`, the failures named, and `test/courier/cloudflare_delivery_test.exs`
+  drives exactly that against a real server answering 202 with a failed
+  result.
+
+  The dry-run shape is the other 2xx: `?dry-run=true` answers `200` with
+  `{"data": [...]}` — the rendered message, no `results`, no `request_id`.
+  That is a success with no id, and `{:ok, %{id: nil}}` is the honest receipt.
   """
   @spec deliver(Email.t(), keyword()) ::
           {:ok, %{id: String.t() | nil}} | {:error, {pos_integer(), term()} | term()}
@@ -88,7 +124,7 @@ defmodule Courier.Adapters.CloudflareEmail do
 
     case Swoosh.ApiClient.post(url, headers, body, email) do
       {:ok, code, _headers, body} when code >= 200 and code <= 399 ->
-        {:ok, %{id: extract_id(body)}}
+        accepted(code, body)
 
       {:ok, code, _headers, body} ->
         case Swoosh.json_library().decode(body) do
@@ -252,10 +288,30 @@ defmodule Courier.Adapters.CloudflareEmail do
   # is what its later webhooks reference. A `200` dry-run answer carries no
   # `request_id` (it returns the rendered message instead), so the id is
   # `nil` there — the send was accepted, and there is nothing to reference.
-  defp extract_id(body) do
+  defp accepted(code, body) do
     case Swoosh.json_library().decode(body) do
-      {:ok, %{"request_id" => id}} when is_binary(id) -> id
-      _ -> nil
+      # A body that will not decode cannot be inspected for a failed result,
+      # and the provider answered 2xx — so it is a success with no id to
+      # report rather than a refusal of something that was not refused.
+      {:error, _} ->
+        {:ok, %{id: nil}}
+
+      {:ok, decoded} when is_map(decoded) ->
+        case Enum.filter(Map.get(decoded, "results", []), &failed?/1) do
+          [] -> {:ok, %{id: Map.get(decoded, "request_id")}}
+          failures -> {:error, {code, failures}}
+        end
+
+      {:ok, _other} ->
+        {:ok, %{id: nil}}
     end
   end
+
+  # `SendResult.status` is the enum MailChannels documents, and anything that
+  # is not `sent` is read as a failure rather than assumed. A result with NO
+  # status at all is not a failure: the schema marks only `index` required,
+  # and a provider that added a third value would want to be seen, not
+  # silently treated as a refusal.
+  defp failed?(%{"status" => status}) when is_binary(status), do: status != "sent"
+  defp failed?(_result), do: false
 end

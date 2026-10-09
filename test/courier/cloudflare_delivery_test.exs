@@ -78,6 +78,7 @@ defmodule Courier.CloudflareDeliveryTest do
       # The envelope courier built: `config :courier, :mailing`'s from address
       # and the address the platform handed in.
       assert payload["from"] == %{"email" => "no-reply@cafaye.com", "name" => "caFaye"}
+
       assert payload["personalizations"] == [
                %{"to" => [%{"email" => "roundtrip@example.com", "name" => "Round Trip"}]}
              ]
@@ -90,7 +91,10 @@ defmodule Courier.CloudflareDeliveryTest do
       # The content is the rendered template in both formats, not an empty
       # array. A message that "arrives" with a subject and no body is still
       # useless, and would pass an assertion about the envelope alone.
-      assert [%{"type" => "text/plain", "value" => text}, %{"type" => "text/html", "value" => html}] =
+      assert [
+               %{"type" => "text/plain", "value" => text},
+               %{"type" => "text/html", "value" => html}
+             ] =
                payload["content"]
 
       assert text =~ "Round Trip"
@@ -242,6 +246,170 @@ defmodule Courier.CloudflareDeliveryTest do
         })
       end
     end
+
+    test "a 202 whose results carry a failed message is an error" do
+      # THE second silent-default shape, and the one a non-2xx check cannot
+      # see. MailChannels' `SendResult` is `{index, message_id, reason,
+      # status}` with `status` in `sent | failed`, so a well-formed request
+      # whose one message was refused still answers 202. Reporting that as
+      # `{:ok, _}` would write an outbox row and publish
+      # `courier.email.delivered` for a mail that was not sent — the exact
+      # defect this packet exists to end, wearing a success status.
+      {:ok, server, port} = MailChannelsServer.start_link()
+
+      MailChannelsServer.set_response(server, 202, """
+      {"request_id":"req-202-failed","results":[{"index":0,"message_id":"msg-1","status":"failed","reason":"recipient domain not found"}]}
+      """)
+
+      put_adapter(port)
+
+      assert {:error,
+              {202,
+               [
+                 %{
+                   "index" => 0,
+                   "message_id" => "msg-1",
+                   "status" => "failed",
+                   "reason" => "recipient domain not found"
+                 }
+               ]}} =
+               deliver(:welcome, %{
+                 user_id: "usr_202_failed",
+                 email: "failed@example.com",
+                 name: "Two Oh Two"
+               })
+
+      # The refusal really is at the provider, and after the request crossed.
+      assert [_request] = MailChannelsServer.take(server)
+    end
+
+    test "a 202 whose results are all sent is a success naming the request" do
+      {:ok, server, port} = MailChannelsServer.start_link()
+
+      MailChannelsServer.set_response(server, 202, """
+      {"request_id":"req-202-ok","results":[{"index":0,"message_id":"msg-9","status":"sent"}]}
+      """)
+
+      put_adapter(port)
+
+      assert {:ok, %{id: "req-202-ok"}} =
+               deliver(:welcome, %{
+                 user_id: "usr_202_ok",
+                 email: "accepted@example.com",
+                 name: "Accepted"
+               })
+    end
+
+    test "a 200 dry-run body is a success with no id to report" do
+      # The provider's other 2xx: `?dry-run=true` answers `200` with a
+      # `Message` body — the rendered message, no `results`, no `request_id`.
+      # It is a success, and the honest receipt is no id rather than an
+      # invented one.
+      {:ok, server, port} = MailChannelsServer.start_link()
+      MailChannelsServer.set_response(server, 200, ~s({"data":["rendered message"]}))
+      put_adapter(port)
+
+      assert {:ok, %{id: nil}} =
+               deliver(:welcome, %{
+                 user_id: "usr_dry_run",
+                 email: "dry-run@example.com",
+                 name: "Dry Run"
+               })
+    end
+
+    test "a 2xx whose body is not JSON is a success with no id" do
+      # The adapter must not invent a refusal the provider did not make. A
+      # body that will not decode cannot be inspected for a failed result,
+      # and the provider answered 2xx — so `{:ok, %{id: nil}}` is the honest
+      # answer.
+      {:ok, server, port} = MailChannelsServer.start_link()
+      MailChannelsServer.set_response(server, 202, "not json at all")
+      put_adapter(port)
+
+      assert {:ok, %{id: nil}} =
+               deliver(:welcome, %{
+                 user_id: "usr_not_json",
+                 email: "not-json@example.com",
+                 name: "Not Json"
+               })
+
+      assert [_request] = MailChannelsServer.take(server)
+    end
+  end
+
+  describe "the payload's optional shapes" do
+    # `Courier.Mailers` sends one recipient, no cc, no bcc, no reply-to and no
+    # attachments, so the happy path above never exercises them. A payload
+    # builder that is only ever asserted on the inputs it is guaranteed to
+    # produce is one nothing has checked — the same rule `Mailers.body?/1` is
+    # tested under. So each optional field is driven with a message that
+    # carries it, through the same real adapter over the same real socket.
+    import Swoosh.Email
+
+    test "cc, bcc, reply-to, headers and attachments reach the provider's shape" do
+      {:ok, server, port} = MailChannelsServer.start_link()
+      put_adapter(port)
+
+      email =
+        new()
+        |> from({"caFaye", "no-reply@cafaye.com"})
+        |> to({"Ada", "ada@example.com"})
+        |> cc({"Bead", "bead@example.com"})
+        |> bcc("quiet@example.com")
+        |> reply_to({"Support", "support@cafaye.com"})
+        |> subject("Shapes")
+        |> text_body("plain")
+        |> html_body("<p>rich</p>")
+        |> header("X-Courier-Test", "present")
+        |> attachment(
+          Swoosh.Attachment.new({:data, "inner-bytes"},
+            filename: "inner.txt",
+            content_type: "text/plain"
+          )
+        )
+        |> attachment(
+          Swoosh.Attachment.new({:data, "logo-bytes"},
+            filename: "logo.png",
+            content_type: "image/png",
+            type: :inline,
+            cid: "logo123"
+          )
+        )
+
+      assert {:ok, _receipt} = Courier.Mailer.deliver(email)
+
+      assert [request] = MailChannelsServer.take(server)
+      payload = decode!(request.body)
+
+      # ONE personalization, with cc and bcc inside it — MailChannels' shape,
+      # and not three personalizations each carrying its own `to`. A sender
+      # that appended bcc as a second entry would send the same message twice
+      # to the visible recipient.
+      assert [personalization] = payload["personalizations"]
+      assert [_to] = personalization["to"]
+      assert [%{"email" => "bead@example.com", "name" => "Bead"}] = personalization["cc"]
+      assert [%{"email" => "quiet@example.com"}] = personalization["bcc"]
+
+      assert payload["reply_to"] == %{"email" => "support@cafaye.com", "name" => "Support"}
+
+      # A JSON OBJECT of name to value, per the schema's
+      # `additionalProperties: string` — NOT the `[{Name, Value}]` array a
+      # Postmark-shaped adapter would produce.
+      assert payload["headers"] == %{"X-Courier-Test" => "present"}
+
+      attachment = Enum.find(payload["attachments"], &(&1["filename"] == "inner.txt"))
+      assert attachment["content"] == Base.encode64("inner-bytes")
+      assert attachment["type"] == "text/plain"
+      refute Map.has_key?(attachment, "content_id")
+
+      # The inline one, and `content_id` is the BARE cid — MailChannels
+      # documents `<img src="cid:logo123">` referring to an attachment whose
+      # `content_id` is `logo123`, so the `cid:` prefix a Postmark-shaped
+      # adapter adds would be a broken image in every HTML mail.
+      inline = Enum.find(payload["attachments"], &(&1["filename"] == "logo.png"))
+      assert inline["content_id"] == "logo123"
+      assert inline["content"] == Base.encode64("logo-bytes")
+    end
   end
 
   # An adapter aimed at the loopback test server.
@@ -268,8 +436,11 @@ defmodule Courier.CloudflareDeliveryTest do
 
   defp decode!(body) do
     case Swoosh.json_library().decode(body) do
-      {:ok, decoded} -> decoded
-      {:error, reason} -> raise "the test server received a body that is not JSON: #{inspect(reason)}"
+      {:ok, decoded} ->
+        decoded
+
+      {:error, reason} ->
+        raise "the test server received a body that is not JSON: #{inspect(reason)}"
     end
   end
 

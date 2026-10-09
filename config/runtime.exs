@@ -65,8 +65,8 @@ config :courier, CourierWeb.Endpoint,
 # a second setting cannot disagree with this one about what is exempt.
 # ---------------------------------------------------------------------------
 config :courier,
-  :force_ssl_enabled,
-  System.get_env("COURIER_FORCE_SSL") in ~w(true 1)
+       :force_ssl_enabled,
+       System.get_env("COURIER_FORCE_SSL") in ~w(true 1)
 
 # ---------------------------------------------------------------------------
 # OPENTELEMETRY. In every environment, and that is the point.

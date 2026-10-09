@@ -119,7 +119,9 @@ defmodule Courier.MailerAdapterCredentialsTest do
       assert MailerAdapter.describe(adapter: SomeOtherAdapter) =~ "SomeOtherAdapter"
       assert MailerAdapter.describe(adapter: Swoosh.Adapters.SMTP) =~ "host=?"
       assert MailerAdapter.describe(adapter: Swoosh.Adapters.Postmark) =~ "adapter=postmark"
-      assert MailerAdapter.describe(adapter: Courier.Adapters.CloudflareEmail) =~ "adapter=cloudflare"
+
+      assert MailerAdapter.describe(adapter: Courier.Adapters.CloudflareEmail) =~
+               "adapter=cloudflare"
     end
   end
 
@@ -201,7 +203,9 @@ defmodule Courier.MailerAdapterCredentialsTest do
       # silent-default failure this module exists to end, one layer out.
       log =
         capture_log(fn ->
-          Logger.warning("mailer: #{MailerAdapter.describe(adapter: Courier.Adapters.CloudflareEmail)}")
+          Logger.warning(
+            "mailer: #{MailerAdapter.describe(adapter: Courier.Adapters.CloudflareEmail)}"
+          )
         end)
 
       assert log =~ "adapter=cloudflare"
@@ -541,6 +545,18 @@ defmodule Courier.MailerAdapterCredentialsTest do
   defp postmark_config do
     [
       adapter: Swoosh.Adapters.Postmark,
+      api_key: @token
+    ]
+  end
+
+  # The Cloudflare half, and THE KEY IS THE CANARY — `@token`, the same
+  # constant the SMTP and Postmark assertions use, because the assertion that
+  # matters is that the key `Courier.Adapters.CloudflareEmail` was configured
+  # with never reaches a log line. A test that invented a second string here
+  # would pass whatever the adapter printed.
+  defp cloudflare_config do
+    [
+      adapter: Courier.Adapters.CloudflareEmail,
       api_key: @token
     ]
   end

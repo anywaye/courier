@@ -552,7 +552,46 @@ gate:
   # re-measured by running the tier greps on this tree, not by adding
   # branch deltas on paper. The floor sits AT the measurement with zero
   # headroom, for the reason the telemetry paragraph gives.
-  minimum: 1600
+  #
+  # REMEASURED on the tree carrying the THIRD PROVIDER — the Cloudflare
+  # Email adapter, which sends through the MailChannels transactional API:
+  # whole suite 1600 -> 1624, no-database 723 -> 747 across 33 -> 34
+  # files, database UNCHANGED at 877 across the same 47 files.
+  #
+  # **The +24 split 5 / 19, and the 19 were the PREVIOUS WORKER'S,
+  # uncommitted when that process died.** This packet found
+  # `cloudflare_delivery_test.exs` (9 tests, `ExUnit.Case` with
+  # `async: false` for the same reason `smtp_delivery_test.exs` is:
+  # application environment is whole-VM) plus 6 in
+  # `mailer_adapter_test.exs` and 4 in `mailer_adapter_credentials_test.exs`
+  # already written and NOT gated — one test file had been run once and
+  # nothing else had. The recovery commit gated those 19, and this
+  # paragraph's raise measures all 24. This packet's own 5 are the
+  # 202 carrying a failed `SendResult`, the all-sent 202, the 200 dry-run
+  # body, the unparseable 2xx body, and the optional payload shapes
+  # (cc/bcc/reply-to/headers/attachments, including the BARE `content_id`)
+  # — **all in the no-database tier**, because `Mailers.deliver/2` touches
+  # no `Courier.Repo`, the same placement rule `smtp_delivery_test.exs`
+  # established.
+  #
+  # **1624 is 747 + 877**, so the parts still sum to the whole — re-measured
+  # by running the two tier greps on this tree. The floor sits AT the
+  # measurement with zero headroom.
+  #
+  # AND THE MEASUREMENT IS ONLY TRUSTWORTHY ON A FRESH POSTGRES, WHICH THIS
+  # PACKET MEASURED TWICE. The declared requirement is `bin/gate-db`'s
+  # postgres on localhost:5432 as postgres/postgres, and that run is the
+  # 1624 above: zero failures, exit 0. Pointed at kit's SHARED cluster on
+  # 15500 instead — which the manager's brief named — the same tree
+  # produced **45 failures and no `Result:` line at all**, because that
+  # cluster's `courier_test` carries another worker's half-applied state:
+  # `notification_events`, `notifications` and `consumed_events` landed in
+  # the `cafaye` schema instead of `public`, so `backup_tables_test.exs`
+  # and `notifications_boundary_test.exs` failed on tables the migrations
+  # did create. **None of it is this packet's code**, and a floor moved on
+  # that measurement would be the contaminated-run defect this file's own
+  # earlier paragraph describes.
+  minimum: 1624
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

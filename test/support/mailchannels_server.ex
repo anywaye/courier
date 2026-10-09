@@ -85,7 +85,8 @@ defmodule Courier.TestSupport.MailChannelsServer do
   meant to surface.
   """
   @spec set_response(pid(), pos_integer(), String.t()) :: :ok
-  def set_response(server, status, body), do: GenServer.call(server, {:set_response, status, body})
+  def set_response(server, status, body),
+    do: GenServer.call(server, {:set_response, status, body})
 
   @impl true
   def init(options) do
