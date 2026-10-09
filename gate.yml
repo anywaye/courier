@@ -555,7 +555,7 @@ gate:
   #
   # REMEASURED on the tree carrying the THIRD PROVIDER — the Cloudflare
   # Email adapter, which sends through the MailChannels transactional API:
-  # whole suite 1600 -> 1624, no-database 723 -> 747 across 33 -> 34
+  # whole suite 1600 -> 1625, no-database 723 -> 748 across 33 -> 34
   # files, database UNCHANGED at 877 across the same 47 files.
   #
   # **The +24 split 5 / 19, and the 19 were the PREVIOUS WORKER'S,
@@ -574,14 +574,14 @@ gate:
   # no `Courier.Repo`, the same placement rule `smtp_delivery_test.exs`
   # established.
   #
-  # **1624 is 747 + 877**, so the parts still sum to the whole — re-measured
+  # **1625 is 748 + 877**, so the parts still sum to the whole — re-measured
   # by running the two tier greps on this tree. The floor sits AT the
   # measurement with zero headroom.
   #
   # AND THE MEASUREMENT IS ONLY TRUSTWORTHY ON A FRESH POSTGRES, WHICH THIS
   # PACKET MEASURED TWICE. The declared requirement is `bin/gate-db`'s
   # postgres on localhost:5432 as postgres/postgres, and that run is the
-  # 1624 above: zero failures, exit 0. Pointed at kit's SHARED cluster on
+  # 1625 above: zero failures, exit 0. Pointed at kit's SHARED cluster on
   # 15500 instead — which the manager's brief named — the same tree
   # produced **45 failures and no `Result:` line at all**, because that
   # cluster's `courier_test` carries another worker's half-applied state:
@@ -591,7 +591,7 @@ gate:
   # did create. **None of it is this packet's code**, and a floor moved on
   # that measurement would be the contaminated-run defect this file's own
   # earlier paragraph describes.
-  minimum: 1624
+  minimum: 1625
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

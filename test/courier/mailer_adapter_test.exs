@@ -538,6 +538,21 @@ defmodule Courier.MailerAdapterTest do
       assert MailerAdapter.verify_boot!(:prod) == :ok
     end
 
+    test "verify_boot!/0 passes in prod for Cloudflare" do
+      # The same gate for the third provider, and it is the one that must NOT
+      # fire: a correctly configured `COURIER_MAIL_ADAPTER=cloudflare`
+      # deployment has to start. A provider added to the table but missed by
+      # `deliverable?/1` would boot-refuse a working deployment, and nothing
+      # in the Cloudflare file itself would notice — it delivers through the
+      # mailer, which is past this gate.
+      Application.put_env(:courier, Courier.Mailer,
+        adapter: Courier.Adapters.CloudflareEmail,
+        api_key: "cloudflare-test-key"
+      )
+
+      assert MailerAdapter.verify_boot!(:prod) == :ok
+    end
+
     test "verify_boot!/0 does not fire in test, where the Test adapter is correct" do
       # The other half of "not vacuous": a check scoped to prod only. The suite
       # configures `Swoosh.Adapters.Test` deliberately and `assert_email_sent/1`

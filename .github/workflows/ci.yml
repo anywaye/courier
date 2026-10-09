@@ -295,14 +295,14 @@ jobs:
           # Cloudflare Email adapter, which sends through the MailChannels
           # transactional API: whole 1600 -> 1624, no-database 723 -> 747
           # across 33 -> 34 files, database UNCHANGED at 877 across the
-          # same 47 files. 1624 is 747 + 877, so the parts still sum to the
+          # same 47 files. 1625 is 748 + 877, so the parts still sum to the
           # whole. **The +24 split 5 / 19, and the 19 were the PREVIOUS
           # WORKER'S uncommitted tests, gated for the first time by this
           # packet's recovery commit** — one of them called an undefined
           # `cloudflare_config/0`, so the file would not even have compiled.
           # See gate.yml for the measurement, and for why it was taken on a
           # fresh postgres rather than on kit's shared cluster.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1624
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1625
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -575,7 +575,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (747 tests, 34 files)
+      - name: tier — no database (748 tests, 34 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -614,7 +614,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 747
+          bin/assert-suite "$log" "no database" 748
 
       - name: tier — database (877 tests, 47 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -715,7 +715,7 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1624 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1625 passed | \`bin/assert-suite\` |"
             echo "| no database, 33 files | 723 passed | tier step |"
             echo "| database, 47 files | 877 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
