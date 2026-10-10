@@ -13,10 +13,10 @@
 # The image the service runs.
 #
 # The repository is the fleet's private OCI registry (GHCR), because the
-# substrate is closed source and a pull-based system needs somewhere to
-# pull from. The tag is a VALUE and is never `latest`: a floating tag
-# is a deploy that changes when somebody else pushes, and the loop
-# exists so that what runs is exactly what the values commit said.
+# fleet is licensed BSL rather than open source, and a pull-based system
+# needs somewhere to pull from. The tag is a VALUE and is never `latest`: a
+# floating tag is a deploy that changes when somebody else pushes, and the
+# loop exists so that what runs is exactly what the values commit said.
 # Set it at release time; the default is the chart's own version.
 image:
   repository: ghcr.io/cafaye/courier

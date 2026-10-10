@@ -8,13 +8,14 @@ defmodule Courier.MixProject do
       elixir: "~> 1.17",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
-      # Courier's licence is the Business Source License 1.1 — see LICENSE: free
-      # to run, free to self-host, never to offer a competing service (OPS-D2),
-      # and not an open-source grant. So `package/0` now names `licenses:` as
-      # `BUSL-1.1`, the SPDX identifier for that licence. Without a `package`
-      # block Hex refuses to publish, and without `files:` the LICENSE file is
-      # not in the tarball even once it can — so the notice would be a fact
-      # about the repository and not about the package a consumer installs.
+      # Courier's licence is the Business Source License 1.1 — see LICENSE. It
+      # replaced a closed "all rights reserved" grant that allowed nothing
+      # beyond viewing (OPS-D2), and it is not an open-source licence: BSL's
+      # own Notice says so. So `package/0` now names `licenses:` as `BUSL-1.1`,
+      # the SPDX identifier for it. Without a `package` block Hex refuses to
+      # publish, and without `files:` the LICENSE file is not in the tarball
+      # even once it can — so the notice would be a fact about the repository
+      # and not about the package a consumer installs.
       package: package(),
       # The coverage tool, named here rather than discovered at run time.
       # `mix test --cover` writes `cover/` and enforces nothing; this is what

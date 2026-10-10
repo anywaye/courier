@@ -24,9 +24,9 @@ generated one was removed deliberately; see the CHANGELOG.
 
 ## Shipping the chart
 
-The chart ships from the fleet's private OCI registry, because the
-substrate is closed source and a pull-based system needs somewhere to
-pull from:
+The chart ships from the fleet's private OCI registry, because the fleet
+is licensed BSL rather than open source, and a pull-based system needs
+somewhere to pull from:
 
     helm package chart
     helm push chart-0.1.0.tgz oci://ghcr.io/cafaye/charts/courier

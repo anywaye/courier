@@ -357,7 +357,8 @@ info:
     name: courier
     email: courier@cafaye.com
   license:
-    name: Proprietary - All rights reserved. See LICENSE in the cafaye/courier repository.
+    name: Business Source License 1.1 (BUSL-1.1). See LICENSE in the cafaye/courier repository.
+    identifier: BUSL-1.1
 
 servers:
   - url: https://courier.cafaye.com

@@ -552,3 +552,26 @@ queue — the send path is synchronous and that type exists to make a *backlog*
 visible.
 
 Conventions live in [AGENTS.md](AGENTS.md).
+
+## Licence
+
+courier is under the **Business Source License 1.1** — the full text is
+[LICENSE](LICENSE), and it replaced a closed "all rights reserved" grant that
+allowed nothing beyond viewing (OPS-D2). Its parameters are Licensor Cafaye,
+Licensed Work courier, Additional Use Grant None, Change Date 2030-10-10 and
+Change License Apache-2.0.
+
+Read the licence rather than this paragraph for what you may do. Its Terms
+grant copying, modification, derivative works, redistribution and
+**non-production** use; the Additional Use Grant is `None`, so production use
+is not granted by this file and the licence says you must then buy a
+commercial licence from Cafaye or refrain from using it. On the Change Date
+each version keeps running under Apache-2.0. BSL is not an open-source
+licence, and the licence's own Notice says that out loud.
+
+The fleet's decision describes the intent as "free to run, free to self-host,
+never to offer a competing service" (OPS-D2, `CAFAYE-OPS.md:176`). The
+parameters chosen do not carry the first half of that sentence, and the
+discrepancy is recorded rather than smoothed over in
+`REPORT-ops-lic-services-a-courier.md`.
+

@@ -63,7 +63,10 @@ brain. The substrate's is the one `install.sh` applies
 (`install_applications()` → `kubectl apply -f "$MANIFEST_DIR"`), and
 `DEPLOYMENT.md` decides the OCI design (private registry + read-only
 pull secret, because the fleet is closed source and a customer must
-pull the chart without read access to the source repos). The generated
+pull the chart without read access to the source repos). [Superseded
+2026-10-10: the services moved to the Business Source License 1.1, so
+"the fleet is closed source" now reads "the fleet is licensed BSL rather
+than open source" — the registry design is unchanged.] The generated
 one was **deleted**, not ignored. Gateway's landed chart (W67) ships no
 `application.yaml` either.
 
