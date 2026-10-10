@@ -8,12 +8,13 @@ defmodule Courier.MixProject do
       elixir: "~> 1.17",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
-      # Courier is proprietary: see LICENSE. There is no open-source grant,
-      # so `package/0` names no `licenses:` SPDX identifier — one would claim a
-      # grant that does not exist. Without a `package` block Hex refuses to
-      # publish, and without `files:` the LICENSE file is not in the tarball
-      # even once it can — so the notice would be a fact about the repository
-      # and not about the package a consumer installs.
+      # Courier's licence is the Business Source License 1.1 — see LICENSE: free
+      # to run, free to self-host, never to offer a competing service (OPS-D2),
+      # and not an open-source grant. So `package/0` now names `licenses:` as
+      # `BUSL-1.1`, the SPDX identifier for that licence. Without a `package`
+      # block Hex refuses to publish, and without `files:` the LICENSE file is
+      # not in the tarball even once it can — so the notice would be a fact
+      # about the repository and not about the package a consumer installs.
       package: package(),
       # The coverage tool, named here rather than discovered at run time.
       # `mix test --cover` writes `cover/` and enforces nothing; this is what
@@ -28,18 +29,22 @@ defmodule Courier.MixProject do
 
   # The Hex package metadata.
   #
-  # There is deliberately no `licenses:` SPDX identifier: courier is
-  # proprietary (see LICENSE) and no identifier describes that. `files:` is
-  # the list that goes into the tarball, and it still carries the LICENSE
-  # file, so the proprietary notice travels with the package rather than
-  # living only in the repository.
+  # `licenses:` is `BUSL-1.1`, the SPDX identifier for the Business Source
+  # License 1.1 that `LICENSE` carries as of OPS-D2. It was absent before on
+  # purpose: courier was closed, and an identifier naming a grant the
+  # repository did not carry would have been a lie in the metadata a consumer's
+  # tooling reads. `files:` is the list that goes into the tarball, and it
+  # still carries the LICENSE file, so the licence travels with the package
+  # rather than living only in the repository. A BSL is not an open-source
+  # licence, and the identifier does not pretend it is.
   #
   # `LICENSE` is in `files:` explicitly rather than by glob. A glob that stopped
-  # matching would publish successfully and quietly drop the notice, and a notice
-  # that goes missing at publish time is the one failure mode here that nothing
-  # else would catch.
+  # matching would publish successfully and quietly drop the licence, and a
+  # licence that goes missing at publish time is the one failure mode here that
+  # nothing else would catch.
   defp package do
     [
+      licenses: ["BUSL-1.1"],
       files: [
         "lib",
         "priv",
