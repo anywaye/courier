@@ -459,6 +459,41 @@ entryPoints:
   # --------------------------------------------------------------------------
   # notification_preferences — and the one place courier's boundary is NOT a
   # predicate on the query.
+  #
+  # WHAT THIS BOUNDARY NOW IS, and the split is the finding. `addressable/2`
+  # compares the acting account against the stored row's `account_id`, and
+  # `Courier.NotificationPreferences`'s moduledoc, the suite and
+  # `REPORT-courier-app-role.md` all record what the role switch did to it: as
+  # `courier_app` the `owner/1` read is a subject of the `select` policy, so
+  # another account's row is not returned at all and **the comparison never
+  # runs**. `test/courier/notification_preferences_test.exs` sets the
+  # `@moduletag account:` identity to the OWNER on the sandbox connection, so
+  # its `{:error, :not_found}` arms pass *as the owner* — the Elixir defence
+  # is proved, and the answer the repository actually serves a cross-tenant
+  # read is different and is proved elsewhere.
+  #
+  # WHERE, exactly, and the two halves are two different tests:
+  #
+  #   the Elixir comparison  `test/courier/notification_preferences_test.exs`
+  #                         :233 and :254, both run as the owner
+  #   the database policy   `test/courier_web/controllers/notification_preferences_controller_test.exs`
+  #                         :135 "another account cannot read this one's
+  #                         preferences" — a REAL request, another REAL
+  #                         credential, answered 200-with-defaults
+  #                         byte-identical to a user nobody has written for
+  #                         (:190), which is the stricter form of
+  #                         nonexistence and leaks strictly less than the
+  #                         404 it replaced
+  #                         :205 "another account cannot write this one's
+  #                         preferences, and writes nothing" — 404, with the
+  #                         victim's row read back as its owner (:233)
+  #
+  # The declaration keeps the OWNER-identity arms on the library file because
+  # those are the lines that carry the comparison's own spelling of nothing and
+  # the schema asks an absent arm for one; the controller file is where the
+  # boundary a caller meets is proved, and it is named here rather than left
+  # for a reader to find. **A reader who wants the boundary a customer can
+  # observe should read the controller test, not these two lines.**
   # --------------------------------------------------------------------------
   - id: notification-preferences-list
     operation: select
@@ -504,6 +539,18 @@ entryPoints:
           # :not_found}` at 233, inside "cannot read a user whose preferences
           # exist and are not theirs". 225 carried no token, so the declaration
           # named an arm the checker could not find and the message was right.
+          #
+          # WHAT THIS ARM DOES AND DOES NOT PROVE — read the section comment
+          # above before trusting it. This is `addressable/2`'s Elixir
+          # comparison, exercised with the file's `@moduletag account:` identity
+          # (the OWNER) on the connection, so the `owner/1` read is permitted
+          # and the comparison runs. The cross-tenant answer a real request
+          # gets is 200-with-defaults, proved over real requests at
+          # `test/courier_web/controllers/notification_preferences_controller_test.exs:190`
+          # and named in the section comment above. This line is one half of
+          # the boundary and the controller test is the other; the arms below
+          # keep the library spellings because those are the tokens the schema
+          # asks an absent arm for.
           expects: not_found
           file: test/courier/notification_preferences_test.exs
           line: 233
@@ -559,6 +606,14 @@ entryPoints:
         # 254 is `assert found.push_enabled == true`, the owner re-reading the
         # row the refused write was aimed at and finding the channel it tried to
         # switch still on.
+        #
+        # THE WRITE ARM'S OTHER HALF IS A REAL 404, and it is the one that
+        # matters for a customer: `update/3` runs `addressable/2` **before** the
+        # batch is looked at, and a controller-level cross-tenant `PUT` is
+        # answered 404 with the victim's row read back as its owner at
+        # `test/courier_web/controllers/notification_preferences_controller_test.exs:233`.
+        # The library arm below is the same refusal observed from inside the
+        # module, with the owner's identity on the connection.
         - id: other-account
           asserts: absent
           expects: push_enabled
