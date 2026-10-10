@@ -100,6 +100,50 @@ if config_env() != :test do
 end
 
 # ---------------------------------------------------------------------------
+# THE EVENT BUS. Where it is, and what publishes to it.
+#
+# `NATS_URL` is the only variable, and it is OPTIONAL everywhere — the same
+# decision identity makes in `internal/config/config.go`
+# (`NATSURLVar`, "OPTIONAL"), for the same reason. courier with no broker
+# configured must not start a publisher that reports events as delivered:
+#
+#   * `Courier.Nats.supervised_child/0` answers `:ignored`, so the application
+#     starts no connection and no retry loop.
+#   * `Courier.NatsPublisher.Unconfigured` refuses every envelope, so the relay
+#     records `{:error, :nats_url_not_set}` in `last_error` and leaves
+#     `published_at` nil — rows accumulate, which is what an outbox is for.
+#
+# What the unset case deliberately does NOT do is fall through to
+# `Courier.NatsPublisher.Noop`, which is the suite's stand-in and answers `:ok`:
+# that would mark every row published and drain the outbox into nowhere. identity
+# names it in `internal/outbox/publisher.go` — "a promise this process keeps by
+# discarding is not a promise" — and this is the same refusal in courier's config.
+#
+# An empty string counts as unset. `NATS_URL=` in a compose file produces `""`,
+# and a URL that is present and empty is not present.
+#
+# NOT IN TEST, and the guard is load-bearing for the same reason as the
+# OpenTelemetry one above: `config/runtime.exs` runs after `config/test.exs`, so
+# an unguarded line here would replace the suite's `Noop` publisher with either of
+# these two and every relay test in this repository would be asserting against a
+# module no test configured.
+# ---------------------------------------------------------------------------
+if config_env() != :test do
+  nats_url = System.get_env("NATS_URL")
+
+  config :courier,
+         :nats,
+         Keyword.merge(Application.get_env(:courier, :nats, []), url: nats_url)
+
+  config :courier,
+         :nats_publisher,
+         if(is_nil(nats_url) or String.trim(nats_url) == "",
+           do: Courier.NatsPublisher.Unconfigured,
+           else: Courier.NatsPublisher.Bus
+         )
+end
+
+# ---------------------------------------------------------------------------
 # WHO IS CALLING. The resolver, its address, and its credential.
 #
 # `Courier.Principal.Introspection` is the module `config :courier, :principal`

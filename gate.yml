@@ -591,7 +591,21 @@ gate:
   # did create. **None of it is this packet's code**, and a floor moved on
   # that measurement would be the contaminated-run defect this file's own
   # earlier paragraph describes.
-  minimum: 1625
+  # AND IT MOVES AGAIN for the OUTBOX PUBLISHER (BRK-2): whole 1625 -> 1646,
+  # no-database 748 -> 759 across 34 -> 35 files, database 877 -> 887 across
+  # 47 -> 49 files. The +21 split 11 / 10 by the case template, which is the
+  # same derivation the tier greps use, so it cannot be a guess:
+  #   * `test/courier/nats_test.exs` is a plain `ExUnit.Case` (11 tests): its
+  # subject is a process, a URL and a supervisor child, and no row is read.
+  #   * `test/courier/nats_publisher/bus_test.exs` (4) and
+  #     `test/courier/nats_publisher/unconfigured_test.exs` (6) are
+  #     `Courier.DataCase` because each asserts about an `outbox_events` row —
+  #     the first that it was marked published from a real broker's ack on a
+  #     real socket, the second that it was NOT marked at all.
+  # **1646 is 759 + 887**, so the parts still sum to the whole. The floor sits
+  # AT the measurement with zero headroom, and measured on `bin/gate-db`'s own
+  # postgres on localhost:5432 for the same reason the paragraph above gives.
+  minimum: 1646
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

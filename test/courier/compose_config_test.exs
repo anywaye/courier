@@ -69,6 +69,10 @@ defmodule Courier.ComposeConfigTest do
     "DEPLOYMENT_ENVIRONMENT" => "a resource attribute with a default",
     "COURIER_FORCE_SSL" =>
       "the SSL redirect opt-in; absent means plain HTTP, which is what the dev stack wants",
+    "NATS_URL" =>
+      "the event bus, and absent is a supported state: no connection, no " <>
+        "publisher, and outbox rows accumulate. kit's compose supplies the broker " <>
+        "for the stack, not for a bare `mix phx.server`",
     "PHX_HOST" => "defaults to example.com — see the follow-up in the packet report",
     "PHX_SERVER" => "behind a proxy in kit's stack; ignored when unset",
     "POOL_SIZE" => "the repo size, defaulted at runtime.exs",

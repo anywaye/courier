@@ -127,6 +127,33 @@ defmodule Courier.MixProject do
       {:swoosh, "~> 1.28"},
       {:gen_smtp, "~> 1.0"},
       {:oban, "~> 2.24"},
+
+      # The event bus client. `Courier.NatsPublisher.Bus` is the half of
+      # `Courier.NatsPublisher` that actually reaches the broker, and it needs a
+      # NATS client to reach it with: "ack, then mark" is only a rule if some
+      # transport can answer.
+      #
+      # The published alternative is `gnat` (nats.ex), which is **MIT** —
+      # verified in the 1.18.1 tarball's own `metadata.config`
+      # (`{<<"licenses">>,[<<"MIT">>}`) and in the package's `LICENSE.txt`. It is
+      # the Elixir client the fleet's other publisher's design was written
+      # against: identity's `internal/outbox/nats.go` uses `nats.go`'s JetStream
+      # `PublishMsg`, which blocks until the broker acks, and the reason that
+      # matters is `published_at` — see `Courier.NatsPublisher.Bus`.
+      #
+      # `nkeys` arrives with it as a transitive half of NATS authentication
+      # (nkey_seed signing) and of nothing else: it is not a second client, and
+      # courier declares no credentials because kit's broker carries none
+      # (`templates/substrate/manifests/data/nats.yaml`: "one box, the packet's
+      # explicit non-goal").
+      #
+      # Declared for **every** environment, and test is where it earns that the
+      # way `gen_smtp` earned it: `test/support/nats_server.ex` drives real
+      # publishes through the real client to a real socket on a kernel-assigned
+      # loopback port. A client that is `only: :prod` is a client no test can
+      # exercise, which is the same silent default wearing a different hat.
+      {:gnat, "~> 1.18"},
+
       # Webhook delivery needs an HTTP client. Req is the one this repository's own
       # generated rules name as preferred ("Use the already included and available
       # `:req` (`Req`) library for HTTP requests, avoid `:httpoison`, `:tesla`, and

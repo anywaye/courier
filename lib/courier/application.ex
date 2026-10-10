@@ -31,6 +31,12 @@ defmodule Courier.Application do
     # Re-checking the environment twice would catch nothing this does not.
     Courier.MailerAdapter.verify_boot!()
 
+    # The bus's own startup line, and the two halves are on the same terms as
+    # `Courier.MailerAdapter`'s: what the setting is, never a credential. On the
+    # no-broker half it says what accumulates rather than failing quietly into a
+    # publisher nobody configured.
+    Courier.Nats.log_startup()
+
     # One line, and only ever on the DISABLED path. It is here rather than in
     # `config/runtime.exs` because configuration cannot log into the store an
     # operator reads. See Courier.Telemetry for the contract this reports on.
@@ -42,6 +48,13 @@ defmodule Courier.Application do
       # handler attached from a plug's `init/1` is re-attached on every reload.
       Courier.Telemetry,
       Courier.Repo,
+      # The connection to the event bus, and an EMPTY LIST when `NATS_URL` is not
+      # set — so a courier with no broker holds no socket, starts no retry loop
+      # and marks nothing published. See `Courier.Nats.supervised_child/0` for why
+      # this is a list and not a child the supervisor ignores, which Elixir 1.20
+      # refuses; the publisher is `Courier.NatsPublisher.Bus`, configured by
+      # `config/runtime.exs` on the same condition.
+      Courier.Nats.supervised_child(),
       {DNSCluster, query: Application.get_env(:courier, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Courier.PubSub},
       # courier's only queue: the outbox relay. It needs the repo, so it comes
@@ -78,7 +91,10 @@ defmodule Courier.Application do
     # See https://elixir.hexdocs.pm/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Courier.Supervisor]
-    Supervisor.start_link(children, opts)
+
+    # Flattened, so the one conditional entry in the list is a list rather than a
+    # nested list the supervisor would take for a child.
+    Supervisor.start_link(List.flatten(children), opts)
   end
 
   # The relay reads its own options rather than the whole application env, so a
