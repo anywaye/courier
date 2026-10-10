@@ -142,7 +142,15 @@ config :courier, :consumers, %{
   # and nothing is looked up. The reason is validated against its closed set
   # (`password reset`, `email address changed`) before anything is dialled, and
   # an unknown reason is a refusal, never a default.
-  "identity.session.revoked" => Courier.Consumers.SessionsRevoked
+  "identity.session.revoked" => Courier.Consumers.SessionsRevoked,
+  # The fourth subscription, and the one the platform's central promise was
+  # waiting for: a user signs up, and courier welcoms them. The payload
+  # carries `user_id` and `email` — the recipient and the address — which is
+  # everything `Courier.Deliver.welcome/1` needs, so the handler sends and
+  # nothing is looked up. This is the first consumer whose positive path is
+  # reachable end to end on the bus: see `Courier.Consumers.Subscriber`, the
+  # process that turns `identity.>` deliveries into rows.
+  "identity.user.created" => Courier.Consumers.UserCreated
 }
 
 # The consumer's own tuning, in `:consumer` and not `:consumers` — the registry
