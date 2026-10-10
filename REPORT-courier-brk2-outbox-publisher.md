@@ -1,8 +1,8 @@
 # BRK-2 — courier's outbox publisher starts, and the row reaches the bus
 
-Branch `broker/courier-brk2`, commit on top of `74affe3`. Gate: **1646 passed, exit 0**
+Branch `broker/courier-brk2`, commit `0a799e8` on top of `74affe3`. Gate: **1646 passed, exit 0**
 (`minimum: 1646` in `gate.yml`, the three floors in `.github/workflows/ci.yml` raised in
-the same commit). Worktree: `/Users/kaka/Code/any/moon/wt/courier-brk2`.
+the same commit). Worktree: `/Users/kaka/Code/any/moon/wt/courier-brk2`
 
 ## What the manager's measurement was missing, and what was already there
 
