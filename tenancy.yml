@@ -249,9 +249,16 @@ entryPoints:
       # `WHERE` from the keyword list rather than from a positional `$2` — the
       # key is on the line, which is the whole of what
       # `tenancy.scope-lost` checks.
+      #
+      # THE LINE MOVED, and the move is recorded rather than silently followed:
+      # it was 95 (a docstring's closing `"""`) until w3p1's Cloudflare packet
+      # reflowed this module's signatures, and the failure it produced was
+      # `tenancy.scope-lost` naming a line carrying no key. 99 is the
+      # `Repo.get_by/3` itself — the only line in `get/2` that carries the key,
+      # and the one the whole function exists to run.
       mechanism: query-filter
       file: lib/courier/webhook_endpoints.ex
-      line: 95
+      line: 99
     negative:
       asserts: absent
       cases:
@@ -284,9 +291,13 @@ entryPoints:
     operation: select
     subject: webhook_endpoints
     enforced:
+      # `where([endpoint], endpoint.account_id == ^account_id)` — the predicate
+      # itself, inside `list/2`'s pipeline. It was line 110, the docstring above
+      # the `@spec`, until w3p1's reflow; 114 is the `where` that carries the
+      # key and is the only line in the function that does.
       mechanism: query-filter
       file: lib/courier/webhook_endpoints.ex
-      line: 110
+      line: 114
     negative:
       asserts: absent
       cases:
@@ -318,10 +329,12 @@ entryPoints:
     subject: webhook_endpoints
     enforced:
       # The fan-out list, and the reason `(account_id, inserted_at) WHERE status
-      # = 'enabled'` exists.
+      # = 'enabled'` exists. This is the `where` carrying both halves of that
+      # index's leading predicate — `account_id` here and the status one token
+      # later. It was line 124 (a docstring) before w3p1's reflow.
       mechanism: query-filter
       file: lib/courier/webhook_endpoints.ex
-      line: 124
+      line: 128
     negative:
       asserts: absent
       cases:
@@ -352,9 +365,13 @@ entryPoints:
     operation: select
     subject: webhook_endpoints
     enforced:
+      # The `where` inside `page/3`'s query — the account predicate the page is
+      # built on, one line below the `with` that validates the limit. It was
+      # declared at 156, the `validate_limit` line, which carries no key: a
+      # cursor check is not a tenancy check and the declaration said it was.
       mechanism: query-filter
       file: lib/courier/webhook_endpoints.ex
-      line: 156
+      line: 160
     negative:
       asserts: absent
       cases:
@@ -397,9 +414,15 @@ entryPoints:
       # than somebody else's answer. The unique index on those three columns is
       # named at `lib/courier/idempotency.ex:72` and it is the same index
       # `refusal/1` matches on by name.
+      #
+      # THE LINE IS THE `where` CARRYING THE TRIPLE'S FIRST TERM, and it is 164
+      # rather than 151. 151 was the `@doc """` opening the docstring above
+      # `fetch/3` — a line carrying no key at all, so the declaration described
+      # a boundary on a line that had none. The predicate is the one below, and
+      # it is the only line in `fetch/3` that names the account.
       mechanism: query-filter
       file: lib/courier/idempotency.ex
-      line: 151
+      line: 164
     negative:
       asserts: absent
       cases:
@@ -475,17 +498,29 @@ entryPoints:
           # The declared line was the owner's write that seeds the row; the
           # assertion is the `{:error, :not_found}` the other account's read
           # gets back.
+          #
+          # THE LINE, corrected. It was 225 — the blank line closing the
+          # `update/3` describe — and the assertion is the `== {:error,
+          # :not_found}` at 233, inside "cannot read a user whose preferences
+          # exist and are not theirs". 225 carried no token, so the declaration
+          # named an arm the checker could not find and the message was right.
           expects: not_found
           file: test/courier/notification_preferences_test.exs
-          line: 225
+          line: 233
         - id: own-account
           asserts: present
           # The test head was the declared line; the assertion is this
           # `Enum.all?(preferences, &(&1.email_enabled and …))` — the account's
           # own defaults read back through the same `list/2`.
+          #
+          # THE LINE, corrected. It was 47 — the body of the `stored/3` helper,
+          # which reads a row out for whichever account the caller passed and so
+          # asserts nothing about tenancy at all. 55 is the assertion inside
+          # "returns every notification type, on, for a user courier has never
+          # seen", which runs as `@account` and reads its own answer back.
           expects: email_enabled
           file: test/courier/notification_preferences_test.exs
-          line: 47
+          line: 55
 
   - id: notification-preferences-update
     operation: update
@@ -517,11 +552,18 @@ entryPoints:
         # arm reads the victim's row back as its owner and asserts the value the
         # refused write was trying to change is untouched. The declared line was
         # the comment saying so; the assertion is the read-back below it.
+        #
+        # THE LINE, corrected. It was 246 — the `update(@other_account, …)` call
+        # itself, which returns the refusal and proves nothing about the victim's
+        # row. The read-back the comment describes is two lines further down:
+        # 254 is `assert found.push_enabled == true`, the owner re-reading the
+        # row the refused write was aimed at and finding the channel it tried to
+        # switch still on.
         - id: other-account
           asserts: absent
           expects: push_enabled
           file: test/courier/notification_preferences_test.exs
-          line: 246
+          line: 254
         # The owner's own `PUT`, read back as the owner: `push_enabled` is still
         # true because the other account's write was refused and this account's
         # was not. The declared line was a comment in the controller test; the
