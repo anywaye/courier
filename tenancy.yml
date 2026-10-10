@@ -649,7 +649,20 @@ entryPoints:
       # THE DECLARED LINE IS THE `Tenancy.with_account/3` WRAPPER, which is where
       # the identity is actually put on the connection — the old declaration
       # named a comment in the moduledoc, and a comment carries no key.
-      mechanism: query-filter
+      #
+      # THE MECHANISM IS `middleware`, and it was `query-filter` until this
+      # packet. The line carries the key either way, so the checker was green,
+      # and the vocabulary was wrong: a `query-filter` names a predicate, and
+      # `Tenancy.with_account(Repo, event.account_id, fn -> … end)` is not one —
+      # it opens the transaction that puts the account on the connection as
+      # `set_config('cafaye.account_id', …, is_local := true)`, which is the
+      # schema's own fourth description ("the point where the request's account
+      # is resolved onto the context every later read reads from") rather than
+      # its first. The predicate this fan-out really runs is one line further
+      # down, `WebhookEndpoints.enabled(event.account_id)`, and it is declared
+      # on its own entry point — `webhook-endpoints-enabled` at
+      # `lib/courier/webhook_endpoints.ex:128`.
+      mechanism: middleware
       file: lib/courier/workers/dispatch_webhooks_worker.ex
       line: 128
     negative:
