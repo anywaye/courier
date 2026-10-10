@@ -16,22 +16,28 @@ defmodule Courier.Workers.ConsumeEventsWorker do
 
   ## WHY THIS IS NOT WIRED INTO THE SUPERVISION TREE
 
-  Because a subscriber needs a broker. courier has no NATS client yet —
-  `Courier.NatsPublisher` is a behaviour with a stand-in and the Gnat module is
-  a later packet — and starting a process that opens a socket to a broker courier
-  does not depend on would make a dev `mix phx.server` fail to boot on a
-  connection it cannot make.
+  Because a sweep needs no broker and no subscription: it reads a table and
+  dispatches. What fills the table is `Courier.Consumers.Subscriber`, the
+  process that holds the `identity.>` subscription and records each delivery —
+  and THAT is the child in the tree, added after the broker client landed
+  (`Courier.Nats`, `Courier.NatsPublisher.Bus`, in the outbox packet). The
+  earlier version of this paragraph said "courier has no NATS client", and
+  that stopped being true when the publish side shipped; what is true now is
+  the same division, with both halves present.
 
-  What IS wired is the sweep, because the sweep needs no broker: the table and
-  the loop are real, and the delivery path that fills the table is the one thing
-  that waits. A consumer whose retry budget, ordering and exhaustion rules are
-  untested until the broker lands is a consumer whose first real event is also
-  the first time those rules run.
+  What IS wired is the sweep, and it stays wired with or without a broker:
+  the table, the claim, the ordering, the retry budget and the exhaustion rule
+  are all real whether or not `NATS_URL` is set. A consumer whose retry
+  budget, ordering and exhaustion rules are untested until the broker lands
+  is a consumer whose first real event is also the first time those rules
+  run — and with the subscriber wired, the FIRST REAL EVENT on this bus is
+  now also the first time the whole path runs, which is the packet's proof
+  (`Courier.Consumers.SubscriberTest`) rather than its risk.
 
-  `test/courier/consumers/not_wired_test.exs` asserts the crontab entry is
-  present and the supervision tree is unchanged, because "the sweep exists" is
-  a comment and "the sweep is scheduled" is a fact somebody can read out of
-  `config/config.exs`.
+  `test/courier/consumers/wiring_test.exs` asserts the crontab entry, the
+  queue and the conditional subscriber child, because "the sweep exists" is
+  a comment and "the sweep is scheduled, and the subscription is supervised
+  WHEN a broker is configured" is a fact somebody can read out of the tree.
   """
 
   alias Courier.Consumers

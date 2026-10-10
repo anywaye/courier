@@ -315,7 +315,18 @@ jobs:
           #     ack, the second that it was NOT marked at all.
           # 1646 is 759 + 887, so the parts still sum to the whole.
           #
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1646
+          # AND IT MOVES AGAIN for the FIRST CONSUMER (BRK-6): whole 1646 ->
+          # 1663, no-database 759 -> 760 (35 files, the wiring file's flipped
+          # subscription assertions are source reads), database 877 -> 903
+          # (49 -> 51 files). The +17 split 1 / 16 by the case template:
+          #   * `test/courier/consumers/subscriber_test.exs` (6) and
+          #     `test/courier/consumers/user_created_test.exs` (10) are
+          #     `Courier.DataCase` because each asserts about `consumed_events`
+          #     and `outbox_events` rows.
+          # 1663 is 760 + 903, so the parts still sum to the whole —
+          # re-measured by running the two tier greps on this tree.
+          #
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1663
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -627,9 +638,9 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 759
+          bin/assert-suite "$log" "no database" 760
 
-      - name: tier — database (887 tests, 49 files)
+      - name: tier — database (903 tests, 51 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -653,7 +664,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 887
+          bin/assert-suite "$log" "database" 903
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can

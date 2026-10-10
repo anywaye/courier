@@ -83,6 +83,17 @@ defmodule Courier.TestSupport.NatsServer do
   @spec subjects(GenServer.server()) :: [String.t()]
   def subjects(server), do: Enum.map(published(server), & &1.subject)
 
+  @doc """
+  Every live subscription on this broker, as `%{sid: sid, subject: subject}`,
+  oldest first.
+
+  The consumer packet's assertion is on this: the subscriber subscribes to the
+  **prefix** (`identity.>`), and a subscription to four exact types would be
+  the failure the moduledoc describes.
+  """
+  @spec subscriptions(GenServer.server()) :: [map()]
+  def subscriptions(server), do: GenServer.call(server, :subscriptions)
+
   @doc "Whether anything was published to `subject`."
   @spec published?(GenServer.server(), String.t()) :: boolean()
   def published?(server, subject), do: Enum.any?(published(server), &(&1.subject == subject))
@@ -129,6 +140,7 @@ defmodule Courier.TestSupport.NatsServer do
        socket: nil,
        buffer: "",
        published: [],
+       subscriptions: [],
        ack: Keyword.get(opts, :ack, @ack_body),
        refusal: nil
      }}
@@ -137,6 +149,7 @@ defmodule Courier.TestSupport.NatsServer do
   @impl GenServer
   def handle_call(:port, _from, state), do: {:reply, state.port, state}
   def handle_call(:published, _from, state), do: {:reply, state.published, state}
+  def handle_call(:subscriptions, _from, state), do: {:reply, state.subscriptions, state}
 
   @impl GenServer
   def handle_cast({:refuse_next, body}, state), do: {:noreply, %{state | refusal: body}}
@@ -244,7 +257,25 @@ defmodule Courier.TestSupport.NatsServer do
   # broker answers with `+OK`; gnat ignores the answer and so does this, because
   # a subscription the client does not need confirmed is not one this server has
   # to get right.
-  defp handle_op("SUB" <> _sub, rest, state), do: {:ok, rest, state}
+  #
+  # SUBSCRIBER SUBS ARE RECORDED. A real broker answers a `SUB` with `+OK` and
+  # then delivers `MSG` frames to it; the consumer packet needs the second half,
+  # because the subscriber's whole job is to receive one. What is recorded is
+  # `{sid, subject}` keyed the way gnat's own subscription is, and
+  # `subscriptions/1` is the store.
+  defp handle_op("SUB " <> sub, rest, state) do
+    case String.split(sub, " ") do
+      [subject, sid] ->
+        {sid, ""} = Integer.parse(sid)
+        subscriptions = state.subscriptions ++ [%{sid: sid, subject: subject}]
+
+        {:ok, rest, %{state | subscriptions: subscriptions}}
+
+      _ ->
+        Logger.warning("nats server: unreadable SUB op #{inspect(sub)}")
+        {:ok, rest, state}
+    end
+  end
 
   defp handle_op("UNSUB" <> _unsub, rest, state), do: {:ok, rest, state}
 
@@ -287,6 +318,7 @@ defmodule Courier.TestSupport.NatsServer do
             state = %{state | published: state.published ++ [publish]}
 
             if reply_to, do: send_ack(state, reply_to, state.refusal || state.ack)
+            state = deliver(state, subject, payload)
 
             {:ok, remainder, publish, state}
 
@@ -306,4 +338,43 @@ defmodule Courier.TestSupport.NatsServer do
   defp send_ack(state, reply_to, body) do
     :ok = :gen_tcp.send(state.socket, "MSG #{reply_to} 0 #{byte_size(body)}\r\n#{body}\r\n")
   end
+
+  # The consumer packet's half of the protocol. A `PUB` to a subject a
+  # subscription claims — with the NATS wildcard grammar, so `identity.>`
+  # claims `identity.user.created` — is delivered to that subscriber as a `MSG`
+  # on the subscription's sid, which is what gnat routes to the pid that asked.
+  #
+  # Every matching subscription gets a copy, which is core NATS' fan-out rule
+  # (a queue group is not modelled here and nothing in courier uses one).
+  defp deliver(state, subject, payload) do
+    for sub <- state.subscriptions, matches?(sub.subject, subject) do
+      sid = sub.sid
+
+      :ok =
+        :gen_tcp.send(
+          state.socket,
+          "MSG #{subject} #{sid} #{byte_size(payload)}\r\n#{payload}\r\n"
+        )
+    end
+
+    state
+  end
+
+  # The subject-grammar half of the wildcard, and the reason this is a function
+  # rather than `String.starts_with?/2`: `>` is anchored to the END and matches
+  # one or more tokens, so `identity.>` claims `identity.user.created` and
+  # nothing else, while `identity.user.created` itself claims only itself.
+  defp matches?(subscribed, subject) do
+    match_tokens(String.split(subscribed, "."), String.split(subject, "."))
+  end
+
+  defp match_tokens([">"], [_ | _]), do: true
+  defp match_tokens([">"], []), do: false
+  defp match_tokens(["*" | rest_sub], [_ | rest_topics]), do: match_tokens(rest_sub, rest_topics)
+
+  defp match_tokens([sub | rest_sub], [topic | rest_topics]),
+    do: sub == topic and match_tokens(rest_sub, rest_topics)
+
+  defp match_tokens([], []), do: true
+  defp match_tokens(_sub, _topics), do: false
 end

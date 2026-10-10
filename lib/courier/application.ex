@@ -55,6 +55,15 @@ defmodule Courier.Application do
       # refuses; the publisher is `Courier.NatsPublisher.Bus`, configured by
       # `config/runtime.exs` on the same condition.
       Courier.Nats.supervised_child(),
+      # The subscription that fills `consumed_events` — the consumer's
+      # delivery half, and the piece that turns the bus from one-ended into a
+      # loop. It is a LIST on the same terms as the connection above: a
+      # courier with no `NATS_URL` holds no subscription and starts no
+      # process, which is the same harness `not_wired_test.exs` kept before
+      # this packet — the difference is that the harness now exists rather
+      # than being the whole story. AFTER the connection, because it asks
+      # that process for the connection it subscribes on.
+      Courier.Consumers.Subscriber.supervised_child(),
       {DNSCluster, query: Application.get_env(:courier, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: Courier.PubSub},
       # courier's only queue: the outbox relay. It needs the repo, so it comes

@@ -466,9 +466,9 @@ is what its own comment instructs. A third status left that map (409 in courier-
 and the second departure is what shows the map is a list and not a constant.
 
 **A tier that CI cannot name is a tier nobody ran.** The suite partitions
-exactly, by the case template: 748 tests in the 34 files that never touch
-`Courier.Repo`, 877 in the 47 that do, and `mix test` is aliased to
-`ecto.create` first, so a runner with no database executes *zero* of the 1625 —
+exactly, by the case template: 760 tests in the 35 files that never touch
+`Courier.Repo`, 903 in the 51 that do, and `mix test` is aliased to
+`ecto.create` first, so a runner with no database executes *zero* of the 1663 —
 SSRF table included. Both counts are asserted in CI by `bin/assert-suite`, and
 the SSRF table gets its own 62-test run so the log carries a line that can only
 exist if that harness ran. Re-measured on the tree carrying the third provider

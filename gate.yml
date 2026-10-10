@@ -605,7 +605,20 @@ gate:
   # **1646 is 759 + 887**, so the parts still sum to the whole. The floor sits
   # AT the measurement with zero headroom, and measured on `bin/gate-db`'s own
   # postgres on localhost:5432 for the same reason the paragraph above gives.
-  minimum: 1646
+  #
+  # AND IT MOVES AGAIN for the FIRST CONSUMER (BRK-6): whole 1646 -> 1663,
+  # no-database 759 -> 760 (35 files, one test added to the wiring
+  # file's flipped subscription assertions), database 887 -> 903 (49 -> 51
+  # files). The +17 split 1 / 16 by the case template, which is the same derivation the two CI
+  # tier greps use:
+  #   * `test/courier/consumers/subscriber_test.exs` (6) and
+  #     `test/courier/consumers/user_created_test.exs` (10) are
+  #     `Courier.DataCase` because each asserts about `consumed_events` and
+  #     `outbox_events` rows; the wiring file's flipped subscription assertions
+  #     are SOURCE reads and stay in the no-database tier.
+  # **1663 is 760 + 903**, so the parts still sum to the whole, re-measured by
+  # running the two tier greps and `mix precommit` on this tree.
+  minimum: 1663
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

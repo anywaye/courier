@@ -8,8 +8,9 @@ defmodule Courier.Consumers.WiringTest do
 
     * **the crontab entry exists** — a sweep nothing schedules is a loop that
       runs in tests and never in production;
-    * **nothing was added to the supervision tree** — which is a decision, and a
-      decision that needs a reason and a test rather than an omission.
+    * **the subscription is a supervised child WHEN `NATS_URL` is** — which is
+      the delivery half the bus was one-ended without, and the same
+      conditional-harness the connection uses.
 
   ## WHY IT READS `config/config.exs` AND NOT APPLICATION ENV
 
@@ -27,30 +28,28 @@ defmodule Courier.Consumers.WiringTest do
   *configured* and the plugin *starting* are two claims and this packet makes
   only the first.
 
-  ## WHY THE SUBSCRIPTION IS NOT A SUPERVISED CHILD, ASSERTED RATHER THAN
-  ## EXPLAINED
+  ## WHY THE SUBSCRIPTION IS A SUPERVISED CHILD NOW, AND WAS AN ABSENCE HERE
+  ## BEFORE
 
-  A subscriber needs a broker, and courier has no NATS client: `Courier.
-  NatsPublisher` is a behaviour with a stand-in and the Gnat module is a later
-  packet. A supervised process opening a socket to a broker courier does not
-  depend on would make a developer's `mix phx.server` fail to boot on a
-  connection it cannot make.
+  An earlier version of this file asserted `refute application_source() =~
+  "Courier.Consumers"`, and its own moduledoc said why: "a subscriber needs a
+  broker, and courier has no NATS client". The broker client landed with the
+  outbox packet — `Courier.Nats` dials, retries on a fixed interval, survives
+  an outage without taking the application down — and the consumer's delivery
+  half is `Courier.Consumers.Subscriber`, supervised on the same condition as
+  the connection: `Nats.enabled?()`. The absence was a decision with a
+  reason; the reason expired and the assertion went with it.
 
-  **What IS scheduled is the sweep**, because the sweep needs no broker: the
-  table, the claim, the ordering, the retry budget and the exhaustion rule are
-  all real and all tested now. A consumer whose those rules were untested until
-  the broker arrives is a consumer whose first real event is also the first time
-  those rules run.
-
-  ## THE WIRING BUG THIS FILE EXISTS TO MAKE SOMEBODY THINK ABOUT
-
-  When the Gnat subscriber is written, the two halves must meet: `record/1`
+  **The two halves still have to meet, and the ordering is the claim this
+  file's ancestor was written to make somebody think about.** `record/1`
   writes the row **on delivery**, and the sweep claims it. A subscriber that
   acknowledged the broker straight from `handle/1` — acking BEFORE the row is
   durable — would lose every event that arrived in the gap, silently and
-  permanently, and no assertion here would see it. That is the failure mode a
-  consumer's ordering has to be written to prevent, and it is why the ordering
-  is a claim on `time` and a `skip locked` rather than a preference.
+  permanently, and no assertion here would see it. That failure mode is what
+  the consumer's ordering is written to prevent, and `Courier.ConsumersTest`
+  asserts it from the other side: the ack (a JetStream publish's ack, on the
+  relay side) and the row (this side) are different facts about different
+  processes.
   """
 
   use ExUnit.Case, async: true
@@ -60,6 +59,9 @@ defmodule Courier.Consumers.WiringTest do
 
   defp worker_source,
     do: File.read!(Path.join(File.cwd!(), "lib/courier/workers/consume_events_worker.ex"))
+
+  defp subscriber_source,
+    do: File.read!(Path.join(File.cwd!(), "lib/courier/consumers/subscriber.ex"))
 
   describe "the sweep is scheduled" do
     test "and it is a crontab entry, not only an Oban worker" do
@@ -95,19 +97,37 @@ defmodule Courier.Consumers.WiringTest do
     end
   end
 
-  describe "the subscription is not a supervised child" do
-    test "and that is the deliberate half, asserted as an absence" do
-      refute application_source() =~ "Courier.Consumers"
-      refute application_source() =~ "ConsumeEventsWorker"
+  describe "the subscription IS a supervised child, when a broker is" do
+    test "and that is the delivery half the bus was one-ended without" do
+      # The child that holds the `identity.>` subscription and RECORDS each
+      # delivery into `consumed_events` — the half that did not exist when
+      # this file asserted its absence, and the absence's own moduledoc said
+      # why: "courier has no NATS client […] a subscriber needs a broker".
+      # The client landed with the outbox packet, so the reason is gone and
+      # this assertion is its replacement.
+      assert application_source() =~ "Courier.Consumers.Subscriber.supervised_child()"
     end
 
-    test "and the worker's moduledoc says why, so the absence reads as a decision" do
-      # An absence nobody can explain is an omission. These three strings are the
-      # whole argument — no NATS client, a socket that would fail a developer's
-      # boot, and the sweep being the only path — and they are asserted because a
-      # moduledoc that loses them loses the reason with them.
-      assert worker_source() =~ "no NATS client"
-      assert worker_source() =~ "only path"
+    test "and it is conditional on NATS_URL, so a dark bus starts nothing" do
+      # The same harness `Courier.Nats.supervised_child/0` holds, asserted on
+      # the connection side (`Courier.NatsTest`): an empty list when
+      # `NATS_URL` is not set, asserted on the function itself in
+      # `Courier.Consumers.SubscriberTest`. A courier with no broker holds no
+      # socket, no retry loop and no subscription — three branches, one list
+      # each. The assertion here is on the SOURCE, because the function's own
+      # answer is VM-global state this `async: true` file must not mutate.
+      assert subscriber_source() =~ "if Nats.enabled?(), do: [child_spec([])], else: []"
+    end
+
+    test "and the worker's moduledoc says why the sweep is separate" do
+      # An arrangement nobody can explain is an omission. These strings are
+      # the whole argument — the sweep needs no broker, the subscriber is the
+      # child, and the first real event now runs the whole path — and they
+      # are asserted because a moduledoc that loses them loses the reason
+      # with them.
+      assert worker_source() =~ "no broker"
+      assert worker_source() =~ "Courier.Consumers.Subscriber"
+      assert worker_source() =~ "the sweep is scheduled"
     end
   end
 end

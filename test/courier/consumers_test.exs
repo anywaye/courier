@@ -170,7 +170,7 @@ defmodule Courier.ConsumersTest do
   end
 
   describe "subscribed/0" do
-    test "is the fleet's three, and cafaye.yml declares the same list" do
+    test "is the fleet's four, and cafaye.yml declares the same list" do
       # A consumer nobody can read is a consumer nobody deployed. `caf dev`,
       # `pantry` and core's contract harness read the manifest, so the two lists
       # are checked against each other rather than trusted to agree.
@@ -180,14 +180,21 @@ defmodule Courier.ConsumersTest do
       # in-app notification. The first refuses by design — see
       # `Courier.Consumers.MemberInvited`'s moduledoc for why the refusal is
       # the correct answer and not a gap in the wiring. The third is the first
-      # one that sends mail — see `Courier.Consumers.SessionsRevoked`.
-      assert Consumers.subscribed() ==
-               ["identity.member.accepted", "identity.member.invited", "identity.session.revoked"]
+      # one that sends mail — see `Courier.Consumers.SessionsRevoked`. The
+      # fourth is the platform's central promise, and the reason the SUBSCRIBER
+      # exists: a user signs up, and courier welcoms them — see
+      # `Courier.Consumers.UserCreated` and `Courier.Consumers.Subscriber`.
+      assert Consumers.subscribed() == [
+               "identity.member.accepted",
+               "identity.member.invited",
+               "identity.session.revoked",
+               "identity.user.created"
+             ]
 
       manifest = File.read!(Path.join(File.cwd!(), "cafaye.yml"))
 
       assert manifest =~
-               ~r/^consumes:\s*$\n\s*-\s*identity\.member\.invited\s*$\n\s*-\s*identity\.member\.accepted\s*$\n\s*-\s*identity\.session\.revoked\s*$/m
+               ~r/^consumes:\s*$\n\s*-\s*identity\.member\.invited\s*$\n\s*-\s*identity\.member\.accepted\s*$\n\s*-\s*identity\.session\.revoked\s*$\n\s*-\s*identity\.user\.created\s*$/m
     end
 
     test "carries a handler for every type it subscribes to" do
