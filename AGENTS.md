@@ -1381,6 +1381,39 @@ And one this packet added for observability, which is optional everywhere:
   and every redaction test asserts the **absence** of a canary, so with nothing
   exporting they would all go green having proved nothing.
 
+And one from the event bus, which is optional everywhere and is the one variable
+whose unset state courier is designed to live in indefinitely:
+
+- **`NATS_URL`** — the broker courier's outbox relay publishes to, in the
+  `nats://HOST:PORT` or `tls://HOST:PORT` form. **Unset is a supported state,
+  not an error**: `Courier.Nats.supervised_child/0` answers `[]` so the
+  application starts no connection, no retry loop and no publisher that could
+  report events as delivered, and `config/runtime.exs` configures
+  `Courier.NatsPublisher.Unconfigured` — which refuses every envelope, so rows
+  accumulate in `outbox_events` with `nats_url_not_set` in `last_error`. That is
+  the honest accumulation identity names ("the rows are the promise"), and it is
+  why **the `Noop` publisher is configured in `config/test.exs` and nowhere
+  else**: a stand-in that answers `:ok` wired into the running service would
+  mark every event published and drain the outbox into nowhere. Set the variable
+  and both halves appear: `Courier.Nats` (a supervised process that dials, and
+  retries on a fixed 5s interval without ever taking the application down — a
+  broker that is **down** is not a boot failure) and
+  `Courier.NatsPublisher.Bus`, which publishes each row on the subject its event
+  `type` names — no mapping table, core's rule — as a JetStream request-reply, so
+  `published_at` is set from the broker's own ack. **A URL that does not parse
+  IS a boot refusal** (`{:stop, {:nats_url_does_not_name_a_broker, url}}`): a
+  typo is a deployment that believes it has a bus and does not, and that belongs
+  at boot where an operator reads it. An empty string counts as unset. The stack
+  must define a JetStream stream whose subject filter covers what courier
+  publishes: kit's `cafaye` stream carries
+  `identity.>,billing.>,courier.>,muse.>,darkroom.>`
+  (`kit/templates/compose/docker-compose.yml:540` and
+  `kit/templates/substrate/install.sh:1365`), which `courier.email.delivered`
+  and the rest of the `courier.` catalog match — measured against a real
+  broker, `REPORT-courier-brk2-outbox-publisher.md`'s stream section. It is not
+  in `docker-compose.yml` yet; the dev stack publishes when one line
+  (`NATS_URL: nats://nats:4222` in the courier service) is added.
+
 And eight from the provider adapter, all read from `config/runtime.exs` by
 `Courier.MailerAdapter`, **required in every environment including test** and
 never committed to a config file. Only the four with a correct default are

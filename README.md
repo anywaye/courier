@@ -464,6 +464,53 @@ report carries a `Message-ID` and a recipient, never a user, and an event with a
 `Message-ID` names no send courier made records its suppression and publishes no
 event, with a log line: the row is the load-bearing half.
 
+## Events on the bus
+
+Every interesting thing courier does is also a row in `outbox_events`, written in
+the same transaction as the thing itself: a `courier.email.delivered` for each
+send, a `courier.email.bounced` or `courier.email.complained` for each provider
+report courier records, a `courier.notification.suppressed` for each one-click
+unsubscribe. That is the whole contract — the envelope is core's CloudEvents
+shape, and the NATS subject is the event's `type`, with **no mapping table and
+no prefix rewriting** (core's rule), so `courier.email.delivered` is published
+on the subject `courier.email.delivered`.
+
+Draining that table onto the bus is one variable:
+
+```sh
+NATS_URL=nats://nats:4222     # or tls://HOST:PORT; unset is a supported state
+```
+
+- **Unset is designed for, not tolerated.** No connection process starts, no
+  loop runs, and the publisher courier configures
+  (`Courier.NatsPublisher.Unconfigured`) refuses every envelope — so
+  `published_at` stays nil and the rows accumulate. The one thing courier will
+  not do is fall through to a stand-in that answers `:ok`: that would mark every
+  event published and drain the outbox into nowhere, which is worse than a
+  visible backlog because it looks identical to success.
+- **A broker that is down is not a boot failure.** The connection process dials,
+  records the failure, and retries on a fixed five-second interval; every
+  publish while it is away answers `:not_connected` and every row stays
+  claimable. A URL that does not parse **is** a boot refusal — a typo is a
+  deployment that believes it has a bus and does not, and that belongs at boot
+  where an operator reads it.
+- **A row is marked published from the broker's ack, never from the bytes
+  leaving the process.** The publish is a JetStream request-reply, so
+  `published_at` is set only when the broker says it stored the message, and a
+  refusal leaves the row claimable with the broker's own reason in `last_error`.
+- **The stack must define a stream that covers the subjects.** A publish to a
+  subject no stream claims is refused by the broker — which is the correct
+  answer (loud, and the row stays claimable), and it is why kit's `cafaye` stream
+  carries `identity.>,billing.>,courier.>,muse.>,darkroom.>`
+  (`kit/templates/compose/docker-compose.yml:540`,
+  `kit/templates/substrate/install.sh:1365`). Measured against a real broker
+  with that stream, a real courier publish lands in it under
+  `courier.email.delivered` with the envelope intact.
+
+`NATS_URL` is not set in `docker-compose.yml`, so the local stack accumulates
+events rather than publishing them until the variable is added to the courier
+service's `environment:`.
+
 ## Unsubscribing
 
 Gmail and Yahoo's bulk-sender requirements, in force since June 2024, are about
