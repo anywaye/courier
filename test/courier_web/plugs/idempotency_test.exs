@@ -252,7 +252,7 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
       assert %{
                "code" => "idempotency_key_reused",
                "status" => 409,
-               "type" => "https://errors.cafaye.com/idempotency_key_reused"
+               "type" => "https://docs.cafaye.com/errors/idempotency_key_reused"
              } = json_response(reused, 409)
 
       assert endpoint_count() == 1

@@ -115,7 +115,7 @@ defmodule CourierWeb.MessagesControllerTest do
 
       assert envelope["code"] == "unauthorized"
       assert envelope["status"] == 401
-      assert envelope["type"] == "https://errors.cafaye.com/unauthorized"
+      assert envelope["type"] == "https://docs.cafaye.com/errors/unauthorized"
       assert is_binary(envelope["trace_id"])
       assert envelope["trace_id"] == get_resp_header(conn, "x-trace-id") |> List.first()
     end

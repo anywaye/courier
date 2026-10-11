@@ -125,7 +125,7 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
       assert conn.status == 401
       assert ["application/problem+json" <> _rest] = get_resp_header(conn, "content-type")
 
-      assert %{"code" => "unauthorized", "type" => "https://errors.cafaye.com/unauthorized"} =
+      assert %{"code" => "unauthorized", "type" => "https://docs.cafaye.com/errors/unauthorized"} =
                Jason.decode!(conn.resp_body)
     end
 

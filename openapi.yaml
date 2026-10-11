@@ -1338,7 +1338,7 @@ paths:
                 reused:
                   summary: Same key, different body
                   value:
-                    type: https://errors.cafaye.com/idempotency_key_reused
+                    type: https://docs.cafaye.com/errors/idempotency_key_reused
                     title: Idempotency key reused
                     status: 409
                     detail: That Idempotency-Key was already used for a different request body.
@@ -1347,7 +1347,7 @@ paths:
                 in_flight:
                   summary: Same key, first request still running
                   value:
-                    type: https://errors.cafaye.com/conflict
+                    type: https://docs.cafaye.com/errors/conflict
                     title: Conflict
                     status: 409
                     detail: That Idempotency-Key is still being processed.
@@ -1514,7 +1514,7 @@ paths:
                 reused:
                   summary: Same key, different body
                   value:
-                    type: https://errors.cafaye.com/idempotency_key_reused
+                    type: https://docs.cafaye.com/errors/idempotency_key_reused
                     title: Idempotency key reused
                     status: 409
                     detail: That Idempotency-Key was already used for a different request body.
@@ -1523,7 +1523,7 @@ paths:
                 in_flight:
                   summary: Same key, first request still running
                   value:
-                    type: https://errors.cafaye.com/conflict
+                    type: https://docs.cafaye.com/errors/conflict
                     title: Conflict
                     status: 409
                     detail: That Idempotency-Key is still being processed.
@@ -2207,7 +2207,7 @@ components:
         type:
           type: string
           format: uri
-          description: '`https://errors.cafaye.com/<code>`. The machine-readable contract.'
+          description: '`https://docs.cafaye.com/errors/<code>`. The machine-readable contract.'
         title: { type: string }
         status: { type: integer }
         detail:
@@ -2298,7 +2298,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/bad_request
+            type: https://docs.cafaye.com/errors/bad_request
             title: Bad request
             status: 400
             detail: The request body was not valid JSON.
@@ -2318,7 +2318,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/not_acceptable
+            type: https://docs.cafaye.com/errors/not_acceptable
             title: Not acceptable
             status: 406
             detail: courier answers application/json.
@@ -2337,7 +2337,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/unauthorized
+            type: https://docs.cafaye.com/errors/unauthorized
             title: Unauthorized
             status: 401
             detail: This request needs an authenticated caller.
@@ -2378,7 +2378,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/unauthorized
+            type: https://docs.cafaye.com/errors/unauthorized
             title: Unauthorized
             status: 401
             detail: >-
@@ -2423,7 +2423,7 @@ components:
             unclassifiable_event:
               summary: An event type courier has not read
               value:
-                type: https://errors.cafaye.com/validation_failed
+                type: https://docs.cafaye.com/errors/validation_failed
                 title: Validation failed
                 status: 422
                 detail: >-
@@ -2438,7 +2438,7 @@ components:
             unknown_bounce_type:
               summary: A bounce type outside the documented vocabulary
               value:
-                type: https://errors.cafaye.com/validation_failed
+                type: https://docs.cafaye.com/errors/validation_failed
                 title: Validation failed
                 status: 422
                 detail: >-
@@ -2452,7 +2452,7 @@ components:
             bad_recipient:
               summary: An address that is not one courier could send to
               value:
-                type: https://errors.cafaye.com/validation_failed
+                type: https://docs.cafaye.com/errors/validation_failed
                 title: Validation failed
                 status: 422
                 detail: >-
@@ -2482,7 +2482,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/unavailable
+            type: https://docs.cafaye.com/errors/unavailable
             title: Service unavailable
             status: 503
             detail: >-
@@ -2512,7 +2512,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/unavailable
+            type: https://docs.cafaye.com/errors/unavailable
             title: Service unavailable
             status: 503
             detail: >-
@@ -2537,7 +2537,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/not_found
+            type: https://docs.cafaye.com/errors/not_found
             title: Not found
             status: 404
             detail: No webhook endpoint with that id.
@@ -2561,7 +2561,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/not_found
+            type: https://docs.cafaye.com/errors/not_found
             title: Not found
             status: 404
             detail: No notification preferences with that user id.
@@ -2588,7 +2588,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/not_found
+            type: https://docs.cafaye.com/errors/not_found
             title: Not found
             status: 404
             detail: No notification with that id.
@@ -2608,7 +2608,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/idempotency_key_reused
+            type: https://docs.cafaye.com/errors/idempotency_key_reused
             title: Idempotency key reused
             status: 409
             detail: That Idempotency-Key was already used for a different request body.
@@ -2632,7 +2632,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/conflict
+            type: https://docs.cafaye.com/errors/conflict
             title: Conflict
             status: 409
             detail: That Idempotency-Key is still being processed.
@@ -2652,7 +2652,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/internal
+            type: https://docs.cafaye.com/errors/internal
             title: Internal server error
             status: 500
             detail: The request could not be completed.
@@ -2691,7 +2691,7 @@ components:
             undeliverable:
               summary: The mailbox hard-bounced a previous message
               value:
-                type: https://errors.cafaye.com/conflict
+                type: https://docs.cafaye.com/errors/conflict
                 title: Conflict
                 status: 409
                 detail: >-
@@ -2702,7 +2702,7 @@ components:
             complained:
               summary: The recipient reported a previous message as spam
               value:
-                type: https://errors.cafaye.com/conflict
+                type: https://docs.cafaye.com/errors/conflict
                 title: Conflict
                 status: 409
                 detail: >-
@@ -2776,7 +2776,7 @@ components:
             identityUnavailable:
               summary: courier could not ask identity who is calling
               value:
-                type: https://errors.cafaye.com/unavailable
+                type: https://docs.cafaye.com/errors/unavailable
                 title: Service unavailable
                 status: 503
                 detail: >-
@@ -2787,7 +2787,7 @@ components:
             providerUnavailable:
               summary: sendMessage only — the mail provider refused
               value:
-                type: https://errors.cafaye.com/unavailable
+                type: https://docs.cafaye.com/errors/unavailable
                 title: Service unavailable
                 status: 503
                 detail: >-
@@ -2824,7 +2824,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://errors.cafaye.com/validation_failed
+            type: https://docs.cafaye.com/errors/validation_failed
             title: Validation failed
             status: 422
             detail: That url is one courier will not send webhooks to.
