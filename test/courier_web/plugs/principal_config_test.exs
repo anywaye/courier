@@ -156,7 +156,7 @@ defmodule CourierWeb.Plugs.PrincipalConfigTest do
 
       assert conn.status == 401
       assert problem_json?(conn)
-      assert body(conn)["type"] == "https://errors.cafaye.com/unauthorized"
+      assert body(conn)["type"] == "https://docs.cafaye.com/errors/unauthorized"
       assert body(conn)["code"] == "unauthorized"
       assert body(conn)["title"] == "Unauthorized"
       assert body(conn)["status"] == 401
@@ -219,7 +219,7 @@ defmodule CourierWeb.Plugs.PrincipalConfigTest do
 
       assert conn.status == 503
       assert problem_json?(conn)
-      assert body(conn)["type"] == "https://errors.cafaye.com/unavailable"
+      assert body(conn)["type"] == "https://docs.cafaye.com/errors/unavailable"
       assert body(conn)["code"] == "unavailable"
       assert body(conn)["title"] == "Service unavailable"
       assert body(conn)["status"] == 503

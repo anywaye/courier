@@ -513,7 +513,7 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
       conn = put_preferences(owner_conn(), @user_id, %{"preferences" => []})
 
       assert %{"type" => type, "code" => "validation_failed"} = problem(conn)
-      assert type == "https://errors.cafaye.com/validation_failed"
+      assert type == "https://docs.cafaye.com/errors/validation_failed"
     end
 
     test "carries a title, a status, and a detail" do

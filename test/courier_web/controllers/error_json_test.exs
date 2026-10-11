@@ -24,7 +24,7 @@ defmodule CourierWeb.ErrorJSONTest do
 
   test "renders 404 as not_found" do
     assert ErrorJSON.render("404.json", %{}) == %{
-             "type" => "https://errors.cafaye.com/not_found",
+             "type" => "https://docs.cafaye.com/errors/not_found",
              "title" => "Not found",
              "status" => 404,
              "detail" => "There is no route for that request.",
@@ -38,7 +38,7 @@ defmodule CourierWeb.ErrorJSONTest do
     # Terse on purpose: this body is readable by anyone who can reach courier,
     # and it is public. The reason is in the logs, where it belongs.
     assert ErrorJSON.render("500.json", %{}) == %{
-             "type" => "https://errors.cafaye.com/internal",
+             "type" => "https://docs.cafaye.com/errors/internal",
              "title" => "Internal server error",
              "status" => 500,
              "detail" => "The request could not be completed.",

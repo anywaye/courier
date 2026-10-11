@@ -262,7 +262,7 @@ defmodule CourierWeb.UnsubscribeControllerTest do
       assert response.status == 404
       assert problem_json?(response)
       assert body(response)["code"] == "not_found"
-      assert body(response)["type"] == "https://errors.cafaye.com/not_found"
+      assert body(response)["type"] == "https://docs.cafaye.com/errors/not_found"
 
       assert body(response)["trace_id"] ==
                response |> Plug.Conn.get_resp_header("x-trace-id") |> List.first()

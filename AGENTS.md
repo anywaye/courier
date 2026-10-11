@@ -12,7 +12,7 @@ LiveView, no assets, no dashboard, no gettext. It owns transactional email,
 notification preferences, and every outbound webhook. The contracts and the
 manifest schema are owned by `cafaye/core`; `cafaye.yml` here is a draft
 validated against `core/schemas/cafaye.manifest.schema.json` and is regenerated
-by `caf init` when core freezes the format. Nothing is copied from
+by `cafe init` when core freezes the format. Nothing is copied from
 `moon/refs/jumpstart-pro` — it is a behavioral spec for later packets, and
 PLAN.md §2 forbids copying from it.
 
