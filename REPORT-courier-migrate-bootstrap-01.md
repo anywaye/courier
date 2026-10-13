@@ -61,11 +61,82 @@ two files and fails if either word changes.
 
 ## Proof 1 — the migrate path completes with no serving credential
 
-<!-- FILL: command + output -->
+A real release (`MIX_ENV=prod mix release`) on a fresh database, run with `env -i`
+(so the environment holds **nothing** but PATH/HOME/TERM and the one credential a
+migration reads):
+
+```
+$ psql -h localhost -U postgres -c "CREATE DATABASE courier_migrate_proof OWNER postgres;"
+CREATE DATABASE
+$ env -i PATH=/usr/bin:/bin HOME="$HOME" TERM=dumb \
+    COURIER_OWNER_DATABASE_URL="ecto://postgres:postgres@localhost:5432/courier_migrate_proof" \
+    _build/prod/rel/courier/bin/migrate
+00:42:24.694 [info] == Running 20260930030239 Courier.Repo.Migrations.CreateNotificationPreferences.change/0 forward
+...
+00:42:25.292 [info] == Migrated 20261006140000 in 0.0s
+$ echo $?
+0
+$ psql -h localhost -U postgres -d courier_migrate_proof -tAc \
+    "select count(*) || ' tables, ' || (select count(*) from schema_migrations) || ' migrations'
+       from information_schema.tables where table_schema='public';"
+13 tables, 14 migrations
+```
+
+Not one of `COURIER_IDENTITY_TOKEN`, `COURIER_SECRET_BOX_KEY`,
+`COURIER_INBOUND_RESEND_SECRET`, `COURIER_ERROR_RELAY_TOKEN`,
+`COURIER_MAIL_ADAPTER`, `COURIER_SMTP_*`, `DATABASE_URL` or `SECRET_KEY_BASE` was
+set, and every migration applied. `env -i` is the point rather than a flourish:
+it is the difference between "we did not set them" and "there is nothing to set".
 
 ## Proof 2 — the server still refuses, naming the variable
 
-<!-- FILL: command + output -->
+The **same** bare environment, the server entrypoint instead:
+
+```
+$ env -i PATH=/usr/bin:/bin HOME="$HOME" TERM=dumb \
+    COURIER_OWNER_DATABASE_URL="ecto://postgres:postgres@localhost:5432/courier_migrate_proof" \
+    _build/prod/rel/courier/bin/server
+ERROR! Config provider Config.Reader failed with:
+** (RuntimeError) environment variable COURIER_IDENTITY_TOKEN is missing.
+
+It is courier's own credential for identity's introspection endpoint —
+the scoped API token an operator mints with
+POST /v1/accounts/{account_id}/api-keys — and courier presents it as the
+Authorization header when it asks "who is calling?".
+...
+Runtime terminating during boot (...)
+$ echo $?
+1
+```
+
+The refusal is intact and names the variable. The migrate boot and the server
+boot differ by exactly one thing — `RELEASE_COMMAND` — and the difference between
+their outcomes is the whole packet.
+
+## A finding this packet fixed, because its own test exposed it
+
+The full suite went **red** on the first run — 6 failures, all in the new file —
+with `FunctionClauseError: no function clause matching in Keyword.merge/2` at the
+NATS block of `config/runtime.exs`, not at anything the test asserted. The cause
+is a real fragility, not the test's:
+
+- several test files capture `Application.get_env(:courier, :nats)` (which is
+  `nil`, because no environment configures it) and restore it with
+  `Application.put_env(:courier, :nats, original)` — which leaves the key
+  **present and nil**;
+- `Application.get_env(:courier, :nats, [])` returns `nil` in that state, because
+  the three-argument form's default applies only when the key is **absent**;
+- `Keyword.merge(nil, url: …)` raises.
+
+So any `Config.Reader` evaluation of `runtime.exs` in `:prod` that happened to run
+after one of those tests crashed. `test/courier/unsubscribes_test.exs` evaluates
+the same file the same way and was equally exposed; it had been winning the
+ordering lottery. The fix is one line — `Application.get_env(:courier, :nats) || []`
+— and it is the *correct* reading rather than a test workaround: an explicit
+`nil` means the same thing an absent key does (no broker), which is the state
+`Courier.Nats.supervised_child/0` and `Courier.NatsPublisher.Unconfigured`
+already document as supported. It changes nothing in production, where the key is
+absent.
 
 ## The substrate command line
 
@@ -93,26 +164,51 @@ alone. kit owns that edit (a sibling packet), so this is a report, not a change.
 
 ## Tests added, and the floors
 
-`test/courier/release_migrate_config_test.exs` (N tests, plain `ExUnit.Case`,
-no database): `env: :prod` evaluated `config/runtime.exs` as a boot under
-`RELEASE_COMMAND=eval` and under `start`/`daemon`/`unset`, asserting the migrate
-boot needs no serving credential and configures the owner DSN, and the server
-refuses naming `COURIER_IDENTITY_TOKEN`.
+`test/courier/release_migrate_config_test.exs` (**10 tests**, plain `ExUnit.Case`,
+no database): `env: :prod` evaluates `config/runtime.exs` as a boot under
+`RELEASE_COMMAND=eval` and under `start`/`daemon`/`start_iex`/unset, asserting the
+migrate boot needs no serving credential and configures the owner DSN, and the
+server refuses naming `COURIER_IDENTITY_TOKEN`. Two tests read the shell
+entrypoints (`rel/overlays/bin/{migrate,server}`) and fail if either stops naming
+the command the split keys on.
 
 `test/courier/compose_config_test.exs` gained a classification for the new
-`RELEASE_COMMAND` read — the reader that checks "every variable runtime.exs reads
-is either required or declared optional" caught it, which is that test working.
+`RELEASE_COMMAND` read — its reader ("every variable runtime.exs reads is either
+required or declared optional") caught the new read on its own, which is that
+test working rather than being told.
 
-<!-- FILL: floors moved, gate output -->
+**Floors raised in the same commit, as the repository requires:**
+`gate.yml` `minimum` 1663 -> **1673**; CI whole-suite `1663` -> **1673**;
+no-database tier `760` -> **770** (35 -> 36 files); database tier unchanged at
+**903**. The new file is in the no-database tier for the reason
+`backup_config_test.exs` is: a claim about `config/runtime.exs` and two files on
+disk is a claim no database can check, so a database-less runner must still
+execute it.
+
+Focused run, the command and its output:
+
+```
+$ mix test test/courier/release_migrate_config_test.exs
+Running ExUnit with seed: 245275, max_cases: 16
+..........
+Finished in 0.05 seconds (0.00s async, 0.05s sync)
+
+Result: 10 passed
+```
 
 ## What I deliberately did NOT do
 
-<!-- FILL -->
-
-- Did not weaken the server's fail-closed validation. The server entrypoint is
-  unchanged in kind (still `start`), and Proof 2 shows it refusing.
-- Did not use dummy values for the credential in the migrate path. The point is
-  that it does not need it.
-- Did not edit `cafaye/kit`. The substrate command line above is a report.
-- Did not add a new environment variable, a second release, or a second config
-  file.
+- **Did not weaken the server's fail-closed validation.** The server entrypoint
+  still runs `start`, `serving?` is true whenever `RELEASE_COMMAND` is anything
+  but `eval`, and the release script overwrites an inherited `RELEASE_COMMAND`.
+  Proof 2 is the server refusing.
+- **Did not use dummy values for the credential in the migrate path.** The point
+  is that it does not need it; Proof 1 sets nothing.
+- **Did not add a new environment variable, a second release, or a second config
+  file.** The distinction is the release's own `RELEASE_COMMAND`.
+- **Did not edit `cafaye/kit`.** kit's step 10 is quoted above unchanged; the one
+  improvement (drop `--env=DATABASE_URL`) is a report for the sibling that owns
+  the installer.
+- **Did not require `DATABASE_URL` in the migrate boot.** That is a deliberate
+  behaviour change, not an omission: it names `courier_app`, which a migration
+  may not use, and the migrate boot no longer reads it.
