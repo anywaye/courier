@@ -175,9 +175,21 @@ end
 if config_env() != :test do
   nats_url = System.get_env("NATS_URL")
 
+  # `Application.get_env(:courier, :nats) || []`, NOT `…, :nats, []`.
+  #
+  # The three-argument form returns its default only when the key is ABSENT, and
+  # `Application.put_env(:courier, :nats, nil)` leaves it PRESENT and nil — which
+  # `Keyword.merge/2` then refuses with `FunctionClauseError: no function clause
+  # matching in Keyword.merge/2`. Measured, and it is not hypothetical: several
+  # test files capture the original value (which is `nil`, because no environment
+  # configures `:nats`) and restore it, so a `Config.Reader` evaluation of this
+  # file that runs after any of them used to die here rather than on anything the
+  # evaluation was about. An explicit `nil` means the same thing an absent key
+  # does — no broker — which is the state `Courier.Nats.supervised_child/0` and
+  # `Courier.NatsPublisher.Unconfigured` already document as supported.
   config :courier,
          :nats,
-         Keyword.merge(Application.get_env(:courier, :nats, []), url: nats_url)
+         Keyword.merge(Application.get_env(:courier, :nats) || [], url: nats_url)
 
   config :courier,
          :nats_publisher,

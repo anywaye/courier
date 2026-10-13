@@ -196,6 +196,31 @@ Finished in 0.05 seconds (0.00s async, 0.05s sync)
 Result: 10 passed
 ```
 
+Whole gate, the command and its output:
+
+```
+$ ./bin/prime
+...
+Finished in 5.4 seconds (2.8s async, 2.6s sync)
+
+Result: 1673 passed
+```
+
+And the tier split, re-measured by running both tiers on this tree rather than by
+adding a delta on paper (the repository's own consistency check: the parts must
+sum to the whole):
+
+```
+$ grep -rLE 'use (Courier\.DataCase|CourierWeb\.ConnCase)' test --include='*_test.exs' | sort > nodb.txt
+$ grep -rlE  'use (Courier\.DataCase|CourierWeb\.ConnCase)' test --include='*_test.exs' | sort > db.txt
+$ xargs mix test < nodb.txt   # 36 files
+Result: 770 passed
+$ xargs mix test < db.txt     # 51 files
+Result: 903 passed
+```
+
+`770 + 903 = 1673`, so no file fell outside both tiers.
+
 ## What I deliberately did NOT do
 
 - **Did not weaken the server's fail-closed validation.** The server entrypoint
