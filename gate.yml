@@ -618,7 +618,18 @@ gate:
   #     are SOURCE reads and stay in the no-database tier.
   # **1663 is 760 + 903**, so the parts still sum to the whole, re-measured by
   # running the two tier greps and `mix precommit` on this tree.
-  minimum: 1663
+  #
+  # AND IT MOVES AGAIN for the MIGRATE/BOOTSTRAP SPLIT
+  # (roll/c5-courier-migrate): whole 1663 -> 1673, no-database 760 -> 770
+  # (35 -> 36 files), database UNCHANGED at 903 (51 files). The +10 are one new
+  # file, `test/courier/release_migrate_config_test.exs`, a plain `ExUnit.Case`
+  # because its subject is `config/runtime.exs` evaluated as a boot and two
+  # shell entrypoints read from disk — the same placement rule
+  # `backup_config_test.exs` established: a configuration claim that could only
+  # be checked against a live postgres would be one a database-less runner
+  # silently skips. **1673 is 770 + 903**, so the parts still sum to the whole,
+  # re-measured by running the two tier greps and the focused file on this tree.
+  minimum: 1673
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

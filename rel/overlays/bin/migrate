@@ -2,4 +2,20 @@
 set -eu
 
 cd -P -- "$(dirname -- "$0")"
+
+# `eval`, AND THE WORD IS LOAD-BEARING RATHER THAN A CHOICE OF TASK.
+#
+# `config/runtime.exs` validates the SERVER's credential contract — courier's
+# identity token, the webhook-sealing key, the mail relay, the error-relay token,
+# `SECRET_KEY_BASE` — only when the release is not running a one-shot command.
+# It tells the two apart by `RELEASE_COMMAND`, which the release's own `courier`
+# script sets from this argument (`RELEASE_COMMAND="$1"; export RELEASE_COMMAND`)
+# before the VM starts. So `eval` here is what makes a migration boot with the
+# subset of that contract a migration actually needs, and `start` would put the
+# server's requirements back in front of a migrate pod that has no identity token
+# yet — the bootstrap cycle this script exists on the far side of.
+#
+# `test/courier/release_migrate_config_test.exs` reads this file and holds it to
+# `eval`, so changing this word is a red test rather than a migrate pod that dies
+# on a variable it does not use.
 exec ./courier eval Courier.Release.migrate

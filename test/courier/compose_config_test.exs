@@ -75,6 +75,11 @@ defmodule Courier.ComposeConfigTest do
         "for the stack, not for a bare `mix phx.server`",
     "PHX_HOST" => "defaults to example.com — see the follow-up in the packet report",
     "PHX_SERVER" => "behind a proxy in kit's stack; ignored when unset",
+    "RELEASE_COMMAND" =>
+      "set by the release's own bin script, never by the dev stack: `start` for " <>
+        "bin/server, `eval` for bin/migrate. It is how config/runtime.exs tells a " <>
+        "one-shot migrate boot from the server, so it needs no dev-stack value " <>
+        "and its absence means serving",
     "POOL_SIZE" => "the repo size, defaulted at runtime.exs",
     "DNS_CLUSTER_QUERY" => "kit's postgres clustering; irrelevant to one node",
     "SOME_APP_SSL_KEY_PATH" => "leftover from the Phoenix generator; never read on this path",

@@ -7,6 +7,50 @@ import Config
 # any compile-time configuration in here, as it won't be applied.
 # The block below contains prod specific runtime configuration.
 
+# ---------------------------------------------------------------------------
+# MIGRATING OR SERVING — this file validates only what the boot in front of it
+# actually needs, and this is the line that decides which boot that is.
+#
+# WHY THE DISTINCTION IS FORCED ON courier. `config/runtime.exs` is evaluated by
+# every release invocation, and a release is invoked for two very different
+# things: **serving** (`bin/server` -> `courier start`, `PHX_SERVER=true`) and a
+# **one-shot command** (`bin/migrate` -> `courier eval
+# Courier.Release.migrate`). The credentials the blocks below raise over —
+# courier's own identity token, the webhook-sealing key, the mail relay, the
+# error-relay token, `SECRET_KEY_BASE` — are the SERVING contract. A migration
+# reads exactly one of them (the owner DSN) and none of the rest.
+#
+# THE BUG THIS FIXES WAS A BOOTSTRAP CYCLE, not a missing check. On a fresh box
+# the substrate runs each service's migrate entrypoint as a one-shot Job BEFORE
+# the stack is up, and mints courier's `COURIER_IDENTITY_TOKEN` in a LATER step,
+# once identity is serving. So the migrate pod booted, evaluated this file, and
+# died on `COURIER_IDENTITY_TOKEN is missing` — a variable that does not exist
+# yet and that a migration never reads. The same file, unchanged, is exactly
+# right for the server, which is why the fix is a distinction and not a
+# deletion.
+#
+# WHERE THE SIGNAL COMES FROM, AND WHY IT IS NOT A NEW VARIABLE courier invents.
+# The release's own `bin/<name>` script sets `RELEASE_COMMAND` from its first
+# argument and exports it before the VM starts (`RELEASE_COMMAND="$1"; export
+# RELEASE_COMMAND` in the generated script). So it is `start` for `bin/server`,
+# `eval` for `bin/migrate`, and — the part that matters — the release script
+# OVERWRITES any inherited value. A deployment cannot set `RELEASE_COMMAND=eval`
+# in front of `bin/server` and have the server skip its contract, because
+# `bin/server` sets it to `start` itself. The gate is therefore the release's own
+# statement that this process is a one-shot command rather than the server, and
+# not a variable a server could carry by accident.
+#
+# `mix` invocations leave `RELEASE_COMMAND` unset, so `serving?` is true for
+# `mix phx.server` and for a `MIX_ENV=prod mix` release task. That is the safe
+# direction: anything that is not the release's own one-shot command is treated
+# as the server, and refuses without the contract.
+#
+# `test/courier/release_migrate_config_test.exs` evaluates THIS file as a boot
+# under both commands and asserts the two answers, so the split is held by a test
+# rather than by this paragraph.
+# ---------------------------------------------------------------------------
+serving? = System.get_env("RELEASE_COMMAND") != "eval"
+
 # ## Using releases
 #
 # If you use `mix release`, you need to explicitly enable the server
@@ -190,7 +234,7 @@ if config_env() != :test do
          System.get_env("COURIER_IDENTITY_URL", "http://identity:8080")
 end
 
-if config_env() == :prod do
+if config_env() == :prod and serving? do
   # courier's OWN credential for asking identity about callers, and it is
   # **required**. A scoped API token, minted by an operator in an identity
   # account that belongs to courier and to nothing else:
@@ -251,7 +295,7 @@ end
 # runs in every environment *after* the env-specific files, so anything set
 # outside `if config_env() == :prod` here would silently override test.exs — and
 # a developer's stray MAIL_FROM would change what `mix test` mails.
-if config_env() == :prod do
+if config_env() == :prod and serving? do
   mailing = Application.get_env(:courier, :mailing, [])
   {from_name, from_address} = mailing[:from]
 
@@ -402,12 +446,25 @@ if config_env() == :prod do
 end
 
 if config_env() == :prod do
+  # THE THREE RAISES IN THIS BLOCK ARE THE SERVING CONTRACT, so each is gated on
+  # `serving?` — a migration evaluates this file too, reads none of them, and on
+  # a fresh box does not have them yet. Everything else in this block is
+  # configuration that is harmless in a one-shot boot, so it is left ungated
+  # rather than wrapped: the smallest gate that removes the false requirement is
+  # the one that is hardest to get wrong.
+  #
+  # `DATABASE_URL` is the first of the three, and a MIGRATION DOES NOT READ IT:
+  # `Courier.Release.migrate/0` runs as `Courier.OwnerRepo` below and never
+  # starts `Courier.Repo`. So the value is allowed to be absent here, and the
+  # refusal moves to the raise, which only the server reaches.
   database_url =
     System.get_env("DATABASE_URL") ||
-      raise """
-      environment variable DATABASE_URL is missing.
-      For example: ecto://USER:PASS@HOST/DATABASE
-      """
+      if serving? do
+        raise """
+        environment variable DATABASE_URL is missing.
+        For example: ecto://USER:PASS@HOST/DATABASE
+        """
+      end
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
@@ -438,6 +495,13 @@ if config_env() == :prod do
   # `Courier.OwnerRepo` is not in `:ecto_repos` and not in the supervision tree,
   # so no running process holds a connection that bypasses every policy courier
   # installs. See that module.
+  #
+  # OUTSIDE THE `serving?` GATE, and that placement is the whole point: this is
+  # the ONE credential a MIGRATION needs, so it has to be configured in the
+  # one-shot `bin/migrate` boot as well as in the server's. It does not raise —
+  # an absent owner DSN fails later, in `bin/migrate`, with Ecto's own "could not
+  # find Ecto repo config for Courier.OwnerRepo", which names the module an
+  # operator needs to look at.
   if owner_database_url = System.get_env("COURIER_OWNER_DATABASE_URL") do
     config :courier, Courier.OwnerRepo,
       url: owner_database_url,
@@ -452,10 +516,12 @@ if config_env() == :prod do
   # variable instead.
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
-      raise """
-      environment variable SECRET_KEY_BASE is missing.
-      You can generate one by calling: mix phx.gen.secret
-      """
+      if serving? do
+        raise """
+        environment variable SECRET_KEY_BASE is missing.
+        You can generate one by calling: mix phx.gen.secret
+        """
+      end
 
   host = System.get_env("PHX_HOST") || "example.com"
 
@@ -524,7 +590,7 @@ if config_env() == :prod do
       hackney: [recv_timeout: 3_000]
   end
 
-  if is_nil(error_relay_token) do
+  if serving? and is_nil(error_relay_token) do
     raise """
     environment variable COURIER_ERROR_RELAY_TOKEN is missing.
 

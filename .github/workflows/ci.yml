@@ -331,7 +331,19 @@ jobs:
           # 1663 is 760 + 903, so the parts still sum to the whole —
           # re-measured by running the two tier greps on this tree.
           #
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1663
+          # AND IT MOVES AGAIN for the MIGRATE/BOOTSTRAP SPLIT
+          # (roll/c5-courier-migrate): whole 1663 -> 1673, no-database
+          # 760 -> 770 (35 -> 36 files), database UNCHANGED at 903 (51 files).
+          # The +10 are one file, `test/courier/release_migrate_config_test.exs`,
+          # a plain `ExUnit.Case` because its subject is `config/runtime.exs`
+          # evaluated as a boot and two shell entrypoints read from disk — no
+          # row is read. It is in the no-database tier for the reason
+          # `backup_config_test.exs` is: a configuration claim that could only
+          # be checked against a live postgres would be one a database-less
+          # runner silently skips. 1673 is 770 + 903, so the parts still sum to
+          # the whole — re-measured by running the two tier greps on this tree.
+          #
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1673
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -604,7 +616,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (759 tests, 35 files)
+      - name: tier — no database (770 tests, 36 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -643,7 +655,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 760
+          bin/assert-suite "$log" "no database" 770
 
       - name: tier — database (903 tests, 51 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
