@@ -119,6 +119,11 @@ jobs:
   gate:
     name: gate (bin/prime, tiers, lockfile, coverage)
     runs-on: ubuntu-latest
+    # 30, and not GitHub's 360-minute default: a hung job burns billing hours.
+    # This job's real cost is minutes — ecto setup, the 1663-test suite run
+    # whole and again by tier, coveralls — so 30 is a ceiling a healthy run
+    # never reaches, not a target.
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -764,6 +769,9 @@ jobs:
   release:
     name: release (prod build, boot contract)
     runs-on: ubuntu-latest
+    # 20, and not GitHub's 360-minute default: prod deps, one release build,
+    # three boot probes — no suite, no database, minutes of work.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
