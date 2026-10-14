@@ -3,9 +3,34 @@
 cafaye **courier** — transactional email, notification preferences, and every
 outbound webhook. Phoenix 1.8 API-only service, Elixir 1.20 / OTP 29, Postgres.
 
-This repository is the v0 scaffold. It is a working, deployable service with
-probes, a release image, and a local stack — and deliberately no notification
-logic yet.
+This repository is a working, deployable service with probes, a release image,
+backups with a drill, and a local stack — and its mail path is real, not
+scaffolded. What exists today, one line per part:
+
+- **Transactional mail, composed and sent.** Six message types in
+  `Courier.Mailers` — welcome, password reset, team invitation, account
+  security, and the two halves of an email change — delivered through
+  `Courier.Mailer` (Swoosh). Build and deliver are separate on purpose, so a
+  message can be read field by field with no adapter and no network.
+- **A provider adapter that refuses to guess.** `COURIER_MAIL_ADAPTER` selects
+  `smtp`, `postmark`, or `cloudflare`, read at boot; an unset or undeliverable
+  adapter stops the boot rather than rendering mail into memory and reporting
+  success. See "Sending mail" below.
+- **The loop closed.** Providers report back: `POST /inbound/resend` takes
+  signature-verified bounces and complaints into `email_suppressions`, and the
+  one-click unsubscribe endpoint (RFC 8058) is its own surface with its own
+  token. Both become events on the bus in the same transaction as the row.
+- **The preferences and notifications surfaces are served.** Per-tenant
+  `notification_preferences`, the in-app notification store, and the outbound
+  webhook endpoints, all under one account boundary enforced by tenancy.
+
+What does not exist yet is a **queue**: the send path is synchronous, so
+`courier.email.queued` has no builder — that type exists to make a backlog
+visible, and courier has no backlog to make visible. The "Not here yet"
+section at the foot of this README keeps the rest of that list current; the
+manifest's comments list what the contract still cannot resolve. Everything
+else — the database boundary, the backups, the probes, the OpenAPI document —
+is described below as it is, not as it was planned.
 
 ## The gate
 
