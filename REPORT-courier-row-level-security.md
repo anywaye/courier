@@ -64,7 +64,7 @@ perfect and this alone would have raised.
 ### 1.4 The dollar-quote delimiter was rebuilt one `$` short
 
 `Enum.reverse(tag)` is the delimiter *minus* the opening `$`: `$$` came out as
-`$` and `$caf$` as `$fac`. Postgres rejects both. This was hidden behind 1.1 —
+`$` and `$cafe$` as `$fac`. Postgres rejects both. This was hidden behind 1.1 —
 fixing the search without the reconstruction only moved the crash to
 `42601 syntax error at or near "kit"`.
 
