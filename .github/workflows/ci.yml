@@ -725,11 +725,17 @@ jobs:
         # excoveralls has no such flag and hands unknown flags to `mix test`,
         # which rejects them. So the number is read out of the report and
         # compared here, which makes this a gate rather than a report.
+        #
+        # `export` on its own line rather than a `MIX_ENV=test mix …` prefix:
+        # shellcheck reads the prefix form as an assignment and reports
+        # SC2209 ("use var=$(command)"), which fails actionlint's shellcheck
+        # tier. Same environment for the one command that reads it.
         run: |
           set -euo pipefail
           log="$RUNNER_TEMP/coveralls.log"
           status=0
-          MIX_ENV=test mix coveralls 2>&1 | tee "$log" || status=$?
+          export MIX_ENV=test
+          mix coveralls 2>&1 | tee "$log" || status=$?
           if [ "$status" -ne 0 ]; then
             echo "::error::mix coveralls exited $status" >&2
             exit "$status"
