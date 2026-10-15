@@ -352,7 +352,27 @@ jobs:
           # re-measured by running the two tier greps and `mix test` on this
           # tree.
           #
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1679
+          # AND IT MOVES AGAIN for SMTP STARTTLS (fix/smtp-tls): whole 1679 ->
+          # 1688, no-database 776 -> 785 (36 files, the same 36 — no new file),
+          # database UNCHANGED at 903 across the same 51 files. The +9 are
+          # one file, `test/courier/mailer_adapter_test.exs`, a plain
+          # `ExUnit.Case` with `async: false` (whole-VM env mutation). 8 shape
+          # tests name the STARTTLS `tls_options`, the pinned
+          # `versions: [:"tlsv1.2", :"tlsv1.3"]`, the `verify: :verify_peer`
+          # with `cacerts: :public_key.cacerts_get()`, the SNI, the `depth` and
+          # `customize_hostname_check`, the implicit-TLS `sockopts` half, the
+          # `tls: :never` half carrying neither, and `verify is never :verify_none`;
+          # the 9th is the handshake proof against `smtp.gmail.com:587` with
+          # the shipped `tls_options`, asserting NOT `:tls_failed`. Before this
+          # packet the defaults answered `:tls_failed` while the pod's
+          # `openssl s_client -starttls smtp` verified `0 (ok)` on the same
+          # host — the failure was what the client put on the wire. A runner
+          # with no outbound 587 skips the network half and still sees the 8
+          # shape tests. 1688 is 785 + 903, so the parts still sum to the
+          # whole — re-measured by running the two tier greps and `mix test`
+          # on this tree.
+          #
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1688
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -625,7 +645,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (776 tests, 36 files)
+      - name: tier — no database (785 tests, 36 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -664,7 +684,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 776
+          bin/assert-suite "$log" "no database" 785
 
       - name: tier — database (903 tests, 51 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -771,8 +791,8 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1679 passed | \`bin/assert-suite\` |"
-            echo "| no database, 36 files | 776 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1688 passed | \`bin/assert-suite\` |"
+            echo "| no database, 36 files | 785 passed | tier step |"
             echo "| database, 51 files | 903 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"

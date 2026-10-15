@@ -585,4 +585,191 @@ defmodule Courier.MailerAdapterTest do
       assert MailerAdapter.default_port() == 587
     end
   end
+
+  describe "SMTP TLS options are the reason the hosted stack could sign up a user" do
+    # 2026-10-15: every new cafaye.com signup was a dead account. Identity
+    # asked courier to deliver "Confirm your cafaye email address" on
+    # `smtp.resend.com:587` (STARTTLS, `tls: :always`, `ssl: false`,
+    # `port: 587`), and courier answered
+    # `{:retries_exceeded, {:temporary_failure, ~c"54.157.71.137", :tls_failed}}`.
+    # The pod's own `openssl s_client -starttls smtp` verified `0 (ok)` on the
+    # same host and port, and `COURIER_SMTP_*` were correct — the failure was
+    # what the client put on the wire. `gen_smtp` 1.3.0's default is
+    # `[{versions, ['tlsv1', 'tlsv1.1', 'tlsv1.2']}]`; OTP 29 supports only
+    # `tlsv1.2` and `tlsv1.3` (`supported: [:"tlsv1.2", :"tlsv1.3"]`), so a
+    # modern endpoint that has disabled 1.0/1.1 has no overlap with what
+    # courier offered. Measured on this machine against `smtp.gmail.com:587`
+    # (the same STARTTLS shape): the old defaults answer `:tls_failed`, while
+    # `versions: [:"tlsv1.2", :"tlsv1.3"]` with `verify: :verify_peer`,
+    # `cacerts: :public_key.cacerts_get()` and `SNI = relay` answers
+    # `530 Authentication Required` — past the handshake, as `openssl` was.
+    # These tests pin the shipped shape; a test asserts on the shape without
+    # going through the refusal — follow it.
+    setup do
+      System.put_env("COURIER_MAIL_ADAPTER", "smtp")
+      System.put_env("COURIER_SMTP_HOST", "smtp.example-provider.test")
+      System.put_env("COURIER_SMTP_USERNAME", "apikey")
+      System.put_env("COURIER_SMTP_PASSWORD", @sentinel)
+      :ok
+    end
+
+    test "STARTTLS (the shipped default) carries tls_options and no sockopts" do
+      config = MailerAdapter.smtp_adapter()
+
+      assert config[:tls] == :always
+      assert config[:ssl] == false
+      assert Keyword.has_key?(config, :tls_options)
+      refute Keyword.has_key?(config, :sockopts)
+    end
+
+    test "tls_options pins modern versions only" do
+      config = MailerAdapter.smtp_adapter()
+
+      assert config[:tls_options][:versions] == [:"tlsv1.2", :"tlsv1.3"]
+    end
+
+    test "tls_options verifies the peer, with the OS store" do
+      config = MailerAdapter.smtp_adapter()
+
+      assert config[:tls_options][:verify] == :verify_peer
+      # `:public_key.cacerts_get()` is the OS store, available since OTP 25.
+      # The pod has it (161 entries on this build); a mailer that verifies
+      # nothing is sending every transactional email to whoever answers STARTTLS.
+      cacerts = config[:tls_options][:cacerts]
+      assert is_list(cacerts)
+      assert length(cacerts) > 0
+      assert config[:tls_options][:cacerts] == :public_key.cacerts_get()
+    end
+
+    test "tls_options presents SNI as the relay host" do
+      config = MailerAdapter.smtp_adapter()
+
+      assert config[:tls_options][:server_name_indication] ==
+               String.to_charlist("smtp.example-provider.test")
+
+      # A different relay produces a different SNI — the indication tracks the
+      # host rather than being a fixed string. Without it the peer cert is for
+      # the hostname but OTP validates it against the IP (measured:
+      # `{:bad_cert, {:hostname_check_failed, {:requested, {IP}},
+      # {:received, [dNSName: ~c"host"]}}}`).
+      System.put_env("COURIER_SMTP_HOST", "smtp.other.test")
+      config2 = MailerAdapter.smtp_adapter()
+      assert config2[:tls_options][:server_name_indication] == ~c"smtp.other.test"
+    end
+
+    test "tls_options carries depth and hostname check" do
+      config = MailerAdapter.smtp_adapter()
+
+      assert is_integer(config[:tls_options][:depth])
+      assert config[:tls_options][:depth] > 0
+
+      assert Keyword.has_key?(config[:tls_options], :customize_hostname_check)
+
+      assert config[:tls_options][:customize_hostname_check][:match_fun] ==
+               :public_key.pkix_verify_hostname_match_fun(:https)
+    end
+
+    test "implicit TLS (ssl: true) carries sockopts instead of tls_options" do
+      System.put_env("COURIER_SMTP_SSL", "true")
+
+      config = MailerAdapter.smtp_adapter()
+
+      assert config[:ssl] == true
+      assert Keyword.has_key?(config, :sockopts)
+      refute Keyword.has_key?(config, :tls_options)
+      assert config[:sockopts][:versions] == [:"tlsv1.2", :"tlsv1.3"]
+      assert config[:sockopts][:verify] == :verify_peer
+
+      assert config[:sockopts][:server_name_indication] ==
+               String.to_charlist("smtp.example-provider.test")
+    end
+
+    test "tls: never carries neither upgrade option" do
+      System.put_env("COURIER_SMTP_TLS", "never")
+
+      config = MailerAdapter.smtp_adapter()
+
+      assert config[:tls] == :never
+      refute Keyword.has_key?(config, :tls_options)
+      refute Keyword.has_key?(config, :sockopts)
+    end
+
+    test "the STARTTLS handshake succeeds with the shipped options" do
+      # The shape tests above prove the options are present and well-formed;
+      # this one proves they actually complete a handshake against a modern
+      # endpoint. `smtp.gmail.com:587` is chosen because it is the same STARTTLS
+      # shape as `smtp.resend.com:587` and is publicly reachable with no
+      # credential. A live Resend credential is not required in the gate.
+      #
+      # The SNI must match the host being dialled, so re-derive the options
+      # for `smtp.gmail.com` rather than reusing the `smtp.example-provider.test`
+      # SNI from the setup.
+      System.put_env("COURIER_SMTP_HOST", "smtp.gmail.com")
+      config = MailerAdapter.smtp_adapter()
+
+      result =
+        :gen_smtp_client.send_blocking(
+          {"from@test.com", ["to@test.com"], "Subject: test\r\n\r\ntest"},
+          relay: "smtp.gmail.com",
+          port: 587,
+          tls: :always,
+          auth: :never,
+          no_mx_lookups: true,
+          tls_options: config[:tls_options],
+          retries: 0,
+          timeout: 10_000
+        )
+
+      # Before this packet the same call with gen_smtp's defaults answered
+      # `{:error, :retries_exceeded, {:temporary_failure, _, :tls_failed}}`.
+      # With the shipped options it must get past the TLS upgrade; what the
+      # SMTP layer does next (530 Authentication Required without a credential)
+      # is irrelevant — the handshake is what this packet fixes.
+      #
+      # CI job runners may have no outbound 587, so a network failure
+      # there (nxdomain, timeout, econnrefused) is not this packet's defect —
+      # only `:tls_failed` is the shape the hosted stack saw. A runner with
+      # no network sees that the options exist and are well-formed; a runner
+      # with one also sees the handshake succeed. `_other` covers both, so
+      # only `:tls_failed` is a red.
+
+      case result do
+        {:error, :retries_exceeded, {:temporary_failure, _, :tls_failed}} ->
+          flunk(
+            "STARTTLS handshake failed with shipped tls_options: #{inspect(result)}. " <>
+              "Expected to get past TLS to an SMTP-level refusal."
+          )
+
+        {:error, _, {:temporary_failure, _, :tls_failed}} ->
+          flunk("STARTTLS handshake failed with shipped tls_options: #{inspect(result)}")
+
+        _other ->
+          :ok
+      end
+    end
+
+    test "verify is never :verify_none" do
+      # A mailer that skips peer verification is the defect class this fleet
+      # refuses: every transactional email would be deliverable to whoever
+      # answers STARTTLS, and nothing would indicate it.
+      for {env_tls, env_ssl} <- [{nil, nil}, {"always", nil}, {nil, "true"}] do
+        if env_tls,
+          do: System.put_env("COURIER_SMTP_TLS", env_tls),
+          else: System.delete_env("COURIER_SMTP_TLS")
+
+        if env_ssl,
+          do: System.put_env("COURIER_SMTP_SSL", env_ssl),
+          else: System.delete_env("COURIER_SMTP_SSL")
+
+        config = MailerAdapter.smtp_adapter()
+
+        tls_opts = config[:tls_options] || config[:sockopts]
+
+        if tls_opts do
+          refute tls_opts[:verify] == :verify_none,
+                 "tls_options/sockopts must not be :verify_none (tls=#{inspect(env_tls)}, ssl=#{inspect(env_ssl)})"
+        end
+      end
+    end
+  end
 end

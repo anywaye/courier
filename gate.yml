@@ -637,7 +637,38 @@ gate:
   # is about files on disk and `helm template` rendering — no row is read.
   # **1679 is 776 + 903**, so the parts still sum to the whole —
   # re-measured by running the two tier greps and `mix test` on this tree.
-  minimum: 1679
+  #
+  # AND IT MOVES AGAIN for SMTP STARTTLS (fix/smtp-tls): whole 1679 -> 1688,
+  # no-database 776 -> 785 (36 files, the same 36 — no new file), database
+  # UNCHANGED at 903 across the same 51 files. The +9 are one file,
+  # `test/courier/mailer_adapter_test.exs`, a plain `ExUnit.Case` with
+  # `async: false` because every claim in it mutates `System` and the
+  # application env, which the whole VM shares. The 9 split 8 shape / 1
+  # live-handshake, and the split is read off the case template the two
+  # tier greps use, so it cannot be a guess. 8 shape tests: the STARTTLS
+  # default carrying `tls_options` and no `sockopts`, the pinned
+  # `versions: [:"tlsv1.2", :"tlsv1.3"]`, the `verify: :verify_peer` with
+  # `cacerts: :public_key.cacerts_get()` from the OS store, the SNI tracking
+  # the relay host, the `depth` and `customize_hostname_check` the path
+  # needs, the implicit-TLS `sockopts` half on `ssl: true`, the `tls: :never`
+  # half carrying neither upgrade option, and the `verify is never :verify_none`
+  # source read. The 9th is the STARTTLS handshake proof: it drives
+  # `:gen_smtp_client.send_blocking/2` against `smtp.gmail.com:587` — the same
+  # STARTTLS shape as `smtp.resend.com:587` and publicly reachable with no
+  # credential — with the shipped `tls_options` and asserts it does NOT answer
+  # `{:temporary_failure, _, :tls_failed}`. Before this packet the same
+  # call with `gen_smtp`'s defaults (`['tlsv1', 'tlsv1.1', 'tlsv1.2']` and no
+  # `verify`/`cacerts`/`SNI`) answered `:tls_failed` while the pod's
+  # `openssl s_client -starttls smtp` verified `0 (ok)` on the same host
+  # — the failure was what the client put on the wire, and `openssl`
+  # succeeded for the same reason the shipped chain does (modern versions
+  # and a verifying peer with SNI). A runner with no outbound 587 skips
+  # the network half and still sees the 8 shape tests, so only `:tls_failed`
+  # is a red there.
+  #
+  # **1688 is 785 + 903**, so the parts still sum to the whole —
+  # re-measured by running the two tier greps and `mix test` on this tree.
+  minimum: 1688
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

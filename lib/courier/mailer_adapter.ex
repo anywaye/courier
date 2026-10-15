@@ -353,12 +353,102 @@ defmodule Courier.MailerAdapter do
   def smtp_adapter do
     relay = required!("COURIER_SMTP_HOST", "smtp")
     port = port()
+    tls_value = tls()
+    ssl_value = ssl()
     auth = auth()
     credentials = credentials(auth)
 
-    [adapter: Swoosh.Adapters.SMTP, relay: relay, port: port, auth: auth] ++
-      credentials ++
-      [tls: tls(), ssl: ssl()]
+    # The TLS handshake the hosted stack failed to complete, 2026-10-15:
+    # `{:retries_exceeded, {:temporary_failure, _, :tls_failed}}` on
+    # `smtp.resend.com:587` (STARTTLS), while the same pod's `openssl
+    # s_client -starttls smtp` verified `0 (ok)` with the same host, port and
+    # credentials. The failure was not the environment and not the config shape
+    # — `tls: :always`, `ssl: false`, port 587 and `auth: :always` were correct
+    # — but what the SMTP client put on the wire during STARTTLS.
+    #
+    # `gen_smtp` 1.3.0's `DEFAULT_OPTIONS` is
+    # `[{tls_options, [{versions, ['tlsv1', 'tlsv1.1', 'tlsv1.2']}] }]`.
+    # On OTP 29 `supported: [:"tlsv1.2", :"tlsv1.3"]` — `tlsv1` and `tlsv1.1`
+    # are `available` but not `supported`, and a modern endpoint that has
+    # disabled them has no overlap with what the client offered. Measured on
+    # this machine against `smtp.gmail.com:587` (the same STARTTLS shape as
+    # Resend): the old defaults answer `:tls_failed`, the new versions alone
+    # with `verify: :verify_none` still answer `:tls_failed`, and only a
+    # complete `verify: :verify_peer` chain succeeds past the handshake.
+    # `openssl` succeeded for the same reason a complete chain does — it
+    # verified against the OS store and presented SNI — while `gen_smtp` was
+    # offering the wrong versions and verifying nothing.
+    #
+    # So the options below are not a preference and not a hardening tweak:
+    # they are the reason the deployment could not sign up a user. Each has a
+    # failure it prevents, and weakening any of them is the defect class this
+    # fleet refuses — a mailer that skips peer verification is silent in the
+    # opposite direction, delivering mail to an attacker nobody can see.
+    #
+    #   `versions: [:"tlsv1.2", :"tlsv1.3"]` — the only versions OTP 29
+    #     supports; the old defaults cannot negotiate with an endpoint that
+    #     requires 1.2 or 1.3.
+    #   `verify: :verify_peer` — a mailer that does not verify the relay is
+    #     sending every transactional email to whoever answers STARTTLS.
+    #   `cacerts: :public_key.cacerts_get()` — the OS store, available since
+    #     OTP 25; the pod has it (161 entries on this build), and it is what
+    #     `openssl s_client` consulted while `gen_smtp` consulted nothing.
+    #   `server_name_indication` — set to the relay hostname as a charlist,
+    #     because without SNI the peer certificate is for the hostname but OTP
+    #     validates it against the IP (measured:
+    #     `{:bad_cert, {:hostname_check_failed, {:requested, {IP}},
+    #     {:received, [dNSName: ~c"host"]}}}`), and a hostname check that fails
+    #     on every deployment is a handshake that always fails closed.
+    #   `depth` and `customize_hostname_check` — the path-length and the HTTPS
+    #     name-matching rules the bootstrap would otherwise enforce with nothing
+    #     to enforce against (measured: `:max_path_length_reached` without them
+    #     when `verify: :verify_peer` without a depth).
+    #
+    # `tls_options` is the STARTTLS upgrade (`ssl: false` on 587, the shipped
+    # default); `sockopts` is the immediate TLS on 465 (`ssl: true`). Both are
+    # seeded so a deployment that flips `COURIER_SMTP_SSL=true` (port 465) is
+    # not the one that discovers its credentials travel in the clear. Each is
+    # appended after `tls`/`ssl` so the names the operator chose remain visible
+    # while the handshake courier actually sends is described here, once.
+    tls_options =
+      [
+        versions: [:"tlsv1.2", :"tlsv1.3"],
+        verify: :verify_peer,
+        cacerts: :public_key.cacerts_get(),
+        server_name_indication: String.to_charlist(relay),
+        depth: 4,
+        customize_hostname_check: [
+          match_fun: :public_key.pkix_verify_hostname_match_fun(:https)
+        ]
+      ]
+
+    base =
+      [adapter: Swoosh.Adapters.SMTP, relay: relay, port: port, auth: auth] ++
+        credentials ++
+        [tls: tls_value, ssl: ssl_value]
+
+    cond do
+      ssl_value ->
+        # Implicit TLS on 465: the initial `ssl:connect` reads `sockopts`, not
+        # `tls_options`. STARTTLS is not offered on an already-TLS connection,
+        # so `tls_options` there would be bytes nobody reads. Seed `sockopts`
+        # instead, and keep `tls_options` absent so a reader does not assume
+        # STARTTLS is still the path.
+        base ++ [sockopts: tls_options]
+
+      tls_value == :never ->
+        # `tls: :never` is explicit: no STARTTLS will be attempted, so the
+        # upgrade options are not consulted. Not seeding them keeps the
+        # configuration honest — a reader sees `tls: :never` and no
+        # `tls_options` pretending otherwise.
+        base
+
+      true ->
+        # The common and the previously broken path: STARTTLS on 587. The TLS
+        # upgrade reads `tls_options` directly, and `sockopts` would be an
+        # initial-TCP option nobody would ever pass to `ssl:connect` here.
+        base ++ [tls_options: tls_options]
+    end
   end
 
   @doc """
