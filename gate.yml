@@ -629,7 +629,15 @@ gate:
   # be checked against a live postgres would be one a database-less runner
   # silently skips. **1673 is 770 + 903**, so the parts still sum to the whole,
   # re-measured by running the two tier greps and the focused file on this tree.
-  minimum: 1673
+  #
+  # AND IT MOVES AGAIN for the IMAGE-DIGEST PIN (adopt-digest): whole
+  # 1673 -> 1679, no-database 770 -> 776 (36 files), database UNCHANGED at
+  # 903 (51 files). The +6 are the digest render proofs in
+  # `test/courier/chart_test.exs`, a plain `ExUnit.Case` because every claim
+  # is about files on disk and `helm template` rendering — no row is read.
+  # **1679 is 776 + 903**, so the parts still sum to the whole —
+  # re-measured by running the two tier greps and `mix test` on this tree.
+  minimum: 1679
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

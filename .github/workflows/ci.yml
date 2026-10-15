@@ -343,7 +343,16 @@ jobs:
           # runner silently skips. 1673 is 770 + 903, so the parts still sum to
           # the whole — re-measured by running the two tier greps on this tree.
           #
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1673
+          # AND IT MOVES AGAIN for the IMAGE-DIGEST PIN (adopt-digest): whole
+          # 1673 -> 1679, no-database 770 -> 776 (36 files), database UNCHANGED
+          # at 903 (51 files). The +6 are the digest render proofs in
+          # `test/courier/chart_test.exs`, a plain `ExUnit.Case` because every
+          # claim is about files on disk and `helm template` rendering — no row
+          # is read. 1679 is 776 + 903, so the parts still sum to the whole —
+          # re-measured by running the two tier greps and `mix test` on this
+          # tree.
+          #
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1679
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -616,7 +625,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (770 tests, 36 files)
+      - name: tier — no database (776 tests, 36 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -655,7 +664,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 770
+          bin/assert-suite "$log" "no database" 776
 
       - name: tier — database (903 tests, 51 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -762,9 +771,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1625 passed | \`bin/assert-suite\` |"
-            echo "| no database, 35 files | 759 passed | tier step |"
-            echo "| database, 49 files | 887 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1679 passed | \`bin/assert-suite\` |"
+            echo "| no database, 36 files | 776 passed | tier step |"
+            echo "| database, 51 files | 903 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"

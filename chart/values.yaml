@@ -20,6 +20,41 @@
 # Set it at release time; the default is the chart's own version.
 image:
   repository: ghcr.io/cafaye/courier
+  # THE DIGEST — THE ONE PART OF THE NAME THAT CANNOT MOVE, AND THE HALF THE
+  # POD ACTUALLY PULLS. Written by kit's publish workflow on every
+  # `push: true` run: `chart.reusable.yml`'s `pin the image by digest` step
+  # takes the digest from the image job's build output
+  # (`needs.image.outputs.digest` threaded through `publish.reusable.yml`'s
+  # `image-digest` hand-off) and rewrites this line BEFORE `helm package`.
+  # It is the only value in this file a workflow edits, and the reason is
+  # one measurement: the tag is overwritten on every master push, so a chart
+  # pinned by TAG rendered a textually IDENTICAL Deployment after every
+  # build — Argo's diff reported `Synced`, rolled nothing, and
+  # `imagePullPolicy: IfNotPresent` re-served the node's stale copy on every
+  # restart. MEASURED 2026-10-15 on the website: seven republishes and the pod
+  # kept the old image — Argo diffed the rendered Deployment as identical,
+  # reported Synced, and rolled nothing; the manager worked around it by
+  # pinning a sha tag in the Application values. A digest cannot move, so a
+  # new build is a textual diff Argo rolls — and the chart VERSION does not,
+  # which is what lets the substrate Application keep one targetRevision.
+  #
+  # WHAT THE COMMITTED VALUE IS: this repository's CURRENT published image,
+  # `ghcr.io/cafaye/courier:0.1.0` as resolved from the registry when this
+  # packet was written — the image built from the current master. It is
+  # REPLACED by the publish workflow on every push — the committed value
+  # pins the last published image, and a publish that left it in place
+  # would push a chart naming the previous build. A `push: false` run and a
+  # fresh clone render this committed value, which is why this line is not
+  # empty.
+  #
+  # EMPTY IS THE SUPPORTED ABSENCE: with no digest the Deployment renders
+  # `repository:tag`, exactly as it did before this field existed, which
+  # is what a `push: false` run and a fresh clone with no publish behind
+  # it renders. Anything that is not `sha256:<64 hex>` is a THIRD state and
+  # is REFUSED by the template rather than rendered — see
+  # templates/deployment.yaml, and kit's step, which refuses it at the
+  # write.
+  digest: "sha256:f9b14111acbacfb8b13013e78c7305887de73e8dd095cc4fd2a68976b787d901"
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 

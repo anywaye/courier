@@ -157,6 +157,22 @@ defmodule Courier.ChartTest do
 
   defp indent(line), do: String.length(line) - String.length(String.trim_leading(line, " "))
 
+  @committed_digest "sha256:f9b14111acbacfb8b13013e78c7305887de73e8dd095cc4fd2a68976b787d901"
+
+  defp helm_template(args \\ []) do
+    {output, status} =
+      System.cmd("helm", ["template", "courier", @chart_dir] ++ args, stderr_to_stdout: true)
+
+    {output, status}
+  end
+
+  defp capture_digest(values_yaml) do
+    case Regex.run(~r/^  digest: "?([^"\s]+)"?$/m, values_yaml) do
+      [_, digest] -> digest
+      _ -> nil
+    end
+  end
+
   describe "Chart.yaml" do
     test "names the chart courier at version 0.1.0 — the seam the Application pins" do
       chart_yaml = read_file("Chart.yaml")
@@ -341,6 +357,112 @@ defmodule Courier.ChartTest do
       # the values cannot disagree about the edge.
       assert ingress =~ ~r/ingressClassName: \{\{ \.Values\.ingress\.className \}\}/
       assert values =~ ~r/^  className: traefik$/m
+    end
+  end
+
+  describe "the image digest — the one that reaches the pod" do
+    # THE CONTRACT (cafaye/kit/.github/workflows/chart.reusable.yml, lines
+    # 58-116 "THE IMAGE DIGEST — THE ONE THAT REACHES THE POD, AND THE ONE
+    # THAT WAS MEASURED MISSING" and the `pin the image by digest` step
+    # 277-365): the chart's `values.yaml` carries
+    # `image.digest: "sha256:<64 hex>"`, written by the publish workflow
+    # from the image job's build output BEFORE `helm package` on every
+    # `push: true` run. It INSERTS the key when the chart has not yet
+    # adopted it. The Deployment template MUST read that field — a
+    # deployment that does not render `image.digest` ignores a value it
+    # never reads, so Argo's diff stays identical and the pod keeps the
+    # old image. Measured 2026-10-15: the website was republished seven
+    # times and the pod kept the old image — Argo diffed the rendered
+    # Deployment as identical, reported Synced, and rolled nothing; the
+    # manager worked around it by pinning a sha tag in the Application
+    # values.
+    #
+    # The committed digest is `ghcr.io/cafaye/courier:0.1.0` as
+    # resolved from the registry when this packet was written — the image
+    # built from the current master. The publish run overwrites this line
+    # with the digest it just built, so the OCI chart always names the
+    # bytes beside it, and this committed value is the floor a `push: false`
+    # run and a fresh clone render.
+
+    test "commits a digest that is sha256:<64 hex> and equal to the registry's current image" do
+      values = read_file("values.yaml")
+      digest = capture_digest(values)
+
+      assert digest == @committed_digest
+
+      assert digest =~ ~r/^sha256:[0-9a-f]{64}$/
+    end
+
+    test "renders repository@digest when a digest is committed" do
+      {rendered, status} = helm_template()
+      assert status == 0, "helm template failed: #{rendered}"
+      assert rendered =~ ~s(image: "ghcr.io/cafaye/courier@#{@committed_digest}")
+      refute rendered =~ ~s(image: "ghcr.io/cafaye/courier:0.1.0")
+    end
+
+    test "renders repository:tag when the digest is empty — the fresh-clone path before the first publish" do
+      {rendered, status} = helm_template(["--set", "image.digest="])
+      assert status == 0, "helm template with empty digest failed: #{rendered}"
+      assert rendered =~ ~s(image: "ghcr.io/cafaye/courier:0.1.0")
+      refute rendered =~ ~s(image: "ghcr.io/cafaye/courier@sha256:)
+    end
+
+    test "a malformed digest is refused — it must not render repository@not-a-digest" do
+      # Kit's `pin the image by digest` step refuses a malformed digest with
+      # `^sha256:[0-9a-f]{64}$`; a template that rendered
+      # `repository@not-a-digest` would be the defect that step exists to
+      # prevent — a pod in image-pull failure with nothing naming this field.
+      # The template cannot silently fall back to the tag either: a human who
+      # pasted a bad digest expects a pin and would silently get a stale tag.
+      # So it FAILS the render. `fail` in a Helm template surfaces as a
+      # non-zero `helm template` exit, which this assertion reads as a throw.
+      # A template that rendered `repository@not-a-digest` would be the defect
+      # the kit step exists to prevent.
+
+      for bad <- ["not-a-digest", "sha256:zzzz"] do
+        {output, status} = helm_template(["--set", "image.digest=#{bad}"])
+
+        assert status != 0,
+               "helm template should refuse digest #{inspect(bad)}, but rendered: #{output}"
+
+        assert output =~ "image.digest",
+               "the refusal for #{inspect(bad)} does not name the field: #{output}"
+
+        assert output =~ bad,
+               "the refusal for #{inspect(bad)} does not name the value it refused: #{output}"
+      end
+    end
+
+    test "keeps the committed-tag path in values.yaml — a fresh clone with no digest renders exactly as today" do
+      values = read_file("values.yaml")
+
+      # The tag stays beside the digest. The digest is the half that cannot
+      # move; the tag is the human-readable half beside it. A chart that
+      # dropped the tag would break `--set image.digest=` (the empty branch).
+      assert values =~ ~r/^  tag: "0\.1\.0"$/m
+
+      deployment = read_file("templates/deployment.yaml")
+      # The template still carries both branches — `repository:tag` and
+      # `repository@digest`. Assert the source contains both so a future
+      # `caf gen chart` that drops one goes red.
+      assert deployment =~ ".Values.image.digest"
+      assert deployment =~ ".Values.image.repository"
+      assert deployment =~ ".Values.image.tag"
+    end
+
+    test "the Deployment template carries the digest-conditional and its refusal" do
+      deployment = read_file("templates/deployment.yaml")
+
+      assert deployment =~ ~r/\{\{- if \.Values\.image\.digest \}\}/
+
+      assert deployment =~
+               ~r/image: "\{\{ \.Values\.image\.repository \}\}@\{\{ \.Values\.image\.digest \}\}"/
+
+      assert deployment =~
+               ~r/image: "\{\{ \.Values\.image\.repository \}\}:\{\{ \.Values\.image\.tag \}\}"/
+
+      assert deployment =~ ~r/regexMatch.*sha256:\[0-9a-f\]\{64\}/
+      assert deployment =~ ~r/\{\{- fail/
     end
   end
 end
