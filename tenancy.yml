@@ -141,7 +141,7 @@ rls:
   #      written by `cafaye.protect_table/2` and the scanner cannot follow a
   #      function call to the four policies it creates.
   #   2. The old comment here claimed "none of the ten migrations mentions
-  #      `row level security`, `create policy`…". There are THIRTEEN migrations
+  #      `row level security`, `create policy`…". There are SEVENTEEN migrations
   #      now, and the claim was always literally true and misleading in intent:
   #      the DDL is inside a `select cafaye.protect_table(…)` string, so a text
   #      scan for the DDL's own words finds nothing while the database is
@@ -166,10 +166,10 @@ rls:
   # same instinct `test/courier/backup_tables_test.exs` applies to what courier
   # stores.
   databaseEnforced: false
-  # `priv/repo/migrations`, all thirteen of them, and this list is the evidence
+  # `priv/repo/migrations`, all seventeen of them, and this list is the evidence
   # the checker read to reach the `rls-unreadable` warning below: `read_ddl`
   # reads every file here and reports a table as protected on
-  # `enable`/`force`/`create policy` alone, and two of the thirteen are `.exs`
+  # `enable`/`force`/`create policy` alone, and two of the seventeen are `.exs`
   # files carrying RLS DDL as a string this scanner cannot parse. Silence is
   # reported rather than assumed — that is what the warning is.
   sources:
