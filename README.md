@@ -411,10 +411,22 @@ Cloudflare Email Routing itself is receive-only and has no send API. The
 sending half of a Cloudflare Email connection is the MailChannels
 transactional API, so that is the contract this adapter speaks:
 `POST https://api.mailchannels.net/tx/v1/send`, `X-Api-Key`, a
-`personalizations` / `from` / `subject` / `content` body. A Cloudflare sender
-also needs the domain authorised — the `_mailchannels` TXT record for Domain
-Lockdown and `include:relay.mailchannels.net` in SPF — which is the next
-packet's scope (W3-P5), not this variable's.
+`personalizations` / `from` / `subject` / `content` body.
+
+Setting it up is two steps, and only the second one is courier's. Authorize
+the sending domain once — the `_mailchannels` TXT record for Domain Lockdown
+and `include:relay.mailchannels.net` in SPF, which
+`cf email-sending subdomains preview` reports on before anything is written
+and the Cloudflare Email Sending dashboard adds for you — then hand courier
+the MailChannels key that the authorization issued:
+`COURIER_CLOUDFLARE_API_KEY`. On a box installed from the substrate template
+that key arrives as `KIT_SUBSTRATE_CLOUDFLARE_API_KEY` (see
+`kit/templates/substrate/install.sh`), which refuses before writing anything
+when the adapter is `cloudflare` and the key is absent, so a box never comes
+up half-configured. There is deliberately no verification screen and no
+in-app dashboard step: the two signals an operator needs are the installer's
+preflight refusal and courier's own boot line (`adapter=cloudflare
+token=set`).
 
 **A provider that refuses a send is reported, never swallowed.** Every non-2xx
 is an error naming the status and the provider's own body, a transport failure

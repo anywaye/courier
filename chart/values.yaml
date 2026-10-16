@@ -87,6 +87,9 @@ imagePullSecrets: courier-ghcr
 #                                  secret is sealed under
 #   COURIER_SMTP_USERNAME        — SMTP auth username
 #   COURIER_SMTP_PASSWORD        — SMTP auth password
+#   COURIER_CLOUDFLARE_API_KEY   — the MailChannels transactional key, required
+#                                  only when COURIER_MAIL_ADAPTER=cloudflare
+#                                  (sends through MailChannels instead of SMTP)
 #   COURIER_INBOUND_RESEND_SECRET — the provider's signing secret for
 #                                  inbound webhooks
 #   COURIER_ERROR_RELAY_TOKEN    — the shared secret for the error relay
