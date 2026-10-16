@@ -680,7 +680,20 @@ gate:
   # tier did not move, because the only new tests are in the database tier
   # where the send path — `Courier.Deliver` — writes the outbox row in the
   # same transaction as the send.
-  minimum: 1695
+  #
+  # REMEASURED on the tree carrying cf-message-id — the Cloudflare adapter
+  # stops forwarding a caller-supplied `Message-ID` and reports the provider's
+  # own `result.message_id`: whole 1747 = no-database 802 (36 files) + database
+  # 945 (54 files). The +5 are all in the no-database tier:
+  # `test/courier/cloudflare_delivery_test.exs` is a plain `ExUnit.Case`
+  # because the send path it drives touches no `Courier.Repo`. **The baseline
+  # was stale by more than these 5** — the floor still read 1695 against a
+  # measured 1701, and the packets between never raised it, so this raise is to
+  # the measurement (1747) rather than to the old floor plus a delta. The floor
+  # sits AT the measurement with zero headroom, for the reason the telemetry
+  # paragraph gives: the next packet that adds a test goes red until it raises
+  # this number.
+      minimum: 1747
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

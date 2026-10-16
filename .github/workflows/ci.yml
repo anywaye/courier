@@ -381,7 +381,13 @@ jobs:
           # already short of the tree before this packet; the floors below are
           # the measurement, not the old number plus 29.
           #
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1740
+          # cf-message-id adds 5 tests, all in the no-database tier
+          # (`cloudflare_delivery_test.exs` is a plain `ExUnit.Case`; the send
+          # path it drives touches no `Courier.Repo`). Re-measured on this tree
+          # by the two tier greps and `mix test`: whole 1747 = no-database 802
+          # (36 files) + database 945 (54 files). The whole moved by the same 7
+          # the no-database tier did, so the parts still sum to the whole.
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1747
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -693,7 +699,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 795
+          bin/assert-suite "$log" "no database" 802
 
       - name: tier — database (945 tests, 54 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -800,8 +806,8 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1740 passed | \`bin/assert-suite\` |"
-            echo "| no database, 36 files | 795 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1747 passed | \`bin/assert-suite\` |"
+            echo "| no database, 36 files | 802 passed | tier step |"
             echo "| database, 54 files | 945 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
