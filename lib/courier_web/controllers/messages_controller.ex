@@ -65,6 +65,18 @@ defmodule CourierWeb.MessagesController do
   addresses worth running, and a status nobody can read the table for is the same
   posture the suppression packet took when it declined to expose one.
 
+  **The three sending-domain refusals share those two statuses and none of them is
+  a 500.** `Courier.Deliver` chooses the sender by the message's from-domain, and
+  refuses rather than falling back to the deployment's credential on a domain the
+  caller claimed and did not prove. A row this account registered but has not
+  verified, or has revoked, is a **409 `conflict`** with the domain named — the
+  caller's own resource in a state that forbids sending. A from-domain nobody
+  registered is a **422 `validation_failed`**, because registering it is the
+  correction. The refusal names the domain and never a credential behind it, dials
+  no provider and writes no outbox row; `Courier.DeliverSendingDomainTest` is the
+  send path and `CourierWeb.MessagesControllerSendingDomainConfigTest` is this
+  door.
+
   ## The pre-flight, which is the same gate the boot checks
 
   `Courier.MailerAdapter` refuses to boot a courier whose adapter cannot deliver,
