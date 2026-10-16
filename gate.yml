@@ -714,7 +714,33 @@ gate:
   # and the two `mailers_config_test.exs` arms are plain `ExUnit.Case` (config
   # substitution and a rendered body, no row). 1769 is 810 + 959, so the parts
   # still sum to the whole. The floor sits AT the measurement with zero headroom.
-      minimum: 1769
+  #
+  # REMEASURED on the tree carrying the SENDING-DOMAIN API — the five
+  # `/v1/sending_domains` operations over the context that was already merged:
+  # whole 1769 -> 1797 = no-database 815 (37 files) + database 982 (56 files).
+  # The +28 are one new file and five new router assertions; the split is read
+  # off the case template the two tier greps use, not guessed:
+  #   * `test/courier_web/controllers/sending_domains_controller_test.exs`, 23
+  #     tests, is a `CourierWeb.ConnCase` because every claim in it is a claim
+  #     about a ROW through the real router — the row a registration writes, the
+  #     proof a verification runs, the 404s another account gets, and the
+  #     credential a response must not carry. It is also `async: false`, for the
+  #     same fixture reason `tenant_sending_domains_test.exs` is: it changes
+  #     `config :courier, :tenant_sending`, `config :swoosh, :api_client` and
+  #     `config :courier, :mailing`, all shared by the whole VM, and posts to one
+  #     `Courier.TestSupport.CloudflareServer`.
+  #   * `test/courier_web/router_test.exs` gains 5, a plain `ExUnit.Case` because
+  #     its subject is the resolved route and the pipeline it is behind — no row
+  #     is read.
+  #
+  # The baseline was exactly 1769, so this raise is the packet's own 28 and not
+  # a catch-up over a stale floor: the same measurement that set the previous
+  # floor is 1769 here, and 1797 is 1769 + 23 + 5.
+  #
+  # 1797 is 815 + 982, so the parts still sum to the whole — re-measured by
+  # running the two tier greps and the whole suite on this tree. The floor sits
+  # AT the measurement with zero headroom.
+      minimum: 1797
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
