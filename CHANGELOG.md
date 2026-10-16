@@ -14,6 +14,17 @@ document lands in both files in one commit, because core asserts the two agree.
 
 ### Added
 
+- **The instabox backend switch** (`ci/backend` containing `instabox`, an
+  executable `ci/pipeline.sh` copied from kit's
+  `backends/instabox/pipeline.template.sh` and edited for this repository,
+  and `test/courier/ci_backend_test.exs` pinning the switch to a backend kit
+  ships). The gate is `./bin/prime`, verbatim; the toolchain is the
+  `mise.toml` pin installed by `mise install`, verified by the workflow's own
+  `bin/toolchain-pins --check`. The gate reads no `DATABASE_URL`: it uses
+  `config/test.exs`'s fixed localhost credentials, so the backend's postgres
+  must answer there. No `bin/publish` in tree, so the gate is the whole run.
+  `.github/workflows/` is untouched; `github-actions` remains the fallback.
+
 - **The receipt: a subscription nobody had consumed, on the money event that
   named it.** `Courier.Consumers.PaymentSucceeded` consumes
   `billing.payment.succeeded` and sends the mail a person is owed when money
