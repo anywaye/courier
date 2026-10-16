@@ -63,3 +63,12 @@ courier-*.tar
 # is reviewed.
 /caf.dev.compose.yaml
 
+
+# The `cf` CLI's local cache, discovered committed by accident: a `git add -A`
+# swept `.cloudflare/cache/cloudflare-account.json` in, and the file is the
+# tool's own state directory — the account id it resolved on THIS machine, held
+# so the next command need not ask. Nothing in the repository reads it, every
+# developer's `cf` run writes it, and it is the "build output shaped like a
+# source file" case above with a credential-adjacent file: an account id is not
+# a secret, but the cache is not ours to publish either.
+/.cloudflare/
