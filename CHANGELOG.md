@@ -14,6 +14,30 @@ document lands in both files in one commit, because core asserts the two agree.
 
 ### Added
 
+- **The receipt: a subscription nobody had consumed, on the money event that
+  named it.** `Courier.Consumers.PaymentSucceeded` consumes
+  `billing.payment.succeeded` and sends the mail a person is owed when money
+  moves — the whole-cafaye-stack walk found the event landing on the bus with
+  nothing subscribed to it, a settled charge nobody was ever told about. The
+  payload was built for this from the start (billing-event-payloads-01's
+  recipient fact), and this is the consumer that fact was waiting for.
+
+  **The seventh type, `receipt`** — transactional, no unsubscribe header, with
+  the amount rendered by the consumer (`19.00 USD`; zero-decimal currencies at
+  zero) because courier has no Money concept and a template must never compute
+  a figure. The invoice id is the optional field of the catalog: an
+  invoice-backed payment carries one and a payment-mode Checkout does not, and
+  dropping receipts for the second shape would drop receipts for payments the
+  platform legitimately produces.
+
+  **Two decisions, stated in the report rather than in a commit line.** The
+  delivered event's `user_id` carries the cafaye CUSTOMER this event names —
+  the send is attributed to the payer, not to a person, and the preference
+  check is vacuous while the address-suppression check is unchanged. And the
+  attribution is a customer id because billing has no users and the consumer
+  rule forbids looking anybody up. Reported with the core enum gap in
+  `REPORT-courier-consumer-paymentreceipt-01.md`.
+
 - **A third provider: Cloudflare Email, through the same
   `COURIER_MAIL_ADAPTER` seam.** Cloudflare Email Routing is receive-only and
   has no send API; the sending half of a Cloudflare Email connection is the

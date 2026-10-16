@@ -346,9 +346,14 @@ defmodule Courier.MailersTest do
   end
 
   describe "types" do
-    test "the notification types are exactly the six courier sends" do
+    test "the notification types are exactly the seven courier sends" do
+      # SEVEN, and the seventh is `receipt` — the mail for a settled payment,
+      # `Courier.Consumers.PaymentSucceeded`. The sixth was `email_change_new`;
+      # this list is the catalog every preference, subject and template is
+      # asserted against, so a type added without it fails here by name.
       assert Mailers.types() ==
-               ~w(welcome password_reset team_invitation account_security email_change_current email_change_new)
+               ~w(welcome password_reset team_invitation account_security
+                  email_change_current email_change_new receipt)
     end
 
     test "a type courier does not have is an error rather than a fallback" do

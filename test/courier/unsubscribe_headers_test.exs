@@ -87,7 +87,7 @@ defmodule Courier.UnsubscribeHeadersTest do
   end
 
   describe "every type courier can send today carries no unsubscribe" do
-    test "on the composed message, for each of the six types" do
+    test "on the composed message, for each of the seven types" do
       # Driven through `Courier.Deliver`, not through `Courier.Mailers.build/2`:
       # the claim is that the SEND PATH leaves the message alone, and a test that
       # stopped one layer short would pass against a `Deliver` that decorated
@@ -203,7 +203,11 @@ defmodule Courier.UnsubscribeHeadersTest do
       # the whole `Mailers.types()` iteration, so the fourth, fifth and sixth
       # types are covered by the same arms as the first three.
       reason: "password reset",
-      previous_email: "previous@example.com"
+      previous_email: "previous@example.com",
+      # `receipt` requires an amount and ignores the rest; the invoice id is
+      # optional in its template, so the shape above covers the seventh type
+      # with the same arms as the first six.
+      amount_display: "19.00 USD"
     }
   end
 

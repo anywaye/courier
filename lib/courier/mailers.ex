@@ -26,6 +26,7 @@ defmodule Courier.Mailers do
   | `account_security` | `email`, `reason`                       |
   | `email_change_current` | `email`, `url`                     |
   | `email_change_new` | `email`, `previous_email`               |
+  | `receipt`         | `email`, `amount_display`, `invoice_id` (optional) |
 
   `account_security` is the password-reset notice's sibling: the notice a
   person is owed when their credentials end. It is rendered from one template
@@ -34,6 +35,17 @@ defmodule Courier.Mailers do
   because the two facts have different remediations and a notice that does not
   name which one happened forces the reader to guess. The `reason` is required
   because the template cannot render a branch for a reason it was not given.
+
+  `receipt` is the money event's other half: `billing.payment.succeeded`
+  carries the recipient (`email`, the recipient fact the payment packet exists
+  to give courier — see its `with_recipient`), the amount already rendered by
+  the consumer, and the processor's invoice id when the payment came with
+  one. It is `:transactional` for the obvious reason a receipt is: a person
+  who unsubscribes from mail has not unsubscribed from their own accounting.
+  `invoice_id` is the one optional field in the table — a Checkout-backed
+  one-off has no invoice — so the template renders the reference line when it
+  is present and skips it when it is not, rather than the send being refused
+  for a payment shape the platform legitimately produces.
 
   The two email-change notices are the two halves of one event, and they are
   two types because they are mailed to **two different addresses** with two
@@ -109,9 +121,9 @@ defmodule Courier.Mailers do
   # second. Both are in the shared list rather than the type's own because the
   # payload is normalised over one vocabulary, and a second per-type list would
   # be a second place for a field to be dropped.
-  @fields ~w(user_id email name url account_name invited_by role reason previous_email)a
+  @fields ~w(user_id email name url account_name invited_by role reason previous_email amount_display invoice_id)a
   @payload_types Map.new(@fields, &{&1, :string})
-  @types ~w(welcome password_reset team_invitation account_security email_change_current email_change_new)
+  @types ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt)
 
   # **The kind of every type courier sends, and nothing else.** This table is the
   # deliverability gate's input and it is here — in the module that composes the
@@ -151,7 +163,8 @@ defmodule Courier.Mailers do
     {"team_invitation", :transactional},
     {"account_security", :transactional},
     {"email_change_current", :transactional},
-    {"email_change_new", :transactional}
+    {"email_change_new", :transactional},
+    {"receipt", :transactional}
   ]
 
   @doc """
@@ -316,6 +329,7 @@ defmodule Courier.Mailers do
       "account_security" -> [:email, :reason]
       "email_change_current" -> [:email, :url]
       "email_change_new" -> [:email, :previous_email]
+      "receipt" -> [:email, :amount_display]
     end
   end
 
@@ -340,7 +354,9 @@ defmodule Courier.Mailers do
       invited_by: escape(fields.invited_by),
       role: escape(fields.role),
       reason: escape(fields.reason),
-      previous_email: escape(fields.previous_email)
+      previous_email: escape(fields.previous_email),
+      amount_display: escape(fields.amount_display),
+      invoice_id: escape(fields.invoice_id)
     ]
 
     "#{type}.#{format}"

@@ -686,7 +686,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 785
 
-      - name: tier — database (903 tests, 51 files)
+      - name: tier — database (916 tests, 52 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -710,7 +710,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 903
+          bin/assert-suite "$log" "database" 916
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can

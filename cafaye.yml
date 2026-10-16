@@ -256,6 +256,7 @@ consumes:
     - identity.member.accepted
     - identity.session.revoked
     - identity.user.created
+    - billing.payment.succeeded
 
 # Other cafaye services. Empty: courier depends on postgres, not on a sibling
 # service, and the services that will depend on it depend the other way round.

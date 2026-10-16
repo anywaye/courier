@@ -160,16 +160,23 @@ defmodule Courier.DeliverTest do
       assert {:ok, change_new} =
                Deliver.email_change_new(payload(%{previous_email: "kaka@example.com"}))
 
+      # The receipt is the money type: `user_id` is the cafaye customer the
+      # event names, the amount arrives rendered, and the invoice id is the one
+      # optional field in the catalog.
+      assert {:ok, receipt} =
+               Deliver.receipt(payload(%{amount_display: "19.00 USD", invoice_id: "in_1UQ"}))
+
       assert welcome.notification_type == "welcome"
       assert reset.notification_type == "password_reset"
       assert invitation.notification_type == "team_invitation"
       assert security.notification_type == "account_security"
       assert change_current.notification_type == "email_change_current"
       assert change_new.notification_type == "email_change_new"
+      assert receipt.notification_type == "receipt"
 
       # Sorted on both sides, and that is the whole point of this assertion. What
-      # courier promises is that each of the six sends recorded a row under its
-      # own notification type — a set of six, one per type. `outbox/0` reads
+      # courier promises is that each of the seven sends recorded a row under
+      # its own notification type — a set of seven, one per type. `outbox/0` reads
       # with no `ORDER BY`, so the order rows come back in is PostgreSQL's choice
       # and not a contract; comparing sequences here asserted an ordering nobody
       # promised and failed in roughly one run in eight. Sorting keeps the
@@ -177,7 +184,8 @@ defmodule Courier.DeliverTest do
       # nothing else) while dropping the part that was never courier's promise.
       assert outbox() |> Enum.map(& &1.data["notification_type"]) |> Enum.sort() ==
                Enum.sort(
-                 ~w(welcome password_reset team_invitation account_security email_change_current email_change_new)
+                 ~w(welcome password_reset team_invitation account_security email_change_current
+                    email_change_new receipt)
                )
     end
 

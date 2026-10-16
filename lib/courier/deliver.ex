@@ -106,6 +106,21 @@ defmodule Courier.Deliver do
   def account_security(payload), do: deliver(:account_security, payload)
 
   @doc """
+  Sends the `receipt` mail — the record of a settled payment, and the first
+  mail courier sends about MONEY rather than about credentials or membership.
+
+  The payload carries `email` and `amount_display` (required) and
+  `invoice_id` (optional): the amount arrives **already rendered** rather than
+  as integer minor units, and that is the consumer's job rather than this
+  module's — courier has no Money concept and no currency table, and a
+  receipt that rendered a number itself would be this repository inventing
+  one. See `Courier.Consumers.PaymentSucceeded` for the shape of the event
+  this renders and for why the address is on it at all.
+  """
+  @spec receipt(map()) :: {:ok, map()} | {:error, term()}
+  def receipt(payload), do: deliver(:receipt, payload)
+
+  @doc """
   Sends the `email_change_current` mail — the notice to the address the account
   uses today, warning its owner that somebody asked to move it.
 

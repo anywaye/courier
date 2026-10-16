@@ -46,7 +46,12 @@ config :courier, :mailing,
     # subject for a type that is one shape with two renderings.
     account_security: "Security notice for your caFaye account",
     email_change_current: "Confirm an email address change on your caFaye account",
-    email_change_new: "Confirm your new caFaye email address"
+    email_change_new: "Confirm your new caFaye email address",
+    # A subject with no placeholder, because the one field a reader might want
+    # in it — the amount — is in the body. A subject template is one line of the
+    # payload; the amount belongs where the eye lands first, and a subject that
+    # varies per payment is a mailbox that cannot be scanned.
+    receipt: "We received your caFaye payment"
   }
 
 # `api_client: false` is the default, and it is the right one for the adapter
@@ -129,6 +134,13 @@ config :courier, :outbox,
 # handler that raises has still cost the event a delivery.
 config :courier, :consumers, %{
   "identity.member.invited" => Courier.Consumers.MemberInvited,
+  # The money half, and the subscription billing-event-payloads-01's recipient
+  # fact exists for: courier has no billing client and no billing tables, so a
+  # payment event with no address on it is one nobody can act on. The payload
+  # carries the recipient (`email`) and the settled amount, so this handler
+  # sends and looks nothing up. Reported in
+  # `REPORT-courier-consumer-paymentreceipt-01.md`.
+  "billing.payment.succeeded" => Courier.Consumers.PaymentSucceeded,
   # The second subscription, and the first one courier can ACT on: the payload
   # carries `user_id`, which is a real person, so the handler records an in-app
   # notification through `Courier.Notifications` — that context's first

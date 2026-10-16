@@ -170,7 +170,7 @@ defmodule Courier.ConsumersTest do
   end
 
   describe "subscribed/0" do
-    test "is the fleet's four, and cafaye.yml declares the same list" do
+    test "is the fleet's five, and cafaye.yml declares the same list" do
       # A consumer nobody can read is a consumer nobody deployed. `caf dev`,
       # `pantry` and core's contract harness read the manifest, so the two lists
       # are checked against each other rather than trusted to agree.
@@ -183,8 +183,12 @@ defmodule Courier.ConsumersTest do
       # one that sends mail — see `Courier.Consumers.SessionsRevoked`. The
       # fourth is the platform's central promise, and the reason the SUBSCRIBER
       # exists: a user signs up, and courier welcoms them — see
-      # `Courier.Consumers.UserCreated` and `Courier.Consumers.Subscriber`.
+      # `Courier.Consumers.UserCreated` and `Courier.Consumers.Subscriber`. The
+      # fifth is the money one: a settled payment is mailed to the person it
+      # belongs to — see `Courier.Consumers.PaymentSucceeded` and
+      # `REPORT-courier-consumer-paymentreceipt-01.md`.
       assert Consumers.subscribed() == [
+               "billing.payment.succeeded",
                "identity.member.accepted",
                "identity.member.invited",
                "identity.session.revoked",

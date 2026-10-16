@@ -668,7 +668,19 @@ gate:
   #
   # **1688 is 785 + 903**, so the parts still sum to the whole —
   # re-measured by running the two tier greps and `mix test` on this tree.
-  minimum: 1688
+  #
+  # AND IT MOVES AGAIN for the receipt (packet paymentreceipt, the billing
+  # consumer): whole 1688 -> 1701, thirteen new tests in one file
+  # (`test/courier/consumers/payment_succeeded_test.exs`) and the seven
+  # closed-set tables the new `receipt` type reaches, each updated in the same
+  # commit — the mail types, the preferences catalog, the controller's two
+  # seven-slot patterns, the header sweep's payload fixture and the subscribed
+  # list. **1701 is 785 + 916**, re-measured by the two tier greps and `mix
+  # test` on this tree, so the parts still sum to the whole: the no-database
+  # tier did not move, because the only new tests are in the database tier
+  # where the send path — `Courier.Deliver` — writes the outbox row in the
+  # same transaction as the send.
+  minimum: 1695
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
