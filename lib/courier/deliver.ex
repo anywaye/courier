@@ -281,7 +281,7 @@ defmodule Courier.Deliver do
         {:ok, {:tenant, row}}
 
       nil ->
-        if domain == Mailers.sender_domain() do
+        if domain == Mailers.deployment_domain() do
           {:ok, :deployment}
         else
           {:error, {:no_sending_domain, domain}}

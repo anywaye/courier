@@ -34,6 +34,12 @@ config :courier,
 # with a hole in it.
 config :courier, :mailing,
   from: {"caFaye", "no-reply@cafaye.com"},
+  # The deployment's OWN sending domain, distinct from the message's from-address
+  # in a hosted, multi-sender courier: `Courier.Deliver` uses it to tell courier's
+  # own mail (which keeps the deployment credential, as it always has) from a
+  # from-address nobody registered (which is refused). See `Courier.Mailers.
+  # deployment_domain/0`. `config/runtime.exs` moves it with `MAIL_FROM`.
+  deployment_domain: "cafaye.com",
   subjects: %{
     welcome: "Welcome to caFaye",
     password_reset: "Reset your caFaye password",

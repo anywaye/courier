@@ -311,12 +311,17 @@ if config_env() == :prod and serving? do
   mailing = Application.get_env(:courier, :mailing, [])
   {from_name, from_address} = mailing[:from]
 
+  resolved_from =
+    {System.get_env("MAIL_FROM_NAME", from_name), System.get_env("MAIL_FROM", from_address)}
+
   config :courier,
          :mailing,
          Keyword.merge(mailing,
-           from:
-             {System.get_env("MAIL_FROM_NAME", from_name),
-              System.get_env("MAIL_FROM", from_address)}
+           from: resolved_from,
+           # The deployment's own domain moves with MAIL_FROM, so "courier's own
+           # mail keeps the deployment credential" keeps meaning the address
+           # courier actually sends its own mail from.
+           deployment_domain: Courier.Mailers.domain_of(resolved_from)
          )
 
   # THE PROVIDER ADAPTER, and the refusal is the point.

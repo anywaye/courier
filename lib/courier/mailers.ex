@@ -305,17 +305,50 @@ defmodule Courier.Mailers do
   """
   @spec sender_domain() :: String.t() | nil
   def sender_domain do
-    case Application.get_env(:courier, :mailing, [])[:from] do
-      {_name, address} when is_binary(address) ->
-        case String.split(address, "@") do
-          [_local, domain] when domain != "" -> String.downcase(domain)
-          _other -> nil
-        end
+    domain_of(Application.get_env(:courier, :mailing, [])[:from])
+  end
 
-      _other ->
-        nil
+  @doc """
+  The deployment's OWN sending domain — the domain courier's own mail (a
+  password reset, an invitation) has always gone out as, on the deployment
+  credential.
+
+  This is distinct from `sender_domain/0` in a hosted, multi-sender courier: a
+  message's from-address can be a TENANT's domain, while the deployment's own
+  domain is a fact about the deployment and does not move with the message.
+  `Courier.Deliver` compares the message's from-domain against this to tell
+  "courier's own mail, keep the deployment credential" from "a from-address
+  nobody registered, refuse".
+
+  `config :courier, :mailing, :deployment_domain` is the value, and it falls
+  back to `sender_domain/0` when unset — which is correct for the single-sender
+  deployment courier has today, where the configured sender IS the deployment's
+  own domain. `config/runtime.exs` sets it from `MAIL_FROM` so a deployment that
+  moves its own address keeps the two in step.
+  """
+  @spec deployment_domain() :: String.t() | nil
+  def deployment_domain do
+    case Application.get_env(:courier, :mailing, [])[:deployment_domain] do
+      nil -> sender_domain()
+      domain when is_binary(domain) -> String.downcase(domain)
     end
   end
+
+  @doc """
+  The domain part of a `{name, address}` sender, lowercased, or `nil`.
+
+  Public so `config/runtime.exs` can keep `deployment_domain` in step with the
+  `MAIL_FROM` it resolves at boot, without a second copy of this parsing.
+  """
+  @spec domain_of(term()) :: String.t() | nil
+  def domain_of({_name, address}) when is_binary(address) do
+    case String.split(address, "@") do
+      [_local, domain] when domain != "" -> String.downcase(domain)
+      _other -> nil
+    end
+  end
+
+  def domain_of(_other), do: nil
 
   defp present?(nil), do: false
   defp present?(body) when is_binary(body), do: String.trim(body) != ""
