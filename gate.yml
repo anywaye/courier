@@ -761,12 +761,14 @@ gate:
       # caused it (before this, `outbox_events.subject` held only courier's
       # `courier-<uuid>` and the provider's reports quote ITS id, so nothing
       # matched). MEASURED on the merged tree, not derived:
-      # **whole 1806 = no-database 819 (38 files) + database 987 (57 files)**.
+      # **whole 1818 = no-database 831 (39 files) + database 987 (57 files)**.
       # The +5 are `test/courier/bounce_correlation_test.exs`, a
       # `Courier.DataCase` — every claim in it is about a row, a report that
-      # resolves through one and a receipt that writes one. The floor sits AT
-      # the measurement with zero headroom.
-      minimum: 1806
+      # resolves through one and a receipt that writes one. The +12 are
+      # `test/courier/sending_domains/dns/system_test.exs`, the System resolver's
+      # own parsing (no database, no network). The floor sits AT the measurement
+      # with zero headroom.
+      minimum: 1818
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
