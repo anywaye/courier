@@ -359,16 +359,16 @@ defmodule Courier.InboundReports do
 
   # The `outbox_events` row for the send this report is about, or `:unknown`.
   #
-  # Three lookups, and the order is the reason there are three. `Suppression`
-  # stores the `Message-ID` **as a provider quoted it** — RFC 5322's angle
-  # brackets stripped, and the qualifier left in place, because two providers
-  # quoting the same message differently must not be two rows. `outbox_events`
-  # holds courier's own id in `subject` and the PROVIDER's id (when the adapter's
-  # receipt carried one) in `provider_message_id`. So the stripped form is tried
-  # first, the quoted form second, and each candidate is matched against BOTH
-  # columns — a report whose `Message-ID` is neither a `subject` nor a
-  # `provider_message_id` courier holds — one from before, one from another
-  # system, one a provider invented — is `:unknown`.
+  # Two candidate forms are tried, and the order is the reason there are two.
+  # `Suppression` stores the `Message-ID` **as a provider quoted it** — RFC
+  # 5322's angle brackets stripped, and the qualifier left in place, because two
+  # providers quoting the same message differently must not be two rows.
+  # `outbox_events` holds courier's own id in `subject` and the PROVIDER's id
+  # (when the adapter's receipt carried one) in `provider_message_id`. So the
+  # stripped form is tried first, the quoted form second, and each candidate is
+  # matched against BOTH columns — a report whose `Message-ID` is neither a
+  # `subject` nor a `provider_message_id` courier holds — one from before, one
+  # from another system, one a provider invented — is `:unknown`.
   #
   # **Why the provider's column is here at all.** courier tags every message
   # with `<courier-<uuid>@cafaye.com>` and the Cloudflare provider owns the

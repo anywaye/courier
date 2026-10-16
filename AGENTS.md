@@ -199,6 +199,10 @@ test/courier_web/controllers/unsubscribe_controller_test.exs  the door, over rea
 test/courier/inbound_test.exs         THE PROOF: the whole inbound path against a
                                       real email_suppressions table, so "an unsigned
                                       payload records nothing" is a claim about rows
+test/courier/bounce_correlation_test.exs  THE PROOF: a real Cloudflare send records
+                                      the provider's receipt id, and a signed report
+                                      quoting it resolves to the send instead of
+                                      warning — the join, driven end to end
 test/courier/workers/                 the relay, the fan-out, and the sender
 test/courier_web/controllers/          the API, and the authorization matrix
 test/courier_web/controllers/messages_controller_test.exs  the send surface:
@@ -957,6 +961,35 @@ rather than emitting what it cannot redact. A provider that adds an event type
 should produce a log line, not silence. The distinction that matters: a KNOWN
 value meaning "the provider does not know" (`Undetermined`) is classified, and an
 UNKNOWN value is a refusal.
+
+**A send and the report about it meet on the provider's id, because the provider
+owns the `Message-ID`.** `Courier.Deliver` writes courier's own id into the
+`Message-ID` header and records it as `outbox_events.subject`, and
+`Courier.InboundReports.with_data/2` used to join a report back to that send on
+`subject` alone. That assumed the provider quotes courier's id. Cloudflare owns
+the header — it refuses a caller-supplied one with `400 / 10202` and returns its
+own `result.message_id` — so a real password reset was recorded as
+`subject = courier-2be282f1-…`, the provider's bounce quoted a different id, and
+`Courier.InboundReports` logged `courier holds no sent message for Message-ID
+"…"` for a message courier really sent. So courier keeps its own id (every
+existing row, the published envelope and the platform's events are keyed on it)
+and records the adapter's receipt id **beside** it in
+`outbox_events.provider_message_id`, in the same transaction as the send —
+`Courier.Deliver.send_and_record/4` has the receipt in hand exactly there, and a
+crash before the write would lose the correlation for a message that went out.
+`sent_for/1` then matches each candidate `Message-ID` against **both** columns.
+Two rules that look like details and are not: a receipt with **no** id (a 2xx
+whose body carries no `message_id`, a shape the adapter supports deliberately)
+records `nil` and courier invents nothing, because the existing "holds no sent
+message" warning is then the honest answer; and the provider's id goes in a
+**column**, not in the event's `data`, because `courier.email.delivered`'s schema
+in `cafaye/core` is `additionalProperties: false` and a fifth key would fail
+core's own schema on the bus. `test/courier/bounce_correlation_test.exs` drives
+both halves for real — a send through `Courier.Adapters.CloudflareEmail` against
+a real HTTP fixture, and a signed `POST /inbound/resend` quoting the id it
+returned — and its join assertion goes red if the query stops reading
+`provider_message_id` while the storage assertion goes red if the column is left
+unwritten.
 
 **An outbox row is written by `Courier.Outbox.insert/1` and by nothing else, and
 that function enqueues the relay in the caller's transaction.** courier had three
