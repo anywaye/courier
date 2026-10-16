@@ -123,7 +123,7 @@ defmodule Courier.DeliverSendingDomainTest do
       # The from-address on the wire is the tenant's domain, which is the pair
       # the credential is scoped to.
       assert decode!(request.body)["from"] == %{
-               "email" => "no-reply@#{@domain}",
+               "address" => "no-reply@#{@domain}",
                "name" => "caFaye"
              }
     end
