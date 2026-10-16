@@ -142,6 +142,15 @@ defmodule CourierWeb.MessagesController do
         {:error, {:suppressed_address, state}} ->
           suppressed(conn, state)
 
+        {:error, {:unverified_sending_domain, domain}} ->
+          unverified_sending_domain(conn, domain)
+
+        {:error, {:revoked_sending_domain, domain}} ->
+          revoked_sending_domain(conn, domain)
+
+        {:error, {:no_sending_domain, domain}} ->
+          no_sending_domain(conn, domain)
+
         {:error, {:delivery_failed, reason}} ->
           provider_refused(conn, reason)
 
@@ -345,6 +354,61 @@ defmodule CourierWeb.MessagesController do
       :conflict,
       "That recipient reported a previous message as spam. courier does not write " <>
         "to someone who has asked not to be written to."
+    )
+  end
+
+  # The send path's three sending-domain refusals. `Courier.Deliver` chooses the
+  # sender by the message's FROM domain: a row this account owns that is not
+  # usable (unverified or revoked) is a REFUSAL rather than a fallback to the
+  # deployment's credential, because that would be one tenant's mail leaving on a
+  # domain it did not prove. None of the three is courier failing, so none is a
+  # 500 — the state is the caller's and each is told apart by status and `code`.
+
+  # A domain the caller registered and did not finish proving. `verified_at` is
+  # the switch, and the remedy is the verification route. 409 and not 422: it is
+  # the resource's own state, not a malformed request — the same reasoning the
+  # suppression 409 gives. **The domain is named and the credential behind it is
+  # not**: the row carries a sealed provider token, and a refusal is the last
+  # place it should leave courier.
+  defp unverified_sending_domain(conn, domain) do
+    Problem.send(
+      conn,
+      409,
+      :conflict,
+      "courier is not sending from #{domain}: this account registered the domain but " <>
+        "has not proven it, so the send is refused rather than falling back to the " <>
+        "deployment's own sending domain. Finish verification through " <>
+        "POST /v1/sending_domains/{id}/verify and send again."
+    )
+  end
+
+  # A domain the caller proved and then revoked. The row is kept as history, it is
+  # never selected again, and there is no API that reverses a revocation — so the
+  # detail says so rather than pointing a caller at a route that does not exist.
+  defp revoked_sending_domain(conn, domain) do
+    Problem.send(
+      conn,
+      409,
+      :conflict,
+      "courier is not sending from #{domain}: this account revoked the domain, and a " <>
+        "revoked domain does not send. There is no API that un-revokes it."
+    )
+  end
+
+  # A from-domain this account never registered and that is not the deployment's
+  # own sender. A 422 and not a 409 because there is no resource in a state — the
+  # caller can register and prove the domain, which is a correction to the
+  # request rather than a conflict with something that exists. No `errors[]`:
+  # core reserves it for a field at fault, and the from-domain is not a field of
+  # this request (a body carrying `from` is refused as an unknown field).
+  defp no_sending_domain(conn, domain) do
+    Problem.send(
+      conn,
+      422,
+      :validation_failed,
+      "courier is not configured to send from #{domain}, and this account has not " <>
+        "registered it. Register the domain through POST /v1/sending_domains and " <>
+        "prove it before sending from it."
     )
   end
 
