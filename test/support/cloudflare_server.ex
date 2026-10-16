@@ -179,11 +179,45 @@ defmodule Courier.TestSupport.CloudflareServer do
         }
       })
 
-      [{:response, status, response_body}] = :ets.lookup(opts[:response_table], :response)
+      # Schema validation: the REST API's named-address object is
+      # `{"address", "name"}` — a payload carrying `"email"` is
+      # refused with 400 invalid_request_schema (measured live on
+      # cafaye.com). This makes the test server behave like the provider
+      # rather than re-stating the adapter's own constant.
+      {status, response_body} =
+        if contains_email_key?(body) do
+          {400,
+           ~s({"success":false,"errors":[{"code":10001,"message":"email.sending.error.invalid_request_schema"}],"messages":[],"result":null})}
+        else
+          [{:response, s, b}] = :ets.lookup(opts[:response_table], :response)
+          {s, b}
+        end
 
       conn
       |> put_resp_content_type("application/json")
       |> send_resp(status, response_body)
     end
+
+    defp contains_email_key?(body) do
+      case Jason.decode(body) do
+        {:ok, decoded} when is_map(decoded) ->
+          Enum.any?(["from", "to", "cc", "bcc", "reply_to"], fn field ->
+            case Map.get(decoded, field) do
+              nil -> false
+              value -> address_value_has_email_key?(value)
+            end
+          end)
+
+        _ ->
+          false
+      end
+    end
+
+    defp address_value_has_email_key?(value) when is_map(value), do: Map.has_key?(value, "email")
+
+    defp address_value_has_email_key?(value) when is_list(value),
+      do: Enum.any?(value, &address_value_has_email_key?/1)
+
+    defp address_value_has_email_key?(_), do: false
   end
 end

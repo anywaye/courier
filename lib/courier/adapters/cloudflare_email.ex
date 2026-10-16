@@ -23,7 +23,7 @@ defmodule Courier.Adapters.CloudflareEmail do
     * required body fields: `to`, `from`, `subject`, plus at least one of
       `html` / `text`
     * `to` / `from` / `cc` / `bcc` each accept a bare address string or
-      `{name, email}` — the shape `recipient/1` builds
+      `{address, name}` — the shape `recipient/1` builds (REST API; the Workers binding uses `{email, name}` and is the wrong shape here)
     * `headers` is `additionalProperties: string` — a JSON object, same as the
       previous MailChannels contract, and NOT an array of pairs
     * `attachments` are `{content (base64), filename, type, disposition}` —
@@ -266,7 +266,7 @@ defmodule Courier.Adapters.CloudflareEmail do
   defp recipient(nil), do: ""
   defp recipient({nil, email}), do: email
   defp recipient({"", email}), do: email
-  defp recipient({name, email}), do: %{"name" => name, "email" => email}
+  defp recipient({name, email}), do: %{"address" => email, "name" => name}
   defp recipient(email) when is_binary(email), do: email
 
   defp accepted(code, body) do

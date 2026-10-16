@@ -70,11 +70,11 @@ defmodule Courier.CloudflareDeliveryTest do
       payload = decode!(request.body)
 
       # The sender courier built: `config :courier, :mailing`'s from address.
-      assert payload["from"] == %{"email" => "no-reply@cafaye.com", "name" => "caFaye"}
+      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "caFaye"}
 
       # The recipient the platform handed in — Cloudflare's `to` is the address
       # itself, not a personalizations wrapper.
-      assert payload["to"] == %{"email" => "roundtrip@example.com", "name" => "Round Trip"}
+      assert payload["to"] == %{"address" => "roundtrip@example.com", "name" => "Round Trip"}
 
       # The subject is courier's, from the `:mailing` configuration, rendered
       # through the template — so this is also the assertion that the subject
@@ -468,9 +468,9 @@ defmodule Courier.CloudflareDeliveryTest do
       assert [request] = CloudflareServer.take(server)
       payload = decode!(request.body)
 
-      assert payload["from"] == %{"email" => "no-reply@cafaye.com", "name" => "caFaye"}
-      assert payload["to"] == %{"email" => "ada@example.com", "name" => "Ada"}
-      assert payload["cc"] == %{"email" => "bead@example.com", "name" => "Bead"}
+      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "caFaye"}
+      assert payload["to"] == %{"address" => "ada@example.com", "name" => "Ada"}
+      assert payload["cc"] == %{"address" => "bead@example.com", "name" => "Bead"}
       assert payload["bcc"] == "quiet@example.com"
       assert payload["subject"] == "Shapes"
       assert payload["text"] == "plain"
@@ -486,6 +486,54 @@ defmodule Courier.CloudflareDeliveryTest do
       inline = Enum.find(payload["attachments"], &(&1["filename"] == "logo.png"))
       assert inline["disposition"] == "inline"
       assert inline["content"] == Base.encode64("logo-bytes")
+    end
+  end
+
+  describe "REST API address shape regression (cf-address-key)" do
+    test "request body carries `address` not `email` for named from and to — the shape the REST API accepts" do
+      {:ok, server, port} = CloudflareServer.start_link()
+      put_adapter(port)
+
+      assert {:ok, _receipt} =
+               deliver(:welcome, %{
+                 user_id: "usr_address_shape",
+                 email: "shape@example.com",
+                 name: "Shape"
+               })
+
+      assert [request] = CloudflareServer.take(server)
+      payload = decode!(request.body)
+
+      # The REST API's named-address object is {address, name}; {email, name}
+      # is the Workers binding shape and is refused with 400
+      # invalid_request_schema (measured live on cafaye.com).
+      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "caFaye"}
+      assert payload["to"] == %{"address" => "shape@example.com", "name" => "Shape"}
+      refute Map.has_key?(payload["from"], "email")
+      refute Map.has_key?(payload["to"], "email")
+
+      # Bare address with no display name stays a bare string — also valid.
+      assert payload["bcc"] == nil or is_binary(payload["bcc"]) or is_map(payload["bcc"])
+    end
+
+    test "a bare address with no name is sent as a bare string, not an object" do
+      {:ok, server, port} = CloudflareServer.start_link()
+      put_adapter(port)
+
+      email =
+        Swoosh.Email.new()
+        |> Swoosh.Email.from({"caFaye", "no-reply@cafaye.com"})
+        |> Swoosh.Email.to("bare@example.com")
+        |> Swoosh.Email.subject("Bare")
+        |> Swoosh.Email.text_body("hi")
+
+      assert {:ok, _receipt} = Courier.Mailer.deliver(email)
+
+      assert [request] = CloudflareServer.take(server)
+      payload = decode!(request.body)
+
+      assert payload["to"] == "bare@example.com"
+      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "caFaye"}
     end
   end
 
