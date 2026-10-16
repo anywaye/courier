@@ -33,6 +33,16 @@ defmodule Courier.OutboxEvent do
     field :subject, :string
     field :occurred_at, :utc_datetime_usec
     field :data, :map
+
+    # The provider's own id for this send, when the adapter's receipt carried
+    # one. `subject` stays courier's id — it is what the platform's events are
+    # keyed on — and this is the SECOND id, recorded so a provider's bounce or
+    # delivery report, which quotes the provider's id and not courier's, can be
+    # joined to the send it is about. Null is a real state: a 2xx with no
+    # `message_id` in the body records nothing here and courier invents none.
+    # See `Courier.InboundReports.with_data/2` for the join.
+    field :provider_message_id, :string
+
     field :published_at, :utc_datetime_usec
     field :attempt_count, :integer, default: 0
     field :last_error, :string
@@ -56,10 +66,15 @@ defmodule Courier.OutboxEvent do
   now — the time the state change happened, not the time the row was published,
   which is core's rule and the reason a row that sat unpublished for an hour
   still reports the original time.
+
+  `provider_message_id` is cast and optional: the provider's own id for the send,
+  recorded beside courier's (`:subject`) so a report that quotes the provider's
+  id can be joined back to the send. See the field's comment and
+  `Courier.InboundReports`.
   """
   def changeset(event, attrs) do
     event
-    |> cast(attrs, [:type, :subject, :data])
+    |> cast(attrs, [:type, :subject, :data, :provider_message_id])
     |> validate_required([:type, :subject, :data])
     |> put_change(:id, Ecto.UUID.generate())
     |> put_change(:source, @source)

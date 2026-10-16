@@ -45,6 +45,21 @@ defmodule Courier.Deliver do
   nothing claiming a mail went out; if it accepts, the row is there to be
   published and the caller gets the message id and the event's id.
 
+  ## Two ids, and why both
+
+  courier's own id (`courier-<uuid>`) is what `subject` and the platform's
+  events carry, and it stays. But the provider assigns its own id to the
+  message — Cloudflare owns the `Message-ID` and refuses a caller-supplied one,
+  so the message that goes out is not the one courier tagged — and the
+  provider's OWN bounce and delivery reports quote **its** id, not courier's.
+  So the adapter's receipt id is recorded beside courier's in
+  `outbox_events.provider_message_id`, in the same transaction as the send, and
+  `Courier.InboundReports` joins a report back to the send on either id. A
+  receipt that carries no id (a 2xx body with no `message_id`, a shape the
+  adapter supports deliberately) records none, and a report courier cannot tie
+  to a send still records its suppression and says so — see
+  `Courier.InboundReports`.
+
   ## The one-click unsubscribe, and why it is inside that transaction
 
   A bulk message carries `List-Unsubscribe` and `List-Unsubscribe-Post` (RFC 8058
@@ -362,8 +377,18 @@ defmodule Courier.Deliver do
            case Unsubscribes.decorate_for(type, user_id, email) do
              {:ok, email} ->
                case deliver_to_provider(tag(email, message_id), sender) do
-                 {:ok, _metadata} -> record(type, user_id, message_id, email)
-                 {:error, reason} -> {:error, {:provider, reason}}
+                 # The provider's own receipt, kept rather than discarded: the
+                 # id the provider's seconds-later bounce or delivery report
+                 # quotes is in here, and recording it in THIS transaction is
+                 # the difference between a report that can be joined to the
+                 # send and the "courier holds no sent message" warning. A
+                 # receipt carrying no id records none — see
+                 # `provider_message_id/1`.
+                 {:ok, receipt} ->
+                   record(type, user_id, message_id, provider_message_id(receipt), email)
+
+                 {:error, reason} ->
+                   {:error, {:provider, reason}}
                end
 
              {:error, reason} ->
@@ -426,12 +451,13 @@ defmodule Courier.Deliver do
   # `Courier.Outbox` for why the alternative — insert here, enqueue on the way out
   # — reintroduces the "the state changed and nobody was told" failure this table
   # exists to make impossible.
-  defp record(type, user_id, message_id, email) do
+  defp record(type, user_id, message_id, provider_message_id, email) do
     case Outbox.insert(
            %OutboxEvent{}
            |> OutboxEvent.changeset(%{
              type: Events.delivered_type(),
              subject: message_id,
+             provider_message_id: provider_message_id,
              data: data(user_id, type, message_id, email)
            })
          ) do
@@ -448,6 +474,18 @@ defmodule Courier.Deliver do
         {:error, changeset}
     end
   end
+
+  # The provider's own id for the send, out of the adapter's receipt, or `nil`.
+  #
+  # `Swoosh.Adapters.Local` and `Courier.Adapters.CloudflareEmail` both answer
+  # `%{id: …}`, and the Test adapter answers `%{}` — so a receipt with no id is
+  # a real and supported shape and courier records nothing rather than inventing
+  # one. Both `:id` and `"id"` are read because an adapter's receipt is the
+  # provider SDK's map and the key's type is the SDK's to choose; anything else
+  # is `nil`, which is the honest answer.
+  defp provider_message_id(%{id: id}) when is_binary(id), do: id
+  defp provider_message_id(%{"id" => id}) when is_binary(id), do: id
+  defp provider_message_id(_receipt), do: nil
 
   # The send's own fields, and nothing from the payload: this goes to every
   # subscriber on the bus, and a verification token or an invitation id in there

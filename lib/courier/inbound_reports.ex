@@ -359,21 +359,36 @@ defmodule Courier.InboundReports do
 
   # The `outbox_events` row for the send this report is about, or `:unknown`.
   #
-  # Two lookups, and the order is the reason there are two. `Suppression` stores
-  # the `Message-ID` **as a provider quoted it** — RFC 5322's angle brackets
-  # stripped, and the qualifier left in place, because two providers quoting the
-  # same message differently must not be two rows. `outbox_events.subject` is
-  # courier's own id, with no qualifier. So the stripped form is tried first and
-  # the quoted form second, and a report whose `Message-ID` is neither — one from
-  # before, one from another system, one a provider invented — is `:unknown`.
+  # Three lookups, and the order is the reason there are three. `Suppression`
+  # stores the `Message-ID` **as a provider quoted it** — RFC 5322's angle
+  # brackets stripped, and the qualifier left in place, because two providers
+  # quoting the same message differently must not be two rows. `outbox_events`
+  # holds courier's own id in `subject` and the PROVIDER's id (when the adapter's
+  # receipt carried one) in `provider_message_id`. So the stripped form is tried
+  # first, the quoted form second, and each candidate is matched against BOTH
+  # columns — a report whose `Message-ID` is neither a `subject` nor a
+  # `provider_message_id` courier holds — one from before, one from another
+  # system, one a provider invented — is `:unknown`.
+  #
+  # **Why the provider's column is here at all.** courier tags every message
+  # with `<courier-<uuid>@cafaye.com>` and the Cloudflare provider owns the
+  # `Message-ID` — it refuses a caller-supplied one and reports its own
+  # `result.message_id`. So the id its reports quote is `provider_message_id`,
+  # and matching only on `subject` is what produced the "courier holds no sent
+  # message" warning for a message courier really sent. Both columns are read in
+  # one query, so a provider that quotes either id resolves.
   defp sent_for(%Suppression{message_id: message_id}) when is_binary(message_id) do
     bare = strip_qualifier(message_id)
-    Enum.find_value([bare, message_id], :unknown, &sent(&1, bare))
+    Enum.find_value([bare, message_id], :unknown, &sent/1)
   end
 
   defp sent_for(%Suppression{}), do: :unknown
 
-  defp sent(candidate, bare) do
+  # One candidate, matched against the send's own id and the provider's. A
+  # provider id may itself carry a qualifier the suppression kept, which is why
+  # `sent_for/1` tries the stripped form first; `strip_qualifier/1` is a no-op on
+  # an id with no `@`, so a bare provider id is tried as itself.
+  defp sent(candidate) do
     case candidate do
       "" ->
         nil
@@ -381,7 +396,9 @@ defmodule Courier.InboundReports do
       _other ->
         query =
           from event in OutboxEvent,
-            where: event.subject == ^candidate and event.type == ^Events.delivered_type(),
+            where:
+              event.type == ^Events.delivered_type() and
+                (event.subject == ^candidate or event.provider_message_id == ^candidate),
             order_by: [asc: event.inserted_at, asc: event.id],
             limit: 1
 
@@ -390,7 +407,7 @@ defmodule Courier.InboundReports do
             # A provider can quote an id courier issued for a send it never
             # recorded, and a hand-written `data` would put a user id nobody
             # checked on the bus. Both are refused.
-            if attributable?(event, bare) do
+            if attributable?(event) do
               event
             else
               unattributable(candidate, Events.delivered_type())
@@ -403,14 +420,15 @@ defmodule Courier.InboundReports do
     end
   end
 
-  # What makes a row courier will actually publish: a subject in courier's own
-  # `message_id` shape, and a `user_id` and a `notification_type` that are there.
-  # A `nil` in either is a payload core's schema would reject on the bus.
-  defp attributable?(%OutboxEvent{subject: subject, data: data}, bare) do
-    bare?(subject, bare) and is_binary(data["user_id"]) and is_binary(data["notification_type"])
+  # What makes a row courier will publish: a `user_id` and a
+  # `notification_type` that are there, because a `nil` in either is a payload
+  # core's schema would reject on the bus. The query above has already decided
+  # the row IS this report's send — by `subject` or by `provider_message_id` —
+  # so the match is not re-tested here; the id-shape check the earlier version
+  # made is the query's own WHERE clause now, for both columns rather than one.
+  defp attributable?(%OutboxEvent{data: data}) do
+    is_binary(data["user_id"]) and is_binary(data["notification_type"])
   end
-
-  defp bare?(subject, bare), do: subject == bare
 
   # `<courier-…@cafaye.com>` → `courier-…`. A provider's qualifier is the domain
   # courier sent from and carries no information about the send, while the local
