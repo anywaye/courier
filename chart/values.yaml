@@ -90,15 +90,20 @@ imagePullSecrets: courier-ghcr
 #   COURIER_CLOUDFLARE_API_KEY   — the MailChannels transactional key, required
 #                                  only when COURIER_MAIL_ADAPTER=cloudflare
 #                                  (sends through MailChannels instead of SMTP)
-#   COURIER_INBOUND_RESEND_SECRET — the provider's signing secret for
-#                                  inbound webhooks
 #   COURIER_ERROR_RELAY_TOKEN    — the shared secret for the error relay
 #
-# WHAT MISSING ANY OF THEM COSTS: courier refuses to boot. Every one is
-# a `System.get_env(…) || raise` in `config/runtime.exs`, so a deployment
-# that forgets one fails at startup rather than at first use — which is
-# the cheapest possible way to find out, and it happens before the first
-# customer request rather than after a support ticket.
+# `COURIER_INBOUND_RESEND_SECRET` is **not** in that list — cf-inbound-optional.
+# It is optional: a Cloudflare-only box has no webhook to configure, boots with
+# no provider, and logs the cost ("a hard bounce or a spam complaint is discarded
+# and courier goes on mailing an address that has said it is gone"). Set it in the
+# secret when the deployment uses Resend, and the surface is exactly today's
+# behaviour.
+#
+# WHAT MISSING A REQUIRED ONE COSTS: courier refuses to boot. Every required
+# one is a `System.get_env(…) || raise` in `config/runtime.exs`, so a deployment
+# that forgets one fails at startup rather than at first use — which is the
+# cheapest possible way to find out, and it happens before the first customer
+# request rather than after a support ticket.
 secretName: courier-secrets
 
 # How many copies of the service run. One is the default for a service

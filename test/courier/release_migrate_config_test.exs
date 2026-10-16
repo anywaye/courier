@@ -45,10 +45,14 @@ defmodule Courier.ReleaseMigrateConfigTest do
   # migration should NOT need is added here deliberately rather than inherited by
   # a delete-everything helper. A migration reads `COURIER_OWNER_DATABASE_URL`
   # and nothing else, and that is the *positive* half asserted below.
+  # `COURIER_INBOUND_RESEND_SECRET` is **not** in this list — cf-inbound-optional.
+  # It is optional: a Cloudflare-only box (COURIER_MAIL_ADAPTER=cloudflare) boots
+  # with no provider, logs the cost, and its inbound route answers 500. The
+  # serving contract is the set of variables a server cannot start without, and
+  # an inbound webhook secret is not one of them.
   @serving_variables [
     "COURIER_IDENTITY_TOKEN",
     "COURIER_SECRET_BOX_KEY",
-    "COURIER_INBOUND_RESEND_SECRET",
     "COURIER_ERROR_RELAY_TOKEN",
     "COURIER_MAIL_ADAPTER",
     "COURIER_SMTP_HOST",
@@ -62,7 +66,15 @@ defmodule Courier.ReleaseMigrateConfigTest do
 
   setup do
     previous =
-      (@serving_variables ++ ["COURIER_OWNER_DATABASE_URL", "RELEASE_COMMAND"])
+      (@serving_variables ++
+         [
+           "COURIER_OWNER_DATABASE_URL",
+           "RELEASE_COMMAND",
+           "COURIER_CF_ACCOUNT_ID",
+           "COURIER_CLOUDFLARE_API_KEY",
+           "COURIER_INBOUND_RESEND_SECRET",
+           "COURIER_POSTMARK_API_TOKEN"
+         ])
       |> Map.new(&{&1, System.get_env(&1)})
 
     on_exit(fn -> restore(previous) end)
@@ -125,6 +137,125 @@ defmodule Courier.ReleaseMigrateConfigTest do
 
       assert config[:courier][Courier.OwnerRepo] == nil,
              "Courier.OwnerRepo was configured with no owner DSN present"
+    end
+  end
+
+  describe "the server boot without an inbound secret" do
+    test "boots with no inbound secret, and configures an empty map" do
+      # cf-inbound-optional: a Cloudflare box has no Resend webhook and the
+      # cheapest, most self-contained setup cannot require a second vendor's
+      # credential. The absence is a supported state — the boot configures
+      # `%{}` and the route answers 500 with the cost, rather than refusing
+      # to start. `Courier.InboundConfig` documents the cost sentence that now
+      # lives on a boot log line and in README.
+      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
+      System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
+      System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
+      System.put_env("COURIER_CLOUDFLARE_API_KEY", "fixture-not-a-credential")
+      System.put_env("COURIER_CF_ACCOUNT_ID", "fixture-account-id")
+      System.put_env("DATABASE_URL", "ecto://postgres:postgres@localhost/courier_test")
+      System.put_env("SECRET_KEY_BASE", "test-only-not-a-secret-000000000000000000000000000000")
+
+      System.delete_env("COURIER_INBOUND_RESEND_SECRET")
+      System.delete_env("COURIER_SMTP_HOST")
+      System.delete_env("COURIER_SMTP_USERNAME")
+      System.delete_env("COURIER_SMTP_PASSWORD")
+
+      config = read_config!("start")
+
+      assert config[:courier][:inbound_secrets] == %{},
+             "a server boot with no inbound secret should configure an empty map, got: #{inspect(config[:courier][:inbound_secrets])}"
+    end
+
+    test "an empty inbound secret is the same as unset" do
+      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
+      System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
+      System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
+      System.put_env("COURIER_CLOUDFLARE_API_KEY", "fixture-not-a-credential")
+      System.put_env("COURIER_CF_ACCOUNT_ID", "fixture-account-id")
+      System.put_env("DATABASE_URL", "ecto://postgres:postgres@localhost/courier_test")
+      System.put_env("SECRET_KEY_BASE", "test-only-not-a-secret-000000000000000000000000000000")
+      System.put_env("COURIER_INBOUND_RESEND_SECRET", "")
+
+      System.delete_env("COURIER_SMTP_HOST")
+      System.delete_env("COURIER_SMTP_USERNAME")
+      System.delete_env("COURIER_SMTP_PASSWORD")
+
+      config = read_config!("start")
+
+      assert config[:courier][:inbound_secrets] == %{},
+             "an empty COURIER_INBOUND_RESEND_SECRET should be treated as unset"
+    end
+
+    test "a set inbound secret configures the resend provider" do
+      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
+      System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
+      System.put_env("COURIER_MAIL_ADAPTER", "smtp")
+      System.put_env("COURIER_SMTP_HOST", "smtp.test")
+      System.put_env("COURIER_SMTP_USERNAME", "fixture")
+      System.put_env("COURIER_SMTP_PASSWORD", "fixture")
+      System.put_env("DATABASE_URL", "ecto://postgres:postgres@localhost/courier_test")
+      System.put_env("SECRET_KEY_BASE", "test-only-not-a-secret-000000000000000000000000000000")
+      System.put_env("COURIER_INBOUND_RESEND_SECRET", "whsec_dGVzdC1vbmx5LWZpeHR1cmU=")
+
+      config = read_config!("start")
+
+      assert config[:courier][:inbound_secrets] == %{"resend" => "whsec_dGVzdC1vbmx5LWZpeHR1cmU="}
+    end
+
+    test "boot without inbound logs the cost and no secret value" do
+      import ExUnit.CaptureLog
+
+      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
+      System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
+      System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
+      System.put_env("COURIER_CLOUDFLARE_API_KEY", "fixture-not-a-credential")
+      System.put_env("COURIER_CF_ACCOUNT_ID", "fixture-account-id")
+      System.put_env("DATABASE_URL", "ecto://postgres:postgres@localhost/courier_test")
+      System.put_env("SECRET_KEY_BASE", "test-only-not-a-secret-000000000000000000000000000000")
+      System.delete_env("COURIER_INBOUND_RESEND_SECRET")
+      System.delete_env("COURIER_SMTP_HOST")
+      System.delete_env("COURIER_SMTP_USERNAME")
+      System.delete_env("COURIER_SMTP_PASSWORD")
+
+      log = capture_log(fn -> read_config!("start") end)
+
+      assert log =~ "inbound: no provider configured",
+             "the boot line should name the unconfigured inbound state"
+
+      assert log =~
+               "a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone",
+             "the boot line must keep the cost sentence from the old raise"
+
+      refute log =~ "whsec_",
+             "the boot line must not name a secret value"
+    end
+
+    test "boot with inbound logs verifying and no cost" do
+      import ExUnit.CaptureLog
+
+      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
+      System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
+      System.put_env("COURIER_MAIL_ADAPTER", "smtp")
+      System.put_env("COURIER_SMTP_HOST", "smtp.test")
+      System.put_env("COURIER_SMTP_USERNAME", "fixture")
+      System.put_env("COURIER_SMTP_PASSWORD", "fixture")
+      System.put_env("DATABASE_URL", "ecto://postgres:postgres@localhost/courier_test")
+      System.put_env("SECRET_KEY_BASE", "test-only-not-a-secret-000000000000000000000000000000")
+      System.put_env("COURIER_INBOUND_RESEND_SECRET", "whsec_dGVzdC1vbmx5LWZpeHR1cmU=")
+
+      log = capture_log(fn -> read_config!("start") end)
+
+      refute log =~ "no provider configured",
+             "a boot with a provider should not log the no-provider warning"
+
+      refute log =~ "whsec_",
+             "the boot line must not name a secret value even when verifying"
     end
   end
 

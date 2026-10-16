@@ -407,6 +407,19 @@ COURIER_POSTMARK_API_TOKEN=...     # required when the adapter is postmark
 COURIER_CLOUDFLARE_API_KEY=...     # required when the adapter is cloudflare
 ```
 
+**For a box, Cloudflare is the recommended default** — and the choice is a
+practical one rather than a preference. The credential (`COURIER_CLOUDFLARE_
+API_KEY`) is a **scoped API token from the same Cloudflare dashboard that owns
+the DNS**, so an operator who can point the domain at Cloudflare already holds
+the place it comes from; the domain authorization (`_mailchannels` TXT for
+Domain Lockdown and `include:relay.mailchannels.net` in SPF) is the same
+Cloudflare Email Sending onboarding the DNS half already needs; and the provider
+answers **synchronously** (`delivered` / `queued` / `permanent_bounces` /
+`suppressed_recipients`), so the suppression list lives on the account rather
+than behind a webhook. `smtp` and `postmark` remain documented alternatives —
+smtp because every provider speaks it, postmark because it is a transactional
+service with a single API token — and the adapter stays a one-variable choice.
+
 Cloudflare Email Routing itself is receive-only and has no send API. The
 sending half of a Cloudflare Email connection is the MailChannels
 transactional API, so that is the contract this adapter speaks:
@@ -451,7 +464,7 @@ learns what happened to a message. The provider reports back by webhook, and
 `POST /inbound/resend` is the surface that takes those reports:
 
 ```sh
-COURIER_INBOUND_RESEND_SECRET=whsec_…    # required in prod; the provider's own secret
+COURIER_INBOUND_RESEND_SECRET=whsec_…    # provider's own secret, optional; see below
 ```
 
 That secret is the one courier **verifies** with, copied from the provider's
@@ -461,12 +474,25 @@ sealed under `COURIER_SECRET_BOX_KEY` and stored in the database, and conflating
 the two would mean a deployment that leaked a customer's outbound secret could
 also forge inbound suppressions.
 
-**Unset is a refusal to boot in production.** Every hard bounce and every
-complaint would be *discarded*, silently enough that `email_suppressions` stays
-empty, `POST /v1/messages` goes on mailing addresses that have permanently
-refused, and a sending domain's reputation dies of a cause no dashboard names.
-That is the failure `Courier.Suppressions` was written to prevent, arriving
-through the door meant to prevent it.
+**Unset is a supported state, not a boot error** — cf-inbound-optional. With no
+provider configured courier boots, sends mail, and logs
+
+```
+inbound: no provider configured — a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone; set COURIER_INBOUND_RESEND_SECRET to enable Resend inbound reports
+```
+
+Every hard bounce and every complaint is then *discarded*, silently enough that
+`email_suppressions` stays empty, `POST /v1/messages` goes on mailing addresses
+that have permanently refused, and a sending domain's reputation dies of a cause
+no dashboard names. That is the failure `Courier.Suppressions` was written to
+prevent, arriving through the door meant to prevent it — and that sentence now
+lives on the boot line above so a deployment that loses bounce reporting is told.
+A Cloudflare-only box has no webhook to configure: its send call answers with the
+per-recipient verdict synchronously and the account keeps a suppression list, and
+the adapter already surfaces a bounce-shaped 2xx as an error. Set the variable
+and the surface is exactly today's behaviour; a request to it with nothing
+configured is a 500 naming the variable, and no secret value ever appears in the
+log.
 
 Three things about the surface that are decisions rather than details, each
 argued at length in the module that owns it:

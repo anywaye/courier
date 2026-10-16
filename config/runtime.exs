@@ -395,8 +395,8 @@ if config_env() == :prod and serving? do
            Generate one with: openssl rand -base64 32
            """)
 
-  # The signing secrets courier VERIFIES inbound provider webhooks with, and the
-  # refusal is the point — see `Courier.InboundConfig` for the argument.
+  # The signing secrets courier VERIFIES inbound provider webhooks with — see
+  # `Courier.InboundConfig` for the argument.
   #
   # One variable per provider, named for the provider. A single shared variable
   # would make adding a second provider an edit to the first one's configuration,
@@ -409,13 +409,20 @@ if config_env() == :prod and serving? do
   # directions. A deployment that leaked a customer's outbound signing secret
   # through it must not thereby be able to forge inbound suppressions.
   #
-  # Required rather than defaulted, and the reason is specific rather than
-  # general. Unset, `Courier.Inbound.Signature.verify/4` refuses every request and
-  # every hard bounce and every complaint is DISCARDED — while `POST /v1/messages`
-  # goes on mailing addresses that have permanently refused them, and a sending
-  # domain's reputation dies of a cause no dashboard names. A default would be
-  # worse: a secret in version control that every deployment which forgot to set
-  # one would accept forged suppressions under.
+  # **Optional in production, and the absence is a supported state rather than a
+  # boot error** — cf-inbound-optional. Unset, `Courier.Inbound.Signature.
+  # verify/4` refuses every inbound request and every hard bounce and every
+  # complaint is DISCARDED — while `POST /v1/messages` goes on mailing addresses
+  # that have permanently refused them, and a sending domain's reputation dies of
+  # a cause no dashboard names. That cost is now stated on a boot log line and
+  # in README's "Hearing back" section instead of in a raise, because a
+  # Cloudflare-only box (COURIER_MAIL_ADAPTER=cloudflare) has no Resend webhook
+  # to configure — its provider answers synchronously and keeps its own
+  # suppression list — and the cheapest, most self-contained mail setup the
+  # platform has cannot be the only one that needs a second vendor's credential.
+  # A default would still be worse: a secret in version control that every
+  # deployment which forgot to set one would accept forged suppressions under,
+  # which is an unauthenticated `POST` that mails nobody.
   #
   # In Resend's dashboard this is the webhook endpoint's **Signing Secret**,
   # copied from the endpoint's page. It is a Svix secret and carries the `whsec_`
@@ -436,30 +443,45 @@ if config_env() == :prod and serving? do
   #     path. An atom there would be `String.to_existing_atom/1` on the request
   #     path of a route, and with `to_atom/1` an unbounded atom table fed by
   #     whoever finds the URL.
-  config :courier, :inbound_secrets, %{
-    "resend" =>
-      System.get_env("COURIER_INBOUND_RESEND_SECRET") ||
-        raise("""
-        environment variable COURIER_INBOUND_RESEND_SECRET is missing.
+  # An empty string counts as unset — `COURIER_INBOUND_RESEND_SECRET=` in a
+  # compose file produces `""` and an empty key is as unusable as a missing one.
+  inbound_resend_secret =
+    case System.get_env("COURIER_INBOUND_RESEND_SECRET") do
+      nil ->
+        nil
 
-        It is the signing secret courier verifies inbound webhooks WITH, copied
-        from the provider's dashboard (Resend: the webhook endpoint's Signing
-        Secret). It is not the secret courier signs outbound deliveries with.
+      "" ->
+        nil
 
-        Unset, courier refuses every inbound report, so a hard bounce or a spam
-        complaint is discarded and courier goes on mailing an address that has
-        said it is gone. See Courier.InboundConfig.
-        """)
-  }
+      value when is_binary(value) ->
+        trimmed = String.trim(value)
+        if trimmed == "", do: nil, else: trimmed
+    end
+
+  config :courier,
+         :inbound_secrets,
+         if(inbound_resend_secret, do: %{"resend" => inbound_resend_secret}, else: %{})
 
   require Logger
 
   # Which inbound surfaces are live, and never the secrets themselves — the same
   # rule as the mailer line above, and for a sharper reason: the inbound secret IS
-  # the key.
-  Logger.info(
-    "inbound: verifying #{Enum.join(Courier.InboundConfig.configured_providers(), ", ")}"
-  )
+  # the key. Unset, the cost is named rather than hidden: a hard bounce or a spam
+  # complaint is discarded and courier goes on mailing an address that has said
+  # it is gone. That sentence is the one the previous raise carried, and it now
+  # lives on this log line and in README so a deployment that loses bounce
+  # reporting is told.
+  case inbound_resend_secret do
+    nil ->
+      Logger.warning(
+        "inbound: no provider configured — a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone; set COURIER_INBOUND_RESEND_SECRET to enable Resend inbound reports"
+      )
+
+    _secret ->
+      Logger.info(
+        "inbound: verifying #{Enum.join(Courier.InboundConfig.configured_providers(), ", ")}"
+      )
+  end
 end
 
 if config_env() == :prod do

@@ -83,7 +83,9 @@ defmodule Courier.ComposeConfigTest do
     "POOL_SIZE" => "the repo size, defaulted at runtime.exs",
     "DNS_CLUSTER_QUERY" => "kit's postgres clustering; irrelevant to one node",
     "SOME_APP_SSL_KEY_PATH" => "leftover from the Phoenix generator; never read on this path",
-    "SOME_APP_SSL_CERT_PATH" => "leftover from the Phoenix generator; never read on this path"
+    "SOME_APP_SSL_CERT_PATH" => "leftover from the Phoenix generator; never read on this path",
+    "COURIER_INBOUND_RESEND_SECRET" =>
+      "optional — a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone; the inbound route answers 500. A Cloudflare-only box has no webhook to configure and boots with no provider. The dev stack carries a placeholder so the surface can be exercised."
   }
 
   describe "the mailpit service" do

@@ -155,7 +155,6 @@ defmodule Courier.Consumers.Subscriber do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-
   @impl GenServer
   def init(_opts) do
     send(self(), :subscribe)

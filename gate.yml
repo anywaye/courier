@@ -693,7 +693,17 @@ gate:
   # sits AT the measurement with zero headroom, for the reason the telemetry
   # paragraph gives: the next packet that adds a test goes red until it raises
   # this number.
-      minimum: 1747
+  #
+  # REMEASURED on the tree carrying cf-inbound-optional — a Cloudflare box
+  # should not need a Resend credential: whole 1752 = no-database 807 (36 files)
+  # + database 945 (54 files). The +5 are all in the no-database tier:
+  # `test/courier/release_migrate_config_test.exs` gains 5 (a plain
+  # `ExUnit.Case` because its subject is `config/runtime.exs` evaluated as a boot
+  # and the cost sentence on a boot log line, which need no row) — the empty
+  # secret is the same as unset, the boot configures `%{}` and logs the cost
+  # without naming the secret, and a set secret configures `resend`. The floor
+  # sits AT the measurement with zero headroom.
+      minimum: 1752
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

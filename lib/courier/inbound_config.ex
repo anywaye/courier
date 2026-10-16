@@ -1,7 +1,7 @@
 defmodule Courier.InboundConfig do
   @moduledoc """
-  The signing secrets courier verifies inbound webhooks with, and the refusal to
-  boot without one.
+  The signing secrets courier verifies inbound webhooks with — optional in
+  production, with the cost stated on a boot log line.
 
   ## This is a *verification* secret, and it is not the outbound one
 
@@ -14,7 +14,7 @@ defmodule Courier.InboundConfig do
   secret can also forge inbound suppressions. So the two are configured
   separately and this module says so where the variable is read.
 
-  ## Why a secret is REQUIRED in production
+  ## Why a secret is OPTIONAL in production — cf-inbound-optional
 
   Unset, `Courier.Inbound.Signature.verify/4` answers `:invalid_secret` for every
   request, the route answers 500, and **every hard bounce and every complaint
@@ -24,12 +24,22 @@ defmodule Courier.InboundConfig do
   dashboard names. That is precisely the failure `Courier.Suppressions` was
   written to prevent, arriving through the door that was supposed to prevent it.
 
-  So `config/runtime.exs` **refuses to boot** a production courier without it,
-  on the argument `Courier.MailerAdapter` makes: a courier that is running and
+  So `config/runtime.exs` **used to refuse to boot** a production courier without
+  it, on the argument `Courier.MailerAdapter` makes: a courier that is running and
   cannot do the thing is worse than one that will not start, because the damage is
-  invisible. A default would be worse than nothing — a secret in version control
-  that every deployment which forgot to set one would accept forged suppressions
-  under, which is an unauthenticated `POST` that mails nobody.
+  invisible. That held while every deployment needed a Resend webhook; it no longer
+  holds for a Cloudflare-only box (`COURIER_MAIL_ADAPTER=cloudflare`) which has no
+  delivery webhook at all — its provider answers synchronously and keeps its own
+  suppression list, and the adapter already surfaces a bounce as an error. Forcing
+  that box to carry a second vendor's credential makes the cheapest, most
+  self-contained mail setup the only one that cannot be completed. So the absence
+  is now a **supported state**: `config/runtime.exs` boots with `%{}`, logs
+  `inbound: no provider configured — a hard bounce or a spam complaint is discarded
+  and courier goes on mailing an address that has said it is gone`, and the route
+  answers 500 naming `COURIER_INBOUND_RESEND_SECRET`. A default would still be
+  worse than nothing — a secret in version control that every deployment which
+  forgot to set one would accept forged suppressions under, which is an
+  unauthenticated `POST` that mails nobody.
 
   **Test and development are not refused**, and the reason is that they are not a
   deployment. `config/test.exs` sets a fixed test-only value in the same sense as

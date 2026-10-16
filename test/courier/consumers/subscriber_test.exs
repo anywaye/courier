@@ -160,13 +160,15 @@ defmodule Courier.Consumers.SubscriberTest do
       refute "identity.user.created" in subjects
       refute "billing.payment.succeeded" in subjects
 
-      assert Subscriber.subjects() == [ "billing.>", "identity.>" ]
+      assert Subscriber.subjects() == ["billing.>", "identity.>"]
 
       # AND THE DERIVATION IS THE REGISTRY'S. A prefix that names no registered
       # consumer is a subscription to traffic courier would drop, and a
       # registered type whose service is missing from the set is the defect
       # above. Held to `Consumers.subscribed/0` so the two cannot disagree.
-      services = Consumers.subscribed() |> Enum.map(&(&1 |> String.split(".") |> hd())) |> Enum.uniq()
+      services =
+        Consumers.subscribed() |> Enum.map(&(&1 |> String.split(".") |> hd())) |> Enum.uniq()
+
       assert Subscriber.subjects() == Enum.map(Enum.sort(services), &(&1 <> ".>"))
     end
 

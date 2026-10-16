@@ -231,9 +231,6 @@ env:
     #   SECRET_KEY_BASE              raises when unset
     #   COURIER_SECRET_BOX_KEY       raises when unset; the AES-256-GCM key every
     #                                webhook signing secret is sealed under
-    #   COURIER_INBOUND_RESEND_SECRET raises when unset; the provider's own
-    #                                signing secret, or every bounce and
-    #                                complaint is discarded
     #   COURIER_ERROR_RELAY_TOKEN    raises when unset; the shared secret the
     #                                ingest surface authenticates with
     #   COURIER_SMTP_USERNAME        the SMTP username, which is usually an API key
@@ -249,17 +246,26 @@ env:
     #                                `Courier.Principal.Introspection` for what
     #                                it is and how it is rotated.
     #
+    # `COURIER_INBOUND_RESEND_SECRET` is **not** in that list — cf-inbound-optional.
+    # It is optional in production: a Cloudflare-only box has no webhook to
+    # configure, boots with no provider, and logs the cost ("a hard bounce or a
+    # spam complaint is discarded and courier goes on mailing an address that has
+    # said it is gone"). Set it and the surface is exactly today's behaviour;
+    # leaving it in the `secret:` list would make Kamal refuse a cloudflare box
+    # that has no such thing to copy.
+    #
     # WHAT IS DELIBERATELY NOT LISTED, because listing it is a trap:
-    # `COURIER_ERROR_REPORTING_DSN` and `COURIER_ERROR_SINK_DSN` are optional
-    # (see `config/runtime.exs`: unset, courier does not report), and Kamal
-    # refuses a name in `env.secret` that has no value in `.kamal/secrets`. An
-    # optional credential therefore cannot be named here at all — it is set in
-    # the deployment's environment, and the omission is a real limit rather than
-    # an oversight. The same is why `COURIER_IDENTITY_URL` is in `clear` above:
-    # it is an address, and Kamal would refuse a secret name with no value.
+    # `COURIER_ERROR_REPORTING_DSN`, `COURIER_ERROR_SINK_DSN` and
+    # `COURIER_INBOUND_RESEND_SECRET` are optional (see `config/runtime.exs`:
+    # unset, courier boots and logs what it loses), and Kamal refuses a name in
+    # `env.secret` that has no value in `.kamal/secrets`. An optional credential
+    # therefore cannot be named here at all — it is set in the deployment's
+    # environment when the operator has it, and the omission is a real limit
+    # rather than an oversight. The same is why `COURIER_IDENTITY_URL` is in
+    # `clear` above: it is an address, and Kamal would refuse a secret name with
+    # no value.
     - SECRET_KEY_BASE
     - COURIER_SECRET_BOX_KEY
-    - COURIER_INBOUND_RESEND_SECRET
     - COURIER_ERROR_RELAY_TOKEN
     - COURIER_SMTP_USERNAME
     - COURIER_SMTP_PASSWORD
