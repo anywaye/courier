@@ -290,7 +290,9 @@ defmodule CourierWeb.SendingDomainsControllerTest do
       seed_cloudflare_dns()
       id = data(register(@account))["id"]
 
-      assert authed(@other_account) |> post("/v1/sending_domains/#{id}/verify") |> Map.fetch!(:status) ==
+      assert authed(@other_account)
+             |> post("/v1/sending_domains/#{id}/verify")
+             |> Map.fetch!(:status) ==
                404
     end
 
@@ -317,7 +319,9 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     test "account B cannot revoke account A's domain" do
       id = data(register(@account))["id"]
 
-      assert authed(@other_account) |> post("/v1/sending_domains/#{id}/revoke") |> Map.fetch!(:status) ==
+      assert authed(@other_account)
+             |> post("/v1/sending_domains/#{id}/revoke")
+             |> Map.fetch!(:status) ==
                404
 
       # And it is still enabled for its owner — the 404 was a refusal, not a
@@ -381,8 +385,12 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     test "a revoked domain cannot send", %{server: server} do
       seed_cloudflare_dns()
       id = data(register(@account))["id"]
-      assert authed(@account) |> post("/v1/sending_domains/#{id}/verify") |> Map.fetch!(:status) == 200
-      assert authed(@account) |> post("/v1/sending_domains/#{id}/revoke") |> Map.fetch!(:status) == 200
+
+      assert authed(@account) |> post("/v1/sending_domains/#{id}/verify") |> Map.fetch!(:status) ==
+               200
+
+      assert authed(@account) |> post("/v1/sending_domains/#{id}/revoke") |> Map.fetch!(:status) ==
+               200
 
       # Clear the verification send, so a request after revocation is the thing
       # the assertion below is about rather than the proof's own dial.

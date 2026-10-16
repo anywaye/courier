@@ -284,7 +284,8 @@ defmodule CourierWeb.SendingDomainsController do
 
   # A domain another account already verified: the partial unique index refuses
   # the write, and the changeset names the field.
-  defp verification_failed(conn, %Ecto.Changeset{} = changeset), do: validation_failed(conn, changeset)
+  defp verification_failed(conn, %Ecto.Changeset{} = changeset),
+    do: validation_failed(conn, changeset)
 
   defp domain_not_proven(conn, code, detail) do
     Problem.send(conn, 422, :validation_failed, detail, [
