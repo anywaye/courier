@@ -33,7 +33,7 @@ defmodule Courier.MailerAdapterTest do
         COURIER_MAIL_ADAPTER COURIER_SMTP_HOST COURIER_SMTP_PORT
         COURIER_SMTP_USERNAME COURIER_SMTP_PASSWORD COURIER_SMTP_AUTH
         COURIER_SMTP_TLS COURIER_SMTP_SSL COURIER_POSTMARK_API_TOKEN
-        COURIER_CLOUDFLARE_API_KEY
+        COURIER_CLOUDFLARE_API_KEY COURIER_CF_ACCOUNT_ID
       ),
         fn name -> {name, System.get_env(name)} end
       )
@@ -386,6 +386,7 @@ defmodule Courier.MailerAdapterTest do
     setup do
       System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
       System.put_env("COURIER_CLOUDFLARE_API_KEY", @sentinel)
+      System.put_env("COURIER_CF_ACCOUNT_ID", "test-account-id")
       :ok
     end
 
@@ -394,6 +395,7 @@ defmodule Courier.MailerAdapterTest do
 
       assert config[:adapter] == Courier.Adapters.CloudflareEmail
       assert config[:api_key] == @sentinel
+      assert config[:account_id] == "test-account-id"
     end
 
     test "a missing key is a boot failure naming the variable" do
@@ -424,6 +426,22 @@ defmodule Courier.MailerAdapterTest do
       System.put_env("COURIER_CLOUDFLARE_API_KEY", "")
 
       assert_raise RuntimeError, ~r/COURIER_CLOUDFLARE_API_KEY is missing/, fn ->
+        MailerAdapter.adapter!(:prod)
+      end
+    end
+
+    test "a missing account id is a boot failure naming the variable" do
+      System.delete_env("COURIER_CF_ACCOUNT_ID")
+
+      assert_raise RuntimeError, ~r/COURIER_CF_ACCOUNT_ID is missing/, fn ->
+        MailerAdapter.adapter!(:prod)
+      end
+    end
+
+    test "an empty account id is treated as missing" do
+      System.put_env("COURIER_CF_ACCOUNT_ID", "")
+
+      assert_raise RuntimeError, ~r/COURIER_CF_ACCOUNT_ID is missing/, fn ->
         MailerAdapter.adapter!(:prod)
       end
     end

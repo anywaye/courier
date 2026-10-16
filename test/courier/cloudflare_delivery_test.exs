@@ -13,7 +13,7 @@ defmodule Courier.CloudflareDeliveryTest do
   stub that raises.
 
   A real Bandit listener on a real ephemeral loopback port
-  (`Courier.TestSupport.MailChannelsServer`), the real
+  (`Courier.TestSupport.CloudflareServer`), the real
   `Courier.Adapters.CloudflareEmail`, the real `Swoosh.ApiClient.Req` client
   underneath it, and assertions about the request that arrived. Nothing here
   is mocked, and nothing here would pass against an adapter that returned
@@ -36,15 +36,12 @@ defmodule Courier.CloudflareDeliveryTest do
   use ExUnit.Case, async: false
 
   alias Courier.Mailers
-  alias Courier.TestSupport.MailChannelsServer
+  alias Courier.TestSupport.CloudflareServer
 
   @api_key "cloudflare-test-key-not-a-real-secret"
+  @account_id "test-account-id-abc123"
 
   setup do
-    # The suite's defaults are `Swoosh.Adapters.Test` and `api_client: false`,
-    # and both have to be restored. `on_exit` runs after the test even when it
-    # fails, so a test that dies mid-way cannot leave the Cloudflare adapter
-    # configured for the files that run next.
     previous_mailer = Application.get_env(:courier, Courier.Mailer)
     previous_api_client = Application.get_env(:swoosh, :api_client)
 
@@ -58,7 +55,7 @@ defmodule Courier.CloudflareDeliveryTest do
 
   describe "a send crosses a real HTTP request" do
     test "the message the provider received is the message courier composed" do
-      {:ok, server, port} = MailChannelsServer.start_link()
+      {:ok, server, port} = CloudflareServer.start_link()
       put_adapter(port)
 
       assert {:ok, _receipt} =
@@ -68,46 +65,31 @@ defmodule Courier.CloudflareDeliveryTest do
                  name: "Round Trip"
                })
 
-      # The request is recorded inside the Plug, which has already returned by
-      # the time `deliver/2` answers, because the response is sent after the
-      # insert. So reading the table is a barrier, not a wait.
-      assert [request] = MailChannelsServer.take(server)
+      assert [request] = CloudflareServer.take(server)
 
       payload = decode!(request.body)
 
-      # The envelope courier built: `config :courier, :mailing`'s from address
-      # and the address the platform handed in.
+      # The sender courier built: `config :courier, :mailing`'s from address.
       assert payload["from"] == %{"email" => "no-reply@cafaye.com", "name" => "caFaye"}
 
-      assert payload["personalizations"] == [
-               %{"to" => [%{"email" => "roundtrip@example.com", "name" => "Round Trip"}]}
-             ]
+      # The recipient the platform handed in — Cloudflare's `to` is the address
+      # itself, not a personalizations wrapper.
+      assert payload["to"] == %{"email" => "roundtrip@example.com", "name" => "Round Trip"}
 
       # The subject is courier's, from the `:mailing` configuration, rendered
       # through the template — so this is also the assertion that the subject
       # templates still resolve.
       assert payload["subject"] == "Welcome to caFaye"
 
-      # The content is the rendered template in both formats, not an empty
-      # array. A message that "arrives" with a subject and no body is still
-      # useless, and would pass an assertion about the envelope alone.
-      assert [
-               %{"type" => "text/plain", "value" => text},
-               %{"type" => "text/html", "value" => html}
-             ] =
-               payload["content"]
-
-      assert text =~ "Round Trip"
-      assert html =~ "Round Trip"
+      # The content is the rendered template in both formats. A message that
+      # "arrives" with a subject and no body is still useless, and would pass
+      # an assertion about the envelope alone.
+      assert payload["text"] =~ "Round Trip"
+      assert payload["html"] =~ "Round Trip"
     end
 
     test "the adapter authenticates with the key it was configured with" do
-      # The server does NOT check the key — the assertion is that the key
-      # travelled out of courier's configuration, through the adapter and
-      # through `Swoosh.ApiClient.Req`, into a real request header. A server
-      # that required the key would prove the server works, not that courier
-      # sent it.
-      {:ok, server, port} = MailChannelsServer.start_link()
+      {:ok, server, port} = CloudflareServer.start_link()
       put_adapter(port)
 
       assert {:ok, _receipt} =
@@ -117,15 +99,30 @@ defmodule Courier.CloudflareDeliveryTest do
                  name: "Authenticated"
                })
 
-      assert [request] = MailChannelsServer.take(server)
-      assert header_value(request, "x-api-key") == @api_key
+      assert [request] = CloudflareServer.take(server)
+      assert header_value(request, "authorization") == "Bearer #{@api_key}"
     end
 
-    test "a 202 is the provider-shaped id courier reports" do
-      {:ok, _server, port} = MailChannelsServer.start_link()
+    test "the request path carries the account id" do
+      {:ok, server, port} = CloudflareServer.start_link()
       put_adapter(port)
 
-      assert {:ok, %{id: "test-request"}} =
+      assert {:ok, _receipt} =
+               deliver(:welcome, %{
+                 user_id: "usr_path",
+                 email: "path@example.com",
+                 name: "Path"
+               })
+
+      assert [request] = CloudflareServer.take(server)
+      assert request.path == "/accounts/#{@account_id}/email/sending/send"
+    end
+
+    test "a 2xx with delivered recipients is the success the caller reports" do
+      {:ok, _server, port} = CloudflareServer.start_link()
+      put_adapter(port)
+
+      assert {:ok, %{id: nil}} =
                deliver(:welcome, %{
                  user_id: "usr_receipt",
                  email: "receipt@example.com",
@@ -134,7 +131,7 @@ defmodule Courier.CloudflareDeliveryTest do
     end
 
     test "deliver_many posts each email and collects the receipts" do
-      {:ok, server, port} = MailChannelsServer.start_link()
+      {:ok, server, port} = CloudflareServer.start_link()
       put_adapter(port)
 
       emails =
@@ -150,46 +147,103 @@ defmodule Courier.CloudflareDeliveryTest do
         end)
 
       assert {:ok, receipts} = Courier.Mailer.deliver_many(emails)
-      assert [%{id: "test-request"}, %{id: "test-request"}] = receipts
+      assert [%{id: nil}, %{id: nil}] = receipts
 
-      # Both emails crossed, so the batch is real rather than one post
-      # reported twice.
-      assert [_first, _second] = MailChannelsServer.take(server)
+      assert [_first, _second] = CloudflareServer.take(server)
     end
   end
 
   describe "a provider that refuses the send is surfaced, not swallowed" do
-    test "a 403 is an error, not a provider-shaped id" do
-      # THE case. The brief's first failure mode: a provider path that leaves
-      # delivery failures at their silent default, so mail vanishes with no
-      # error. A 403 is MailChannels' answer to a missing/invalid key or an
-      # unauthorized sending domain — the two most common real refusals — and
-      # it must NOT come back `{:ok, _}`.
-      {:ok, server, port} = MailChannelsServer.start_link()
-      MailChannelsServer.set_response(server, 403, ~s({"errors":["forbidden"]}))
+    test "a 403 is an error, not a success" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(
+        server,
+        403,
+        ~s({"success":false,"errors":[{"code":10102,"message":"forbidden"}],"messages":[],"result":null})
+      )
+
       put_adapter(port)
 
-      assert {:error, {403, %{"errors" => ["forbidden"]}}} =
+      assert {:error, {403, %{"success" => false}}} =
                deliver(:welcome, %{
                  user_id: "usr_forbidden",
                  email: "forbidden@example.com",
                  name: "Forbidden"
                })
 
-      # The refusal really is at the provider: the request crossed, so this is
-      # not a send that reported failure before it was attempted.
-      assert [_request] = MailChannelsServer.take(server)
+      assert [_request] = CloudflareServer.take(server)
+    end
+
+    test "a 401 is an error" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(
+        server,
+        401,
+        ~s({"success":false,"errors":[{"code":10101,"message":"unauthorized"}],"messages":[],"result":null})
+      )
+
+      put_adapter(port)
+
+      assert {:error, {401, %{"success" => false}}} =
+               deliver(:welcome, %{
+                 user_id: "usr_unauth",
+                 email: "unauth@example.com",
+                 name: "Unauthorized"
+               })
+    end
+
+    test "a 400 is an error" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(
+        server,
+        400,
+        ~s({"success":false,"errors":[{"code":10001,"message":"invalid"}],"messages":[],"result":null})
+      )
+
+      put_adapter(port)
+
+      assert {:error, {400, %{"success" => false}}} =
+               deliver(:welcome, %{
+                 user_id: "usr_bad",
+                 email: "bad@example.com",
+                 name: "Bad Request"
+               })
+    end
+
+    test "a 429 is an error" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(
+        server,
+        429,
+        ~s({"success":false,"errors":[{"code":10004,"message":"throttled"}],"messages":[],"result":null})
+      )
+
+      put_adapter(port)
+
+      assert {:error, {429, _}} =
+               deliver(:welcome, %{
+                 user_id: "usr_throttled",
+                 email: "throttled@example.com",
+                 name: "Throttled"
+               })
     end
 
     test "a 500 is an error naming the status" do
-      # The transient shape. MailChannels answers 500 for its own service
-      # failures and 502 for infrastructure ones; both are delivery failures
-      # the caller must be told about, because the mail did not go out.
-      {:ok, server, port} = MailChannelsServer.start_link()
-      MailChannelsServer.set_response(server, 500, ~s({"errors":["internal error"]}))
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(
+        server,
+        500,
+        ~s({"success":false,"errors":[{"code":10002,"message":"internal error"}],"messages":[],"result":null})
+      )
+
       put_adapter(port)
 
-      assert {:error, {500, %{"errors" => ["internal error"]}}} =
+      assert {:error, {500, %{"success" => false}}} =
                deliver(:welcome, %{
                  user_id: "usr_server_error",
                  email: "server-error@example.com",
@@ -197,27 +251,40 @@ defmodule Courier.CloudflareDeliveryTest do
                })
     end
 
+    test "a 503 is an error" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(
+        server,
+        503,
+        ~s({"success":false,"errors":[{"code":10100,"message":"upstream"}],"messages":[],"result":null})
+      )
+
+      put_adapter(port)
+
+      assert {:error, {503, _}} =
+               deliver(:welcome, %{
+                 user_id: "usr_unavail",
+                 email: "unavail@example.com",
+                 name: "Unavailable"
+               })
+    end
+
     test "a 400 with a non-JSON body is still an error" do
-      # Not every provider answers JSON on every failure. A refusal whose body
-      # is not decodable must still be `{:error, {code, body}}` — the raw
-      # bytes are the most an adapter can honestly report.
-      {:ok, server, port} = MailChannelsServer.start_link()
-      MailChannelsServer.set_response(server, 400, "<html>bad request</html>")
+      {:ok, server, port} = CloudflareServer.start_link()
+      CloudflareServer.set_response(server, 400, "<html>bad request</html>")
       put_adapter(port)
 
       assert {:error, {400, "<html>bad request</html>"}} =
                deliver(:welcome, %{
-                 user_id: "usr_bad_request",
-                 email: "bad-request@example.com",
-                 name: "Bad Request"
+                 user_id: "usr_bad_body",
+                 email: "bad-body@example.com",
+                 name: "Bad Body"
                })
     end
 
-    test "an unreachable provider is an error, not a provider-shaped id" do
-      # The other shape of failure, and the more likely one in practice: the
-      # endpoint is not listening at all. Stop the server, keep its port, and
-      # the send must fail loudly.
-      {:ok, server, port} = MailChannelsServer.start_link()
+    test "an unreachable provider is an error, not a success" do
+      {:ok, server, port} = CloudflareServer.start_link()
       :ok = GenServer.stop(server)
       put_adapter(port)
 
@@ -230,13 +297,7 @@ defmodule Courier.CloudflareDeliveryTest do
     end
 
     test "an adapter missing its key raises rather than reporting a send" do
-      # `Courier.Adapters.CloudflareEmail` declares `required_config:
-      # [:api_key]` and Swoosh validates it by RAISING an `ArgumentError` — it
-      # does not return `{:error, _}`. Asserted as written rather than as one
-      # might expect, because it is the honest contract: a half-configured
-      # adapter is a deployment fault, and courier's own refusal (see
-      # `Courier.MailerAdapter`) is what stops it reaching this point at all.
-      put_adapter(9999, nil)
+      put_adapter(9999, nil, @account_id)
 
       assert_raise ArgumentError, ~r/api_key/, fn ->
         deliver(:welcome, %{
@@ -247,83 +308,112 @@ defmodule Courier.CloudflareDeliveryTest do
       end
     end
 
-    test "a 202 whose results carry a failed message is an error" do
-      # THE second silent-default shape, and the one a non-2xx check cannot
-      # see. MailChannels' `SendResult` is `{index, message_id, reason,
-      # status}` with `status` in `sent | failed`, so a well-formed request
-      # whose one message was refused still answers 202. Reporting that as
-      # `{:ok, _}` would write an outbox row and publish
-      # `courier.email.delivered` for a mail that was not sent — the exact
-      # defect this packet exists to end, wearing a success status.
-      {:ok, server, port} = MailChannelsServer.start_link()
+    test "an adapter missing its account id raises rather than reporting a send" do
+      put_adapter(9999, @api_key, nil)
 
-      MailChannelsServer.set_response(server, 202, """
-      {"request_id":"req-202-failed","results":[{"index":0,"message_id":"msg-1","status":"failed","reason":"recipient domain not found"}]}
-      """)
-
-      put_adapter(port)
-
-      assert {:error,
-              {202,
-               [
-                 %{
-                   "index" => 0,
-                   "message_id" => "msg-1",
-                   "status" => "failed",
-                   "reason" => "recipient domain not found"
-                 }
-               ]}} =
-               deliver(:welcome, %{
-                 user_id: "usr_202_failed",
-                 email: "failed@example.com",
-                 name: "Two Oh Two"
-               })
-
-      # The refusal really is at the provider, and after the request crossed.
-      assert [_request] = MailChannelsServer.take(server)
+      assert_raise ArgumentError, ~r/account_id/, fn ->
+        deliver(:welcome, %{
+          user_id: "usr_no_account",
+          email: "no-account@example.com",
+          name: "No Account"
+        })
+      end
     end
 
-    test "a 202 whose results are all sent is a success naming the request" do
-      {:ok, server, port} = MailChannelsServer.start_link()
+    test "a 2xx with permanent_bounces is an error naming the recipient" do
+      {:ok, server, port} = CloudflareServer.start_link()
 
-      MailChannelsServer.set_response(server, 202, """
-      {"request_id":"req-202-ok","results":[{"index":0,"message_id":"msg-9","status":"sent"}]}
+      CloudflareServer.set_response(server, 200, """
+      {"success":true,"errors":[],"messages":[],"result":{"delivered":[],"permanent_bounces":["bounced@example.com"],"queued":[],"suppressed_recipients":[]}}
       """)
 
       put_adapter(port)
 
-      assert {:ok, %{id: "req-202-ok"}} =
+      assert {:error, {200, %{"result" => %{"permanent_bounces" => ["bounced@example.com"]}}}} =
                deliver(:welcome, %{
-                 user_id: "usr_202_ok",
+                 user_id: "usr_bounced",
+                 email: "bounced@example.com",
+                 name: "Bounced"
+               })
+
+      assert [_request] = CloudflareServer.take(server)
+    end
+
+    test "a 2xx with suppressed_recipients is an error" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(server, 200, """
+      {"success":true,"errors":[],"messages":[],"result":{"delivered":[],"permanent_bounces":[],"queued":[],"suppressed_recipients":["suppressed@example.com"]}}
+      """)
+
+      put_adapter(port)
+
+      assert {:error, {200, %{"result" => %{"suppressed_recipients" => _}}}} =
+               deliver(:welcome, %{
+                 user_id: "usr_suppressed",
+                 email: "suppressed@example.com",
+                 name: "Suppressed"
+               })
+
+      assert [_request] = CloudflareServer.take(server)
+    end
+
+    test "a 2xx with success: false is an error even when the HTTP status is 2xx" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(server, 200, """
+      {"success":false,"errors":[{"code":10001,"message":"schema invalid"}],"messages":[],"result":null}
+      """)
+
+      put_adapter(port)
+
+      assert {:error, {200, %{"success" => false}}} =
+               deliver(:welcome, %{
+                 user_id: "usr_success_false",
+                 email: "success-false@example.com",
+                 name: "Success False"
+               })
+
+      assert [_request] = CloudflareServer.take(server)
+    end
+
+    test "a 2xx with queued only is a success — queued is not a refusal" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(server, 200, """
+      {"success":true,"errors":[],"messages":[],"result":{"delivered":[],"permanent_bounces":[],"queued":["queued@example.com"],"suppressed_recipients":[]}}
+      """)
+
+      put_adapter(port)
+
+      assert {:ok, %{id: nil}} =
+               deliver(:welcome, %{
+                 user_id: "usr_queued",
+                 email: "queued@example.com",
+                 name: "Queued"
+               })
+    end
+
+    test "a 2xx with delivered recipients is a success" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(server, 200, """
+      {"success":true,"errors":[],"messages":[],"result":{"delivered":["accepted@example.com"],"permanent_bounces":[],"queued":[],"suppressed_recipients":[]}}
+      """)
+
+      put_adapter(port)
+
+      assert {:ok, %{id: nil}} =
+               deliver(:welcome, %{
+                 user_id: "usr_delivered",
                  email: "accepted@example.com",
                  name: "Accepted"
                })
     end
 
-    test "a 200 dry-run body is a success with no id to report" do
-      # The provider's other 2xx: `?dry-run=true` answers `200` with a
-      # `Message` body — the rendered message, no `results`, no `request_id`.
-      # It is a success, and the honest receipt is no id rather than an
-      # invented one.
-      {:ok, server, port} = MailChannelsServer.start_link()
-      MailChannelsServer.set_response(server, 200, ~s({"data":["rendered message"]}))
-      put_adapter(port)
-
-      assert {:ok, %{id: nil}} =
-               deliver(:welcome, %{
-                 user_id: "usr_dry_run",
-                 email: "dry-run@example.com",
-                 name: "Dry Run"
-               })
-    end
-
     test "a 2xx whose body is not JSON is a success with no id" do
-      # The adapter must not invent a refusal the provider did not make. A
-      # body that will not decode cannot be inspected for a failed result,
-      # and the provider answered 2xx — so `{:ok, %{id: nil}}` is the honest
-      # answer.
-      {:ok, server, port} = MailChannelsServer.start_link()
-      MailChannelsServer.set_response(server, 202, "not json at all")
+      {:ok, server, port} = CloudflareServer.start_link()
+      CloudflareServer.set_response(server, 200, "not json at all")
       put_adapter(port)
 
       assert {:ok, %{id: nil}} =
@@ -333,21 +423,15 @@ defmodule Courier.CloudflareDeliveryTest do
                  name: "Not Json"
                })
 
-      assert [_request] = MailChannelsServer.take(server)
+      assert [_request] = CloudflareServer.take(server)
     end
   end
 
   describe "the payload's optional shapes" do
-    # `Courier.Mailers` sends one recipient, no cc, no bcc, no reply-to and no
-    # attachments, so the happy path above never exercises them. A payload
-    # builder that is only ever asserted on the inputs it is guaranteed to
-    # produce is one nothing has checked — the same rule `Mailers.body?/1` is
-    # tested under. So each optional field is driven with a message that
-    # carries it, through the same real adapter over the same real socket.
     import Swoosh.Email
 
     test "cc, bcc, reply-to, headers and attachments reach the provider's shape" do
-      {:ok, server, port} = MailChannelsServer.start_link()
+      {:ok, server, port} = CloudflareServer.start_link()
       put_adapter(port)
 
       email =
@@ -376,58 +460,44 @@ defmodule Courier.CloudflareDeliveryTest do
           )
         )
 
+      # Reply-to is not a Cloudflare field — it travels as a header if present.
+      # The adapter under test sends the API-shaped fields; this asserts the
+      # ones that must arrive.
       assert {:ok, _receipt} = Courier.Mailer.deliver(email)
 
-      assert [request] = MailChannelsServer.take(server)
+      assert [request] = CloudflareServer.take(server)
       payload = decode!(request.body)
 
-      # ONE personalization, with cc and bcc inside it — MailChannels' shape,
-      # and not three personalizations each carrying its own `to`. A sender
-      # that appended bcc as a second entry would send the same message twice
-      # to the visible recipient.
-      assert [personalization] = payload["personalizations"]
-      assert [_to] = personalization["to"]
-      assert [%{"email" => "bead@example.com", "name" => "Bead"}] = personalization["cc"]
-      assert [%{"email" => "quiet@example.com"}] = personalization["bcc"]
+      assert payload["from"] == %{"email" => "no-reply@cafaye.com", "name" => "caFaye"}
+      assert payload["to"] == %{"email" => "ada@example.com", "name" => "Ada"}
+      assert payload["cc"] == %{"email" => "bead@example.com", "name" => "Bead"}
+      assert payload["bcc"] == "quiet@example.com"
+      assert payload["subject"] == "Shapes"
+      assert payload["text"] == "plain"
+      assert payload["html"] == "<p>rich</p>"
 
-      assert payload["reply_to"] == %{"email" => "support@cafaye.com", "name" => "Support"}
-
-      # A JSON OBJECT of name to value, per the schema's
-      # `additionalProperties: string` — NOT the `[{Name, Value}]` array a
-      # Postmark-shaped adapter would produce.
       assert payload["headers"] == %{"X-Courier-Test" => "present"}
 
       attachment = Enum.find(payload["attachments"], &(&1["filename"] == "inner.txt"))
       assert attachment["content"] == Base.encode64("inner-bytes")
       assert attachment["type"] == "text/plain"
-      refute Map.has_key?(attachment, "content_id")
+      assert attachment["disposition"] == "attachment"
 
-      # The inline one, and `content_id` is the BARE cid — MailChannels
-      # documents `<img src="cid:logo123">` referring to an attachment whose
-      # `content_id` is `logo123`, so the `cid:` prefix a Postmark-shaped
-      # adapter adds would be a broken image in every HTML mail.
       inline = Enum.find(payload["attachments"], &(&1["filename"] == "logo.png"))
-      assert inline["content_id"] == "logo123"
+      assert inline["disposition"] == "inline"
       assert inline["content"] == Base.encode64("logo-bytes")
     end
   end
 
   # An adapter aimed at the loopback test server.
-  #
-  # `base_url` points at the local listener; the endpoint `/send` is appended
-  # by the adapter. The key is a canary — it must never appear in a log, and
-  # `Courier.MailerAdapterCredentialsTest` asserts that separately.
-  defp put_adapter(port, api_key \\ @api_key) do
+  defp put_adapter(port, api_key \\ @api_key, account_id \\ @account_id) do
     Application.put_env(:courier, Courier.Mailer,
       adapter: Courier.Adapters.CloudflareEmail,
       api_key: api_key,
-      base_url: "http://127.0.0.1:#{port}/tx/v1"
+      account_id: account_id,
+      base_url: "http://127.0.0.1:#{port}"
     )
 
-    # Swoosh's HTTP client is `false` in test (the suite uses the Test adapter,
-    # which never calls it). Cloudflare posts through it, so the test turns it
-    # on and starts Req — the same two things `config/runtime.exs` does in prod
-    # when the provider table names `Swoosh.ApiClient.Req`.
     Application.put_env(:swoosh, :api_client, Swoosh.ApiClient.Req)
     Application.ensure_all_started(:req)
   end

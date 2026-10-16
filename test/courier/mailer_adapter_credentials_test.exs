@@ -47,7 +47,7 @@ defmodule Courier.MailerAdapterCredentialsTest do
       COURIER_MAIL_ADAPTER COURIER_SMTP_HOST COURIER_SMTP_PORT
       COURIER_SMTP_USERNAME COURIER_SMTP_PASSWORD COURIER_SMTP_AUTH
       COURIER_SMTP_TLS COURIER_SMTP_SSL COURIER_POSTMARK_API_TOKEN
-      COURIER_CLOUDFLARE_API_KEY
+      COURIER_CLOUDFLARE_API_KEY COURIER_CF_ACCOUNT_ID
     )
 
     previous_env = Map.new(names, fn name -> {name, System.get_env(name)} end)
@@ -557,7 +557,8 @@ defmodule Courier.MailerAdapterCredentialsTest do
   defp cloudflare_config do
     [
       adapter: Courier.Adapters.CloudflareEmail,
-      api_key: @token
+      api_key: @token,
+      account_id: "test-account-id"
     ]
   end
 end

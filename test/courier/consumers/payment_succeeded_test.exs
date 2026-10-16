@@ -143,12 +143,13 @@ defmodule Courier.Consumers.PaymentSucceededTest do
     end
 
     test "writes the outbox row, so a sent receipt is visible to the platform" do
-      assert {:ok, %{event_id: event_id}} = PaymentSucceeded.deliver(%{
-        email: "buyer@example.com",
-        payer: "df15dff4-b274-460d-84e5-1ee8ba4532e7",
-        amount_display: "19.00 USD",
-        invoice_id: "in_1UQxoPCmN780pAiW8Kp4oks8"
-      })
+      assert {:ok, %{event_id: event_id}} =
+               PaymentSucceeded.deliver(%{
+                 email: "buyer@example.com",
+                 payer: "df15dff4-b274-460d-84e5-1ee8ba4532e7",
+                 amount_display: "19.00 USD",
+                 invoice_id: "in_1UQxoPCmN780pAiW8Kp4oks8"
+               })
 
       assert Repo.get(Courier.OutboxEvent, event_id).type == "courier.email.delivered"
     end
@@ -157,7 +158,11 @@ defmodule Courier.Consumers.PaymentSucceededTest do
       # The one currency branch in `render/1`. A JPY receipt that read "24.00"
       # would be a receipt that names a payment nobody made.
       {:ok, receipt} =
-        PaymentSucceeded.parse(row(%{data: @payload |> put_in(["amount"], %{"amount_minor" => 2_400, "currency" => "jpy"})}))
+        PaymentSucceeded.parse(
+          row(%{
+            data: @payload |> put_in(["amount"], %{"amount_minor" => 2_400, "currency" => "jpy"})
+          })
+        )
 
       assert receipt.amount_display == "2400 JPY"
     end
@@ -189,7 +194,9 @@ defmodule Courier.Consumers.PaymentSucceededTest do
       # A customer created in the processor's dashboard, or a cafaye customer
       # whose email was never set: billing keeps the field absent, and a
       # receipt nobody can be sent is not a receipt.
-      assert {:error, {:incomplete_payload, "email"}} = PaymentSucceeded.handle(row(%{data: Map.delete(@payload, "email")}))
+      assert {:error, {:incomplete_payload, "email"}} =
+               PaymentSucceeded.handle(row(%{data: Map.delete(@payload, "email")}))
+
       assert_no_email_sent()
     end
 
@@ -198,19 +205,23 @@ defmodule Courier.Consumers.PaymentSucceededTest do
       # the event says a payment happened and does not say whose.
       assert {:error, {:incomplete_payload, "cafaye_customer_id"}} =
                PaymentSucceeded.handle(row(%{data: Map.delete(@payload, "cafaye_customer_id")}))
+
       assert_no_email_sent()
     end
 
     test "a payload with no amount is refused by name" do
       assert {:error, {:incomplete_payload, "amount"}} =
                PaymentSucceeded.handle(row(%{data: %{@payload | "amount" => nil}}))
+
       assert_no_email_sent()
     end
 
     test "an amount with only one of its halves is refused" do
       data = %{@payload | "amount" => %{"currency" => "USD"}}
 
-      assert {:error, {:incomplete_payload, "amount"}} = PaymentSucceeded.handle(row(%{data: data}))
+      assert {:error, {:incomplete_payload, "amount"}} =
+               PaymentSucceeded.handle(row(%{data: data}))
+
       assert_no_email_sent()
     end
   end

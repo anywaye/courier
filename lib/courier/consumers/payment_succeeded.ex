@@ -152,7 +152,8 @@ defmodule Courier.Consumers.PaymentSucceeded do
          {:ok, email} <- fetch_email(data),
          {:ok, payer} <- fetch_payer(data),
          {:ok, amount} <- fetch_amount(data) do
-      {:ok, %{email: email, amount_display: render(amount), invoice_id: invoice_of(data), payer: payer}}
+      {:ok,
+       %{email: email, amount_display: render(amount), invoice_id: invoice_of(data), payer: payer}}
     end
   end
 
