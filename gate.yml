@@ -768,8 +768,7 @@ gate:
       # `test/courier/sending_domains/dns/system_test.exs`, the System resolver's
       # own parsing (no database, no network). The floor sits AT the measurement
       # with zero headroom.
-      minimum: 1818
-
+      minimum: 1827
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
   # nobody in this repository carries, a toolchain this repository pins rather

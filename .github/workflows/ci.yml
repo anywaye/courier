@@ -428,7 +428,7 @@ jobs:
           #     because its subject is the resolved route and its pipeline.
           # 1797 is 815 + 982, so the parts still sum to the whole.
           # +12 from `test/courier/sending_domains/dns/system_test.exs` (no database, no network).
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1818
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1827
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -701,7 +701,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (831 tests, 39 files)
+      - name: tier — no database (833 tests, 40 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -740,7 +740,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 831
+          bin/assert-suite "$log" "no database" 833
 
       - name: tier — database (987 tests, 57 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -847,8 +847,8 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1818 passed | \`bin/assert-suite\` |"
-            echo "| no database, 39 files | 831 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1827 passed | \`bin/assert-suite\` |"
+            echo "| no database, 40 files | 833 passed | tier step |"
             echo "| database, 57 files | 987 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
