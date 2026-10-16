@@ -537,6 +537,105 @@ defmodule Courier.CloudflareDeliveryTest do
     end
   end
 
+  describe "the provider owns Message-ID (cf-message-id)" do
+    test "a message carrying message-id is sent, and the provider never receives it" do
+      {:ok, server, port} = CloudflareServer.start_link()
+      put_adapter(port)
+
+      # The header `Courier.Deliver.tag/2` attaches to EVERY message it sends:
+      # `<courier-<uuid>@cafaye.com>` under the lowercase `message-id` key.
+      # Before this packet the adapter forwarded it verbatim and Cloudflare
+      # refused the whole message with 400 / 10202.
+      {:ok, email} =
+        Mailers.build(:welcome, %{
+          user_id: "usr_msgid",
+          email: "msgid@example.com",
+          name: "Msg Id"
+        })
+
+      tagged =
+        Swoosh.Email.header(
+          email,
+          "message-id",
+          "<courier-#{Ecto.UUID.generate()}@cafaye.com>"
+        )
+
+      assert {:ok, _receipt} = Courier.Mailer.deliver(tagged)
+
+      # Assert on the request that ARRIVED, not on an internal helper: the
+      # server refuses a message-id header (400 / 10202), so this send only
+      # succeeds because the adapter dropped it before the request.
+      assert [request] = CloudflareServer.take(server)
+      payload = decode!(request.body)
+
+      refute header_keys(payload) |> Enum.any?(&(String.downcase(&1) == "message-id"))
+    end
+
+    test "List-Unsubscribe and List-Unsubscribe-Post both reach the provider" do
+      {:ok, server, port} = CloudflareServer.start_link()
+      put_adapter(port)
+
+      {:ok, email} =
+        Mailers.build(:welcome, %{
+          user_id: "usr_unsub",
+          email: "unsub@example.com",
+          name: "Unsub"
+        })
+
+      decorated =
+        email
+        |> Swoosh.Email.header("List-Unsubscribe", "<https://cafaye.com/u?t=1>")
+        |> Swoosh.Email.header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+
+      assert {:ok, _receipt} = Courier.Mailer.deliver(decorated)
+
+      assert [request] = CloudflareServer.take(server)
+      payload = decode!(request.body)
+
+      # RFC 8058: both headers are accepted by Cloudflare and are how the bulk
+      # mail courier sends stays compliant. Dropping them would be a
+      # deliverability and compliance regression, not a tidy-up.
+      assert payload["headers"]["List-Unsubscribe"] == "<https://cafaye.com/u?t=1>"
+      assert payload["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
+    end
+
+    test "the receipt carries the provider's result.message_id" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(server, 200, """
+      {"success":true,"errors":[],"messages":[],"result":{"delivered":["provider-id@example.com"],"permanent_bounces":[],"queued":[],"suppressed_recipients":[],"message_id":"a1b2c3d4-provider-owned"}}
+      """)
+
+      put_adapter(port)
+
+      # The provider's id is the one its bounce and delivery reports quote, so
+      # discarding it leaves courier with nothing to correlate against.
+      assert {:ok, %{id: "a1b2c3d4-provider-owned"}} =
+               deliver(:welcome, %{
+                 user_id: "usr_provider_id",
+                 email: "provider-id@example.com",
+                 name: "Provider Id"
+               })
+    end
+
+    test "a 2xx with no message_id still succeeds and invents no id" do
+      {:ok, server, port} = CloudflareServer.start_link()
+
+      CloudflareServer.set_response(server, 200, """
+      {"success":true,"errors":[],"messages":[],"result":{"delivered":["no-id@example.com"],"permanent_bounces":[],"queued":[],"suppressed_recipients":[]}}
+      """)
+
+      put_adapter(port)
+
+      assert {:ok, %{id: nil}} =
+               deliver(:welcome, %{
+                 user_id: "usr_no_id",
+                 email: "no-id@example.com",
+                 name: "No Id"
+               })
+    end
+  end
+
   # An adapter aimed at the loopback test server.
   defp put_adapter(port, api_key \\ @api_key, account_id \\ @account_id) do
     Application.put_env(:courier, Courier.Mailer,
@@ -566,5 +665,12 @@ defmodule Courier.CloudflareDeliveryTest do
     Enum.find_value(request.headers, fn {header, value} ->
       if String.downcase(header) == name, do: value
     end)
+  end
+
+  defp header_keys(payload) do
+    case payload["headers"] do
+      headers when is_map(headers) -> Map.keys(headers)
+      _ -> []
+    end
   end
 end

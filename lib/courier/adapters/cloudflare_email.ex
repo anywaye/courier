@@ -25,12 +25,17 @@ defmodule Courier.Adapters.CloudflareEmail do
     * `to` / `from` / `cc` / `bcc` each accept a bare address string or
       `{address, name}` — the shape `recipient/1` builds (REST API; the Workers binding uses `{email, name}` and is the wrong shape here)
     * `headers` is `additionalProperties: string` — a JSON object, same as the
-      previous MailChannels contract, and NOT an array of pairs
+      previous MailChannels contract, and NOT an array of pairs. The provider
+      OWNS `Message-ID` (it refuses a caller-supplied one with `400 / 10202` and
+      returns its own as `result.message_id`), so the adapter never forwards it;
+      see `@provider_owned_headers`. `List-Unsubscribe` and
+      `List-Unsubscribe-Post` do travel through here.
     * `attachments` are `{content (base64), filename, type, disposition}` —
       the shape `prepare_attachment/1` builds
     * responses: `2xx` with `{"success": true, "result": {delivered,
-      permanent_bounces, queued, suppressed_recipients}}` on success; `4xx`/`5xx`
-      with `{"success": false, "errors": [...]}` on failure
+      permanent_bounces, queued, suppressed_recipients, message_id}}` on
+      success (`message_id` is the provider-assigned id the receipt carries);
+      `4xx`/`5xx` with `{"success": false, "errors": [...]}` on failure
     * total message size (attachments included) must not exceed 5 MiB
 
   **A 2xx is not always a success.** See below.
@@ -82,14 +87,40 @@ defmodule Courier.Adapters.CloudflareEmail do
 
   @base_url "https://api.cloudflare.com/client/v4"
 
+  # THE PROVIDER OWNS `Message-ID`, AND THIS LIST IS WHY COURIER NEVER SENDS IT.
+  #
+  # Cloudflare Email Sending refuses a caller-supplied `Message-ID` — in EITHER
+  # case — with `400` and exactly
+  # `{"success":false,"errors":[{"code":10202,"message":"email.sending.error.email.invalid"}],"result":null}`
+  # (measured live on cafaye.com, 2026-10-16). It assigns a Message-ID itself and
+  # returns it as `result.message_id` on every 2xx — that is what `accepted/2`
+  # now reports as the receipt id, and it is the id the provider's own bounce and
+  # delivery reports quote.
+  #
+  # `Courier.Deliver`'s `tag/2` attaches `message-id`
+  # (`<courier-<uuid>@cafaye.com>`) to EVERY message it sends, so forwarding this
+  # one header was the difference between a delivery and a refusal of the whole
+  # message. It must never be forwarded again.
+  #
+  # This is a targeted drop of a header the provider OWNS, NOT an allow-list.
+  # `headers` is `additionalProperties: string` and Cloudflare accepts real
+  # headers — `List-Unsubscribe` and `List-Unsubscribe-Post` travel through it
+  # for RFC 8058 compliance — so refusing everything not on a list would break
+  # the moment Cloudflare adds a header. Only the provider-owned ones are ours to
+  # remove.
+  @provider_owned_headers ["message-id"]
+
   @doc """
   Delivers one email through the Cloudflare Email Sending API.
 
-  Returns `{:ok, %{id: nil}}` on a 2xx whose `result` carries no
+  Returns `{:ok, %{id: provider_message_id}}` on a 2xx whose `result` carries no
   `permanent_bounces` or `suppressed_recipients` and whose `success` is not
-  `false`. Returns `{:error, {code, body}}` on a non-2xx or a `success:
-  false` envelope, and `{:error, reason}` when the request itself fails
-  (refused, timed out, unresolvable).
+  `false`. `provider_message_id` is the provider's own `result.message_id` —
+  Cloudflare assigns it and refuses a caller-supplied one, so it is the id the
+  provider's reports quote — and is `nil` only when a 2xx body carries none.
+  Returns `{:error, {code, body}}` on a non-2xx or a `success: false`
+  envelope, and `{:error, reason}` when the request itself fails (refused,
+  timed out, unresolvable).
 
   The non-2xx branch is the one that matters. Cloudflare answers `400` for a
   malformed payload, `401` for a bad token, `403` for a token that lacks
@@ -260,7 +291,19 @@ defmodule Courier.Adapters.CloudflareEmail do
   defp prepare_custom_headers(body, %{headers: headers}) when map_size(headers) == 0, do: body
 
   defp prepare_custom_headers(body, %{headers: headers}) do
-    Map.put(body, "headers", headers)
+    case drop_provider_owned_headers(headers) do
+      cleaned when map_size(cleaned) == 0 -> body
+      cleaned -> Map.put(body, "headers", cleaned)
+    end
+  end
+
+  # Case-insensitive because the provider refuses `Message-ID` and `message-id`
+  # alike, and `Swoosh.Email.header/3` stores the key exactly as the caller wrote
+  # it. See `@provider_owned_headers` for why only these are dropped.
+  defp drop_provider_owned_headers(headers) do
+    Map.reject(headers, fn {name, _value} ->
+      String.downcase(to_string(name)) in @provider_owned_headers
+    end)
   end
 
   defp recipient(nil), do: ""
@@ -287,7 +330,11 @@ defmodule Courier.Adapters.CloudflareEmail do
             if bounces != [] or suppressed != [] do
               {:error, {code, decoded}}
             else
-              {:ok, %{id: nil}}
+              # The provider's own Message-ID, assigned because it refuses a
+              # caller-supplied one. It is what the provider's bounce and
+              # delivery reports quote, so it is the receipt id courier must
+              # carry rather than a nil it can correlate nothing against.
+              {:ok, %{id: result["message_id"]}}
             end
         end
 

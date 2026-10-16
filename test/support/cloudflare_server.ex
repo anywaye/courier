@@ -179,18 +179,33 @@ defmodule Courier.TestSupport.CloudflareServer do
         }
       })
 
-      # Schema validation: the REST API's named-address object is
-      # `{"address", "name"}` — a payload carrying `"email"` is
-      # refused with 400 invalid_request_schema (measured live on
-      # cafaye.com). This makes the test server behave like the provider
-      # rather than re-stating the adapter's own constant.
+      # Two refusals the real provider makes, and both are modelled here so the
+      # test server behaves like the provider rather than re-stating the
+      # adapter's own constants.
+      #
+      # 1. The REST API's named-address object is `{"address", "name"}` — a
+      #    payload carrying `"email"` is refused with 400
+      #    invalid_request_schema (measured live on cafaye.com).
+      # 2. Cloudflare Email Sending OWNS the Message-ID: it assigns one and
+      #    returns it as `result.message_id`, and a caller-supplied
+      #    `message-id` header — in EITHER case — is refused with 400 / 10202
+      #    (measured live on cafaye.com, 2026-10-16). A test that asserted only
+      #    that the adapter dropped the header would be re-stating the
+      #    adapter's own constant; this makes the round trip fail if the
+      #    header is forwarded again.
       {status, response_body} =
-        if contains_email_key?(body) do
-          {400,
-           ~s({"success":false,"errors":[{"code":10001,"message":"email.sending.error.invalid_request_schema"}],"messages":[],"result":null})}
-        else
-          [{:response, s, b}] = :ets.lookup(opts[:response_table], :response)
-          {s, b}
+        cond do
+          contains_email_key?(body) ->
+            {400,
+             ~s({"success":false,"errors":[{"code":10001,"message":"email.sending.error.invalid_request_schema"}],"messages":[],"result":null})}
+
+          has_message_id_header?(body) ->
+            {400,
+             ~s({"success":false,"errors":[{"code":10202,"message":"email.sending.error.email.invalid"}],"result":null})}
+
+          true ->
+            [{:response, s, b}] = :ets.lookup(opts[:response_table], :response)
+            {s, b}
         end
 
       conn
@@ -219,5 +234,17 @@ defmodule Courier.TestSupport.CloudflareServer do
       do: Enum.any?(value, &address_value_has_email_key?/1)
 
     defp address_value_has_email_key?(_), do: false
+
+    # Cloudflare refuses a caller-supplied Message-ID in EITHER case, so the
+    # check is case-insensitive on the `headers` object's keys.
+    defp has_message_id_header?(body) do
+      case Jason.decode(body) do
+        {:ok, %{"headers" => headers}} when is_map(headers) ->
+          Enum.any?(Map.keys(headers), &(String.downcase(&1) == "message-id"))
+
+        _ ->
+          false
+      end
+    end
   end
 end
