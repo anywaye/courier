@@ -47,7 +47,7 @@ defmodule Courier.SendingDomains.Dns.System do
   def txt(domain), do: resolve(domain, :txt)
 
   defp resolve(domain, type) when is_binary(domain) do
-    case :inet_res.resolve(String.to_charlist(String.trim_trailing(domain, ".")), :in, type) do
+    case inet_res().resolve(String.to_charlist(String.trim_trailing(domain, ".")), :in, type) do
       {:ok, {_rec, _header, _query, answers, _authority, _additional}} ->
         {:ok, parse(answers, type)}
 
@@ -55,6 +55,16 @@ defmodule Courier.SendingDomains.Dns.System do
         {:error, reason}
     end
   end
+
+  defp inet_res do
+    Application.get_env(:courier, :sending_domain_inet_res, :inet_res)
+  end
+
+  @doc false
+  # Exposed for the seam's own test: the parsing of `:inet_res`'s record shapes
+  # is the untested half, and a test that cannot control the answer cannot test
+  # it. This function is the answer side without the network.
+  def parse_records(answers, type) when type in [:mx, :txt], do: parse(answers, type)
 
   # MX: `data` is `{Prefer, Exchange}`, both charlists. The exchange is
   # normalised the same way the schema normalises a domain — lowercased,
