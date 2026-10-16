@@ -68,7 +68,7 @@
 -- WHAT IS NOT HERE. No JWT parsing, no token format, no session store, and no
 -- `auth.uid()`. How a service turns the credential in its hand into an account
 -- is that service's own business — identity issues opaque session tokens and
--- guard verifies JWKS bearer JWTs, and a template that picked one of those would
+-- gateway verifies JWKS bearer JWTs, and a template that picked one of those would
 -- be wrong for the other. The seam is `cafaye.begin_account/1`, and a service
 -- calls it once per request from whatever it already authenticates.
 --
@@ -280,6 +280,88 @@ begin
 end
 $caf$;
 
+-- THE CALLER, AS A TRANSACTION-LOCAL IDENTITY. The third scope, and the reason
+-- this file grew one.
+--
+-- WHAT WAS MISSING, MEASURED. An account boundary answers "which account is this
+-- request standing in". It does not answer "which accounts is this PERSON a
+-- member of" — and that is not a rare question, it is the first question a
+-- product asks. `identity` answered it with `GET /v1/accounts`, and the query was
+-- a two-table join on the membership table keyed by the caller's user id. The
+-- policy on that table filters on `account_id = current_account_id()`, the caller
+-- is not standing in an account yet — that is what makes them a caller rather
+-- than a tenant — so the predicate is NULL, and the query that exists to
+-- DISCOVER the caller's accounts returned none of them. The row was in the
+-- database the whole time; `identity` answered `[]` and its product rendered
+-- "you are not a member of any account" to a user who owned one.
+--
+-- WHY A THIRD SCOPE AND NOT A LOOSER POLICY. Every alternative was a way of
+-- saying something false:
+--
+--   * drop the FORCE, or exempt the login role — that is not an account
+--     boundary any more, it is a convention.
+--   * let a caller read their own memberships without an account identity —
+--     the policy still cannot tell WHICH caller is asking, so this reads every
+--     membership in the fleet.
+--   * a SECURITY DEFINER function that bypasses RLS — the mechanism kit's
+--     MD24 already rejected for credentials, for the same reason.
+--
+-- So the substrate needed to be able to NAME THE CALLER, and naming a caller is
+-- exactly what a GUC is for. This is `begin_account`'s twin: same
+-- transaction-local lifetime, same NULL-clears, same "the service passes the
+-- value it already computed" property.
+--
+-- WHAT IT IS NOT. It is not a session, not an authorisation and not an
+-- identity claim: it says who the database is currently answering, and nothing
+-- else. A service that set it from a request body would be handing the
+-- database a caller's identity chosen by the caller — which is why the value is
+-- the same `users.id` the service resolved the session to, and why this file's
+-- twin for accounts warns at the same length.
+create or replace function cafaye.current_user_id()
+returns uuid
+language plpgsql
+stable
+as $caf$
+declare
+  raw text;
+begin
+  -- `missing_ok = true` and the empty check are the two cases `begin_account`'s
+  -- reader handles, copied rather than re-derived: an unset dotted GUC reads as
+  -- set-to-empty, and a caller with no identity is a legitimate state.
+  raw := current_setting('cafaye.user_id', true);
+  if raw is null or raw = '' then
+    return null;
+  end if;
+  return raw::uuid;
+exception
+  when invalid_text_representation then
+    raise exception 'cafaye.user_id is set to % which is not a uuid', raw
+      using errcode = '22023',
+            hint = 'cafaye.begin_user/1 takes a uuid. A request that reaches the '
+                   'database with a malformed user has a bug in whatever '
+                   'authenticated it, and this is the cheapest place to find it.';
+end
+$caf$;
+
+-- OPEN THE CALLER SCOPE, ONCE, TRANSACTION-LOCAL. Every word of
+-- `begin_credential`'s contract applies here and is not restated: `is_local`
+-- because every driver holds a pool, NULL clears rather than fails, and outside
+-- an explicit transaction the setting expires at the end of the statement that
+-- set it — so a caller that forgets the transaction reads zero rows rather than
+-- somebody else's.
+create or replace function cafaye.begin_user(p_user uuid)
+returns void
+language plpgsql
+as $caf$
+begin
+  if p_user is null then
+    perform set_config('cafaye.user_id', '', true);
+    return;
+  end if;
+  perform set_config('cafaye.user_id', p_user::text, true);
+end
+$caf$;
+
 -- PROTECT ONE CREDENTIAL TABLE. The one call a credential table's migration
 -- makes, and it is ONE call: it protects the table exactly as `protect_table`
 -- does — same four policies, same ENABLE, same FORCE, same index on
@@ -363,6 +445,116 @@ begin
   -- 5. USAGE on `cafaye`, for the same reason `protect_table` grants it: without
   --    it the login role cannot resolve `cafaye.begin_credential/1` and every
   --    resolution fails with `permission denied for schema cafaye`.
+  if to_regnamespace('cafaye') is not null then
+    execute format('grant usage on schema cafaye to %I', login_role);
+  end if;
+end
+$caf$;
+
+-- PROTECT ONE MEMBERSHIP TABLE. The third member of this family, and it is the
+-- first one whose job is to let a read THROUGH the account boundary rather than
+-- to resolve something inside it.
+--
+-- A membership table is an ordinary account-scoped table with one extra fact to
+-- carry: it is also the map FROM a person TO accounts. Those are different reads
+-- and the ordinary policy can only do one of them. `protect_table`'s predicate
+-- answers "which rows of this table belong to the account I am standing in" —
+-- true, useless, and exactly wrong for the query that asks a signed-in person
+-- which accounts they are in, because that query happens BEFORE any account is
+-- being stood in. Without this function that query returns an empty list and
+-- nothing anywhere says the rows are being withheld: the policy is present, the
+-- columns are right, the join is correct, and the answer is `[]`.
+--
+-- So this function calls `protect_table` first — the write side, the `for select`
+-- account read, ENABLE, FORCE, the `account_id` index and the role check all
+-- come from there, not from a copy — and then adds ONE policy:
+--
+--   select cafaye.protect_membership_table('account_users', 'user_id');
+--
+-- `for select` only, for the same reason the credential policy is: a caller with
+-- no account identity still meets the ordinary account policies on insert,
+-- update and delete, so this grants DISCOVERY and not AUTHORSHIP. Being able to
+-- see that you are a member of an account is not the ability to change it,
+-- invite to it, or read a row in it.
+--
+-- The predicate is `<user_column> = (select cafaye.current_user_id())`, wrapped
+-- in a scalar subquery for the InitPlan reason every other policy in this file
+-- is, and it is NULL rather than true when the caller has no user identity — so
+-- a worker that forgot `begin_user` reads zero memberships instead of all of
+-- them. That is the whole safety property, and it is the same property the
+-- account boundary has: absent an identity, nothing.
+create or replace function cafaye.protect_membership_table(
+  p_table regclass,
+  p_user_column text,
+  p_login_role text default null
+)
+returns void
+language plpgsql
+as $caf$
+declare
+  login_role text := coalesce(p_login_role, current_user || '_app');
+  base text;
+  qual text;
+begin
+  -- 0. THE COLUMN NAME IS A BARE IDENTIFIER, for the reason
+  --    `protect_credential_table`'s check 0 gives: `%I` makes this not about
+  --    injection, it is about a typo becoming a policy that quietly admits
+  --    nothing instead of a migration that stops.
+  if p_user_column is null
+     or p_user_column !~ '^[A-Za-z_][A-Za-z0-9_$]*$' then
+    raise exception 'cafaye.protect_membership_table(%, %): the user column must be one bare column name, and % is not one.', p_table, coalesce(p_user_column, '<null>'), coalesce(p_user_column, 'null')
+      using errcode = 'undefined_column',
+            hint = 'The second argument is the column on this table holding the member''s `users.id` — `user_id` in every service kit has shipped. It is a column of this table and nothing else.';
+  end if;
+
+  -- 1. AND IT EXISTS, before `protect_table` runs, so a misspelt column cannot
+  --    half-install a table. The message quotes the COLUMN rather than the
+  --    table, which `protect_credential_table`'s check 1 gets right for a
+  --    credential and would get wrong here: `protect_credential_table(%, %)`
+  --    interpolates the login role into the second `%` and the table into the
+  --    third, which reads as though the role were the missing column. That is a
+  --    pre-existing bug in the credential function's message, not something this
+  --    one copies.
+  if not exists (
+    select 1 from pg_attribute
+    where attrelid = p_table and attname = p_user_column and not attisdropped
+  ) then
+    raise exception 'cafaye.protect_membership_table(%, %): the table has no % column.', p_table, p_user_column, p_user_column
+      using errcode = 'undefined_column',
+            hint = 'A membership table is read by the column that names the member. Name the one this table has; if it has none, this table is not a membership table and does not want this mechanism.';
+  end if;
+
+  -- 2. THE SAME PROTECTION AS EVERY OTHER ACCOUNT-SCOPED TABLE, from the same
+  --    function, so there is no second copy of ENABLE/FORCE to drift. This call
+  --    also raises if the table has no `account_id`, which a membership table
+  --    must have: it is the edge of the account graph, not a user-scoped
+  --    resource that happens to mention accounts.
+  perform cafaye.protect_table(p_table, p_login_role);
+
+  base := (select c.relname from pg_class c where c.oid = p_table::regclass::oid);
+
+  -- 3. THE INDEX ON THE USER COLUMN, for the reason `protect_table` indexes
+  --    `account_id`: the policy is evaluated against every candidate row, and
+  --    the query this exists for is a scan of the whole table looking for this
+  --    caller's memberships. Without the index that scan is sequential however
+  --    few rows it returns.
+  execute format('create index if not exists %I on %s (%I)',
+                 base || '_cafaye_' || p_user_column || '_idx', p_table, p_user_column);
+
+  -- 4. ONE POLICY, FOR ONE COMMAND, FOR THE TWO NAMED ROLES, PREDICATED ON THE
+  --    CALLER rather than on an account.
+  qual := format('%I = (select cafaye.current_user_id())', p_user_column);
+
+  --    DROP before CREATE, so a re-run converges and a corrected qualifier cannot
+  --    survive one.
+  execute format('drop policy if exists %I on %s', base || '_cafaye_members', p_table);
+  execute format('create policy %I on %s for select to %I, %I using (%s)',
+                 base || '_cafaye_members', p_table, current_user, login_role, qual);
+
+  -- 5. USAGE on `cafaye`, for the reason the other two functions grant it:
+  --    without it the login role cannot call `cafaye.begin_user/1` and every
+  --    membership read fails with `permission denied for schema cafaye` — which
+  --    reads as a permissions bug rather than as the missing GRANT that it is.
   if to_regnamespace('cafaye') is not null then
     execute format('grant usage on schema cafaye to %I', login_role);
   end if;
@@ -503,6 +695,95 @@ as $caf$
    order by n.nspname, c.relname
 $caf$;
 
+-- WHICH TABLES CAN BE READ WITHOUT AN ACCOUNT BECAUSE OF WHO IS ASKING. The
+-- second kind of exemption, and the audit for it is here for the reason the first
+-- one is: an exemption nobody can list is an exemption nobody notices has been
+-- widened.
+--
+-- `credential_tables` exists because "no table here can be resolved without an
+-- account" is a sentence an operator has to be able to check. Before
+-- `protect_membership_table` there was exactly one way for a policy to stop
+-- requiring an account, so one query covered the question. Now there are two, and
+-- the honest form of that sentence is two queries — or one sweep that reports a
+-- table readable under either rule, which is what an operator actually wants to
+-- read on a fleet they did not write.
+--
+-- IT IS NOT `credential_tables` RENAMED. The two are different claims and
+-- conflating them would be the same error this file keeps refusing: a membership
+-- table resolved by a caller is not a table that can be resolved by anybody who
+-- guesses a digest, and a credential table is not a table whose rows a signed-in
+-- person may enumerate. So this reads the `_cafaye_members` policy and calls
+-- `current_user_id`, and reports the USER column, which is the column whose value
+-- the caller must already hold.
+--
+-- Everything else is `credential_tables`' query with two names changed, and that
+-- is deliberate rather than lazy: the `pg_depend` reading is the part that took
+-- the work. Deparse-and-regexp would have been five lines, and `credential_tables`
+-- carries 40 lines of measured explanation of why it does not work — an audit
+-- that spells a function name returns NOTHING as the cluster's own admin role and
+-- the whole answer in every other session, so the same query and the same
+-- substring rules are what make the two functions agree with each other.
+create or replace function cafaye.membership_tables()
+returns table (table_schema text, table_name text, user_column text)
+language sql
+stable
+as $caf$
+  -- (1) The caller function, by OID, with `pronargs = 0` as part of its identity.
+  with user_fn as (
+    select fn.oid
+      from pg_proc fn
+      join pg_namespace fns on fns.oid = fn.pronamespace
+     where fns.nspname = 'cafaye'
+       and fn.proname = 'current_user_id'
+       and fn.pronargs = 0
+  ),
+
+  -- (2) The policies in the substrate's own naming that call it, with the columns
+  --     of THEIR OWN table the call sits beside. Same two dependency joins, same
+  --     `deptype`, same `refobjsubid > 0` narrowing of the column match.
+  discover as (
+    select pol.oid as policy_oid,
+           pol.polrelid,
+           att.attname as column_name
+      from pg_policy pol
+      join pg_depend fd
+        on fd.classid = 'pg_policy'::regclass
+       and fd.objid = pol.oid
+       and fd.refclassid = 'pg_proc'::regclass
+       and fd.deptype = 'n'
+      join user_fn uf on uf.oid = fd.refobjid
+      left join pg_depend ud
+        on ud.classid = 'pg_policy'::regclass
+       and ud.objid = pol.oid
+       and ud.refclassid = 'pg_class'::regclass
+       and ud.refobjid = pol.polrelid
+       and ud.refobjsubid > 0
+      left join pg_attribute att
+        on att.attrelid = pol.polrelid
+       and att.attnum = ud.refobjsubid
+       and not att.attisdropped
+     where pol.polname like '%!_cafaye!_members' escape '!'
+       and pol.polcmd = 'r'
+  )
+
+  -- (3) One row per policy, with `'(unresolved)'` when the qualifier names more
+  --     than one of the table's own columns — reported, not dropped, for the
+  --     reason cost 4 of `credential_tables` above gives.
+  select n.nspname::text,
+         c.relname::text,
+         case when g.columns_named = 1 then g.column_name
+              else '(unresolved)' end
+    from (select policy_oid,
+                 polrelid,
+                 count(distinct column_name) as columns_named,
+                 min(column_name)            as column_name
+            from discover
+           group by policy_oid, polrelid) g
+    join pg_class c on c.oid = g.polrelid
+    join pg_namespace n on n.oid = c.relnamespace
+   order by n.nspname, c.relname
+$caf$;
+
 -- PROTECT ONE ACCOUNT-SCOPED TABLE. The only thing a migration calls.
 --
 --   select cafaye.protect_table('assets');                 -- the owner's role
@@ -523,6 +804,7 @@ declare
   login_role text := coalesce(p_login_role, current_user || '_app');
   qual text := 'account_id = (select cafaye.current_account_id())';
   base text;
+  seq_name text;
 begin
   -- 0. THE LOGIN ROLE HAS TO EXIST, and saying so by name is the difference
   --    between a diagnosable failure and a confusing one. Postgres reports a
@@ -626,11 +908,87 @@ begin
   --    role cannot resolve `cafaye.begin_account/1` at all, so the first thing a
   --    service does after adopting this is a `permission denied for schema
   --    cafaye` on every request.
+  --
+  --    USAGE ON A SEQUENCE is in the list for the same reason and it is the one
+  --    that is INVISIBLE until a service writes a row. A table's INSERT reads its
+  --    sequence before it writes the row, and a sequence is a separate object with
+  --    its own grants — the table grant above does not carry it. Without this line
+  --    a protected table with a `bigserial` column is UNINSERTABLE by the login
+  --    role:
+  --
+  --        ERROR:  permission denied for sequence notification_preferences_id_seq
+  --
+  --    which is SQLSTATE 42501 — the code the policies themselves raise. An
+  --    assertion that checks the code alone cannot tell a working boundary from a
+  --    table nobody can write to. `templates/database/tenancy/isolation.sql`'s
+  --    `cafaye_observed` returns `sqlstate` and nothing else, so it is exposed to
+  --    exactly that; what has kept it out of reach is that its probe table is
+  --    `id uuid … default gen_random_uuid()`, which is why 39 assertions have been
+  --    green through this defect. `reports/substrate-sequence-grant/` is where the
+  --    message is required, and it is where the two are told apart.
   execute format('grant usage on schema public to %I', login_role);
   if to_regnamespace('cafaye') is not null then
     execute format('grant usage on schema cafaye to %I', login_role);
   end if;
   execute format('grant select, insert, update, delete on table %s to %I', p_table, login_role);
+
+  -- 7. AND USAGE ON EVERY SEQUENCE THIS TABLE'S OWN COLUMNS OWNED, AND NO OTHER.
+  --
+  --    `USAGE` is the whole grant and it is the whole need: it is what `nextval`
+  --    and `currval` check, so it is the minimum that makes an INSERT into a
+  --    serial column work. It is deliberately NOT `select` (which would let the
+  --    login role read `last_value` and reason about how many rows other tables
+  --    hold) and NOT `update` (which would let it `setval` and forge ids). A
+  --    blanket `grant all on all sequences in schema public` also makes the
+  --    insert work, and hands the same role control of every sequence in the
+  --    database — including the ones behind tables it must not touch. The
+  --    narrowing is the point of the loop.
+  --
+  --    FOUND IN THE CATALOG, NOT BY NAME. `<column>_id_seq` is this migration's
+  --    convention and is not the next service's; a table with two serial columns
+  --    has two sequences and neither is the table's; `serial4`, `bigserial`,
+  --    `identity` and a hand-written `DEFAULT nextval(…)` differ in spelling and
+  --    in nothing else. `pg_depend` is the edge Postgres itself records for all of
+  --    them — `deptype` `a` for `serial` and `i` for `identity` — so reading it
+  --    covers every spelling rather than the one this migration happened to use.
+  --    The loop deliberately does NOT filter on `deptype`.
+  --
+  --    MEASURED, because it was the premise this line was written under and the
+  --    measurement says otherwise: on PostgreSQL 17.11 and 18.6 a protected table
+  --    whose id is `generated always as identity` IS insertable by a role holding
+  --    no privilege on the sequence at all, while that same role's explicit
+  --    `nextval()` on the sequence is refused — the identity value is fetched on a
+  --    path with no ACL check. So the `bigserial` case was the lockout and this one
+  --    was not, and the grant is here anyway for two reasons that do not depend on
+  --    that: it is `USAGE` on the table's OWN sequence and nothing wider, and a
+  --    substrate whose correctness rests on an undocumented executor detail is one
+  --    minor version from the same lockout. Do not read this loop as a claim that
+  --    `identity` was broken; read it as a claim that this file does not have to
+  --    be re-derived per spelling.
+  --
+  --    `FOR … IN SELECT` rather than `SELECT … INTO`, so an empty result set is a
+  --    loop that does not run rather than a `no rows` exception. Most tables in
+  --    any service have no serial column at all, and `protect_table` already
+  --    refuses a table it cannot scope by name — a sequence loop that RAISED on
+  --    the tables that need no loop would be a quieter bug than the one it fixes.
+  --
+  --    Schema-qualified, because a bare relation name in a `GRANT` is resolved
+  --    through the CALLER's `search_path` — and the caller of a migration is a
+  --    role whose `search_path` this function does not control.
+  for seq_name in
+    select format('%I.%I', n.nspname, s.relname)
+      from pg_class s
+      join pg_namespace n on n.oid = s.relnamespace
+      join pg_depend d on d.classid = 'pg_class'::regclass
+                       and d.refclassid = 'pg_class'::regclass
+                       and d.objid = s.oid
+                       and d.refobjid = p_table::regclass
+      join pg_attribute a on a.attrelid = d.refobjid
+                         and a.attnum = d.refobjsubid
+     where s.relkind = 'S'
+  loop
+    execute format('grant usage on sequence %s to %I', seq_name, login_role);
+  end loop;
 end
 $caf$;
 
@@ -765,6 +1123,17 @@ $caf$;
 --     that calls it in every request. A service that forgets reads zero rows,
 --     which is safe and extremely visible, so this is a diagnosis rather than a
 --     leak.
+--
+--     `begin_user/1` has the same property with one difference in the WRONG
+--     DIRECTION, and it is worth stating because the difference is invisible from
+--     the service's side. Forgetting `begin_account` makes reads EMPTY. Forgetting
+--     `begin_user` makes one specific query empty — "which accounts am I in" —
+--     while every other query on the same connection keeps working, because the
+--     account scope is unaffected by the caller scope. A service can therefore
+--     run for a long time with a caller scope nobody sets, and the only symptom
+--     is a list that is always empty in exactly one screen. That is the same
+--     shape as a permission that was never granted, and it looks the same in a
+--     log: nothing failed.
 --
 --   * That the service's QUERIES still carry their own `where account_id = ?`.
 --     They should. RLS is defence in depth, not a licence to delete the
