@@ -372,7 +372,13 @@ jobs:
           # whole — re-measured by running the two tier greps and `mix test`
           # on this tree.
           #
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1688
+          # cf-byo-sending-domain adds 29 tests, every one a database-tier test
+          # (`tenant_sending_domains_test.exs`, 21, and
+          # `deliver_sending_domain_test.exs`, 8; both drive real rows through
+          # `Courier.DataCase`). whole 1688 -> 1717, database 916 -> 945,
+          # no-database UNCHANGED at 785.
+          #
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1717
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -686,7 +692,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 785
 
-      - name: tier — database (916 tests, 52 files)
+      - name: tier — database (945 tests, 54 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -710,7 +716,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 916
+          bin/assert-suite "$log" "database" 945
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -791,7 +797,7 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1688 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1717 passed | \`bin/assert-suite\` |"
             echo "| no database, 36 files | 785 passed | tier step |"
             echo "| database, 51 files | 903 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"

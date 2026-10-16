@@ -79,6 +79,13 @@ defmodule Courier.BackupTablesTest do
     "oban_jobs" => "the outbox relay's queue: work accepted and not yet done",
     "outbox_events" =>
       "every CloudEvents envelope courier published, and the relay's own claim query",
+    "tenant_sending_domains" =>
+      "a tenant's own sending domain, its provider account, and its provider " <>
+        "credential SEALED under COURIER_SECRET_BOX_KEY. The row is what lets tenant " <>
+        "A's mail leave from A's domain on A's credential, and a restore must bring " <>
+        "back whether the domain was proven — but the credential comes back as " <>
+        "ciphertext, so a restore without the SAME COURIER_SECRET_BOX_KEY brings the " <>
+        "rows back and not the ability to send with them",
     "unsubscribe_tokens" =>
       "one row per RFC 8058 one-click link courier minted — a SHA-256 of the token, " <>
         "the user, the notification type and the address it was minted for. Never the " <>
