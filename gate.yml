@@ -754,7 +754,19 @@ gate:
       # drives the emitter under `capture_log` and calls
       # `Courier.Application.start/2`, so no row is read). The floor sits AT the
       # measurement with zero headroom.
-      minimum: 1801
+      #
+      # REMEASURED on the tree carrying bounce-correlation as well — the
+      # provider's `result.message_id` is recorded beside courier's own id so a
+      # report the provider makes about a message can be joined to the send that
+      # caused it (before this, `outbox_events.subject` held only courier's
+      # `courier-<uuid>` and the provider's reports quote ITS id, so nothing
+      # matched). MEASURED on the merged tree, not derived:
+      # **whole 1806 = no-database 819 (38 files) + database 987 (57 files)**.
+      # The +5 are `test/courier/bounce_correlation_test.exs`, a
+      # `Courier.DataCase` — every claim in it is about a row, a report that
+      # resolves through one and a receipt that writes one. The floor sits AT
+      # the measurement with zero headroom.
+      minimum: 1806
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

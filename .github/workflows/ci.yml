@@ -427,7 +427,7 @@ jobs:
           #   * `test/courier_web/router_test.exs` (5) is a plain `ExUnit.Case`
           #     because its subject is the resolved route and its pipeline.
           # 1797 is 815 + 982, so the parts still sum to the whole.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1801
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1806
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -741,7 +741,7 @@ jobs:
           fi
           bin/assert-suite "$log" "no database" 819
 
-      - name: tier — database (982 tests, 56 files)
+      - name: tier — database (987 tests, 57 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -765,7 +765,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 982
+          bin/assert-suite "$log" "database" 987
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -846,9 +846,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1801 passed | \`bin/assert-suite\` |"
+            echo "| whole suite (\`bin/prime\`) | 1806 passed | \`bin/assert-suite\` |"
             echo "| no database, 38 files | 819 passed | tier step |"
-            echo "| database, 56 files | 982 passed | tier step |"
+            echo "| database, 57 files | 987 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"
