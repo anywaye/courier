@@ -740,7 +740,21 @@ gate:
   # 1797 is 815 + 982, so the parts still sum to the whole — re-measured by
   # running the two tier greps and the whole suite on this tree. The floor sits
   # AT the measurement with zero headroom.
-      minimum: 1797
+      #
+      # REMEASURED on the tree carrying BOTH the sending-domain API and
+      # boot-lines-visible (the two operator notices `config/runtime.exs`
+      # composes must be emitted by a start-time process, because the release's
+      # boot script evaluates that file before `:logger` is up and a `Logger.*`
+      # call there is dropped with no error — measured: `kubectl logs | grep -c
+      # 'mailer:\|inbound:'` answered 0 on a fresh install and 0 on a box up for
+      # days). The two packets were developed in parallel and met here, so this
+      # number is the MERGED measurement rather than either packet's own:
+      # **whole 1801** = the sending-domain API's 1797 + the four tests
+      # `test/courier/startup_notices_test.exs` adds (a plain `ExUnit.Case` — it
+      # drives the emitter under `capture_log` and calls
+      # `Courier.Application.start/2`, so no row is read). The floor sits AT the
+      # measurement with zero headroom.
+      minimum: 1801
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres
