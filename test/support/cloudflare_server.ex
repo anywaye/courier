@@ -37,12 +37,35 @@ defmodule Courier.TestSupport.CloudflareServer do
 
   The response configuration lives in a SECOND table, so `take/1` clearing
   the requests cannot discard what the server is meant to answer.
+
+  ## The tables are the server's own, and carry no global name
+
+  Both tables are created in `init/1` against THIS process, unnamed. An ETS
+  name is a VM-wide registration, so a named table here made the harness
+  collide with itself: a server is linked to the test process that started it,
+  the link is severed ASYNCHRONOUSLY when that test exits, and a second test
+  that starts a server in that window called `:ets.new(:named_table)` on a name
+  that already existed and died with `ArgumentError`. Measured on the whole
+  suite with `--seed 218080` under load — `a provider that refuses the send is
+  surfaced` failed at `init/1`, in a test whose own file starts no server at
+  all. The name was the defect; the test order was only the trigger. So the
+  table descriptor is held in this server's STATE, `requests/1` and `take/1`
+  read it back through the process, and the Plug is handed it in its options —
+  no name to collide on, however many servers are alive at once, and the
+  response table is per-server too (it used to be shared, so one server's
+  `set_response/3` silently changed another's answer).
   """
 
   use GenServer
 
-  @requests_table :courier_cloudflare_requests
-  @response_table :courier_cloudflare_response
+  # Not names — LABELS. `:ets.new/2` only registers a name against the VM when
+  # the options carry `:named_table`; without it the atom is what `:ets.info/2`
+  # reports for the table and nothing more. Two servers running at once each
+  # get their own table under the same label, which is the point.
+  @requests_label :courier_cloudflare_requests
+  @response_label :courier_cloudflare_response
+
+  @default_body ~s({"success":true,"errors":[],"messages":[],"result":{"delivered":["test@example.com"],"permanent_bounces":[],"queued":[],"suppressed_recipients":[]}})
 
   @typedoc "One request as the server received it on the wire."
   @type received :: %{
@@ -92,14 +115,10 @@ defmodule Courier.TestSupport.CloudflareServer do
 
   @impl true
   def init(options) do
-    :ets.new(@requests_table, [:named_table, :public, :ordered_set])
-    :ets.new(@response_table, [:named_table, :public])
+    requests = :ets.new(@requests_label, [:public, :ordered_set])
+    response = :ets.new(@response_label, [:public])
 
-    :ets.insert(@response_table, {
-      :response,
-      200,
-      ~s({"success":true,"errors":[],"messages":[],"result":{"delivered":["test@example.com"],"permanent_bounces":[],"queued":[],"suppressed_recipients":[]}})
-    })
+    :ets.insert(response, {:response, 200, @default_body})
 
     port = Keyword.get(options, :port, 0)
 
@@ -107,16 +126,16 @@ defmodule Courier.TestSupport.CloudflareServer do
            scheme: :http,
            port: port,
            ip: {127, 0, 0, 1},
-           plug: {__MODULE__.Plug, [table: @requests_table, response_table: @response_table]},
+           plug: {__MODULE__.Plug, [table: requests, response_table: response]},
            startup_log: false
          ) do
       {:ok, pid} ->
         {:ok, {_address, bound_port}} = ThousandIsland.listener_info(pid)
-        {:ok, %{pid: pid, port: bound_port}}
+        {:ok, %{pid: pid, port: bound_port, requests: requests, response: response}}
 
       {:error, reason} ->
-        :ets.delete(@requests_table)
-        :ets.delete(@response_table)
+        :ets.delete(requests)
+        :ets.delete(response)
         {:stop, reason}
     end
   end
@@ -124,29 +143,29 @@ defmodule Courier.TestSupport.CloudflareServer do
   @impl true
   def handle_call(:port, _from, %{port: port} = state), do: {:reply, port, state}
 
-  def handle_call(:requests, _from, state), do: {:reply, read_all(), state}
+  def handle_call(:requests, _from, state), do: {:reply, read_all(state.requests), state}
 
   def handle_call(:take, _from, state) do
-    all = read_all()
-    :ets.delete_all_objects(@requests_table)
+    all = read_all(state.requests)
+    :ets.delete_all_objects(state.requests)
     {:reply, all, state}
   end
 
   def handle_call({:set_response, status, body}, _from, state) do
-    :ets.insert(@response_table, {:response, status, body})
+    :ets.insert(state.response, {:response, status, body})
     {:reply, :ok, state}
   end
 
-  defp read_all do
-    @requests_table
+  defp read_all(requests) do
+    requests
     |> :ets.tab2list()
     |> Enum.map(fn {_sequence, request} -> request end)
   end
 
   @impl true
-  def terminate(_reason, _state) do
-    :ets.delete(@requests_table)
-    :ets.delete(@response_table)
+  def terminate(_reason, %{requests: requests, response: response}) do
+    :ets.delete(requests)
+    :ets.delete(response)
     :ok
   end
 
