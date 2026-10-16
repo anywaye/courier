@@ -157,7 +157,7 @@ defmodule Courier.ChartTest do
 
   defp indent(line), do: String.length(line) - String.length(String.trim_leading(line, " "))
 
-  @committed_digest "sha256:e178ceb4e9587cb834a46a766403f23cc62d9e48b2dd71c2ed0d9245d1d62abd"
+  @committed_digest "sha256:f73f9e6ee49627fc69c349ea4b8059dc77ff0145979afe1384d1674ebaa95367"
 
   defp helm_template(args \\ []) do
     {output, status} =
