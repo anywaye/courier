@@ -375,10 +375,13 @@ jobs:
           # cf-byo-sending-domain adds 29 tests, every one a database-tier test
           # (`tenant_sending_domains_test.exs`, 21, and
           # `deliver_sending_domain_test.exs`, 8; both drive real rows through
-          # `Courier.DataCase`). whole 1688 -> 1717, database 916 -> 945,
-          # no-database UNCHANGED at 785.
+          # `Courier.DataCase`). Re-measured by running both tier greps and the
+          # whole suite on this tree: whole 1740 = no-database 795 + database
+          # 945. The old whole floor (1688) and no-database floor (785) were
+          # already short of the tree before this packet; the floors below are
+          # the measurement, not the old number plus 29.
           #
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1717
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1740
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -690,7 +693,7 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 785
+          bin/assert-suite "$log" "no database" 795
 
       - name: tier — database (945 tests, 54 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
@@ -797,9 +800,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1717 passed | \`bin/assert-suite\` |"
-            echo "| no database, 36 files | 785 passed | tier step |"
-            echo "| database, 51 files | 903 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1740 passed | \`bin/assert-suite\` |"
+            echo "| no database, 36 files | 795 passed | tier step |"
+            echo "| database, 54 files | 945 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"
