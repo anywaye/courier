@@ -538,37 +538,31 @@ defmodule Courier.CloudflareDeliveryTest do
   end
 
   describe "the provider owns Message-ID (cf-message-id)" do
-    test "a message carrying message-id is sent, and the provider never receives it" do
-      {:ok, server, port} = CloudflareServer.start_link()
+    test "a message carrying message-id sends successfully" do
+      {:ok, _server, port} = CloudflareServer.start_link()
       put_adapter(port)
 
       # The header `Courier.Deliver.tag/2` attaches to EVERY message it sends:
       # `<courier-<uuid>@cafaye.com>` under the lowercase `message-id` key.
       # Before this packet the adapter forwarded it verbatim and Cloudflare
-      # refused the whole message with 400 / 10202.
-      {:ok, email} =
-        Mailers.build(:welcome, %{
-          user_id: "usr_msgid",
-          email: "msgid@example.com",
-          name: "Msg Id"
-        })
+      # refused the whole message with 400 / 10202 — which the test server now
+      # reproduces, so a regression here is red, not silently accepted.
+      assert {:ok, _receipt} =
+               Courier.Mailer.deliver(tagged_welcome("usr_msgid", "msgid@example.com"))
+    end
 
-      tagged =
-        Swoosh.Email.header(
-          email,
-          "message-id",
-          "<courier-#{Ecto.UUID.generate()}@cafaye.com>"
-        )
+    test "the provider never receives a message-id header, in any case" do
+      {:ok, server, port} = CloudflareServer.start_link()
+      put_adapter(port)
 
-      assert {:ok, _receipt} = Courier.Mailer.deliver(tagged)
+      assert {:ok, _receipt} =
+               Courier.Mailer.deliver(tagged_welcome("usr_no_header", "no-header@example.com"))
 
-      # Assert on the request that ARRIVED, not on an internal helper: the
-      # server refuses a message-id header (400 / 10202), so this send only
-      # succeeds because the adapter dropped it before the request.
+      # Assert on the request that ARRIVED, not on an internal helper.
       assert [request] = CloudflareServer.take(server)
       payload = decode!(request.body)
 
-      refute header_keys(payload) |> Enum.any?(&(String.downcase(&1) == "message-id"))
+      refute Enum.any?(header_keys(payload), &(String.downcase(&1) == "message-id"))
     end
 
     test "List-Unsubscribe and List-Unsubscribe-Post both reach the provider" do
@@ -634,6 +628,19 @@ defmodule Courier.CloudflareDeliveryTest do
                  name: "No Id"
                })
     end
+  end
+
+  # A welcome message carrying the exact edit `Courier.Deliver.tag/2` makes:
+  # `<courier-<uuid>@cafaye.com>` under the lowercase `message-id` key. It goes
+  # through `Mailers.build/2`, the same composer the rest of the file uses.
+  defp tagged_welcome(user_id, email) do
+    {:ok, built} = Mailers.build(:welcome, %{user_id: user_id, email: email, name: "Tagged"})
+
+    Swoosh.Email.header(
+      built,
+      "message-id",
+      "<courier-#{Ecto.UUID.generate()}@cafaye.com>"
+    )
   end
 
   # An adapter aimed at the loopback test server.
