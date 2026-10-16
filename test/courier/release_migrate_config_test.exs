@@ -206,9 +206,7 @@ defmodule Courier.ReleaseMigrateConfigTest do
       assert config[:courier][:inbound_secrets] == %{"resend" => "whsec_dGVzdC1vbmx5LWZpeHR1cmU="}
     end
 
-    test "boot without inbound logs the cost and no secret value" do
-      import ExUnit.CaptureLog
-
+    test "boot without inbound composes the cost notice, naming no secret value" do
       System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
       System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
       System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
@@ -222,22 +220,37 @@ defmodule Courier.ReleaseMigrateConfigTest do
       System.delete_env("COURIER_SMTP_USERNAME")
       System.delete_env("COURIER_SMTP_PASSWORD")
 
-      log = capture_log(fn -> read_config!("start") end)
+      # COMPOSED, not logged. This used to `capture_log(fn -> read_config!("start") end)`
+      # and assert the line appeared — and it was green over a release that logged
+      # NOTHING, because `Config.Reader.read!/2` runs with the logger already up
+      # while the release's boot script does not. That is exactly the trap this
+      # packet is fixing: the assertion exercised the mechanism that a release
+      # never runs. What is asserted now is the notice's CONTENT;
+      # `Courier.StartupNoticesTest` asserts that `Courier.Application.start/2`
+      # actually emits it, in the window a release provides.
+      notices = read_config!("start")[:courier][:startup_notices]
 
-      assert log =~ "inbound: no provider configured",
-             "the boot line should name the unconfigured inbound state"
+      assert Enum.any?(notices, fn {_level, message} ->
+               message =~ "inbound: no provider configured"
+             end),
+             "the boot must compose the unconfigured-inbound warning, got: #{inspect(notices)}"
 
-      assert log =~
-               "a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone",
-             "the boot line must keep the cost sentence from the old raise"
+      assert Enum.any?(notices, fn {_level, message} ->
+               message =~
+                 "a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone"
+             end),
+             "the notice must keep the cost sentence from the old raise"
 
-      refute log =~ "whsec_",
-             "the boot line must not name a secret value"
+      assert Enum.any?(notices, fn {_level, message} ->
+               message == "mailer: adapter=cloudflare token=set account_id=set"
+             end),
+             "the boot must also compose the resolved mail-adapter notice, got: #{inspect(notices)}"
+
+      refute inspect(notices) =~ "fixture-not-a-credential",
+             "a credential value reached a startup notice:\n#{inspect(notices)}"
     end
 
-    test "boot with inbound logs verifying and no cost" do
-      import ExUnit.CaptureLog
-
+    test "boot with inbound composes the verifying notice and no cost" do
       System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
       System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
       System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
@@ -249,13 +262,20 @@ defmodule Courier.ReleaseMigrateConfigTest do
       System.put_env("SECRET_KEY_BASE", "test-only-not-a-secret-000000000000000000000000000000")
       System.put_env("COURIER_INBOUND_RESEND_SECRET", "whsec_dGVzdC1vbmx5LWZpeHR1cmU=")
 
-      log = capture_log(fn -> read_config!("start") end)
+      notices = read_config!("start")[:courier][:startup_notices]
 
-      refute log =~ "no provider configured",
-             "a boot with a provider should not log the no-provider warning"
+      assert Enum.any?(notices, fn {_level, message} ->
+               message =~ "inbound: verifying"
+             end),
+             "a boot with a provider must compose the verifying notice, got: #{inspect(notices)}"
 
-      refute log =~ "whsec_",
-             "the boot line must not name a secret value even when verifying"
+      refute Enum.any?(notices, fn {_level, message} ->
+               message =~ "no provider configured"
+             end),
+             "a boot with a provider must not compose the no-provider warning"
+
+      refute inspect(notices) =~ "whsec_",
+             "the notice must not name a secret value even when verifying"
     end
   end
 

@@ -375,9 +375,18 @@ if config_env() == :prod and serving? do
   # Postmark token is the whole secret. See `Courier.MailerAdapter.describe/1`
   # and the credential tests that assert the absence rather than trusting this
   # comment.
-  require Logger
-
-  Logger.info("mailer: #{Courier.MailerAdapter.describe(mailer_adapter)}")
+  #
+  # **COMPOSED HERE AND EMITTED FROM `Courier.Application.start/2`, and the
+  # indirection is the whole fix.** A `Logger.info/1` on this line looks right
+  # and reaches nobody: the release's boot script evaluates this file BEFORE the
+  # `:logger` application is up, so the call has no handler and the line is
+  # dropped with no error. Measured: `kubectl logs | grep -c 'mailer:\|inbound:'`
+  # answered `0` on a fresh install (32 lines) and `0` on a box up for days (544
+  # lines). The notice is built here, where the environment and the resolved
+  # adapter are, and `Courier.StartupNotices.log_startup/0` replays it once the
+  # logger can carry it — the same idiom as `Courier.Nats.log_startup/0` and
+  # `Courier.Telemetry.log_startup/0`.
+  mailer_notice = "mailer: #{Courier.MailerAdapter.describe(mailer_adapter)}"
 
   # The key every webhook signing secret is sealed under (`Courier.SecretBox`).
   # It is required rather than defaulted, because a default would be a key in
@@ -466,26 +475,33 @@ if config_env() == :prod and serving? do
          :inbound_secrets,
          if(inbound_resend_secret, do: %{"resend" => inbound_resend_secret}, else: %{})
 
-  require Logger
-
   # Which inbound surfaces are live, and never the secrets themselves — the same
   # rule as the mailer line above, and for a sharper reason: the inbound secret IS
   # the key. Unset, the cost is named rather than hidden: a hard bounce or a spam
   # complaint is discarded and courier goes on mailing an address that has said
   # it is gone. That sentence is the one the previous raise carried, and it now
-  # lives on this log line and in README so a deployment that loses bounce
+  # lives on a boot log line and in README so a deployment that loses bounce
   # reporting is told.
-  case inbound_resend_secret do
-    nil ->
-      Logger.warning(
-        "inbound: no provider configured — a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone; set COURIER_INBOUND_RESEND_SECRET to enable Resend inbound reports"
-      )
+  #
+  # Composed here and emitted by `Courier.Application.start/2`, for the same
+  # reason as `mailer_notice` above — and this is the line whose whole safety
+  # argument (`cf-inbound-optional`) depends on somebody being able to read it.
+  inbound_notice =
+    case inbound_resend_secret do
+      nil ->
+        {:warning,
+         "inbound: no provider configured — a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone; set COURIER_INBOUND_RESEND_SECRET to enable Resend inbound reports"}
 
-    _secret ->
-      Logger.info(
-        "inbound: verifying #{Enum.join(Courier.InboundConfig.configured_providers(), ", ")}"
-      )
-  end
+      _secret ->
+        {:info,
+         "inbound: verifying #{Enum.join(Courier.InboundConfig.configured_providers(), ", ")}"}
+    end
+
+  # The two operator-facing notices, in the order they used to be logged, carried
+  # to `Courier.Application.start/2` where the logger can deliver them. The list
+  # is the whole mechanism: nothing else in courier reads this key, and an empty
+  # list — the state in test and dev, where this block never runs — is a no-op.
+  config :courier, :startup_notices, [{:info, mailer_notice}, inbound_notice]
 end
 
 if config_env() == :prod do

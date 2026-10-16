@@ -42,6 +42,15 @@ defmodule Courier.Application do
     # operator reads. See Courier.Telemetry for the contract this reports on.
     Courier.Telemetry.log_startup()
 
+    # The operator-facing notices `config/runtime.exs` COMPOSED — the resolved
+    # mail adapter and, when it is missing, the cost of an unconfigured inbound
+    # surface. They cannot be logged there for the same reason as the two lines
+    # above: the release's boot script evaluates that file BEFORE `:logger` is
+    # up, so a `Logger.*` call in it has no handler and is dropped silently —
+    # measured, 0 of 544 lines on a box that had been serving for days. This is
+    # the call that reaches the log. See `Courier.StartupNotices`.
+    Courier.StartupNotices.log_startup()
+
     children = [
       # The request-span instrumentation. A child rather than an endpoint plug
       # because it owns a `:telemetry` handler for the exception path, and a
