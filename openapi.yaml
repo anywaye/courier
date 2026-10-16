@@ -1532,6 +1532,236 @@ paths:
         '500': { $ref: '#/components/responses/Internal' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
+  /v1/sending_domains:
+    get:
+      tags: [sending domains]
+      operationId: listSendingDomains
+      summary: List the caller's sending domains
+      description: |
+        Every domain the caller's account has registered, oldest first.
+        Unverified and revoked rows are included: the table is the history of
+        claims, and a list that hid the unverified rows would hide the rows an
+        operator is looking for when somebody asks "why is my domain not
+        sending".
+
+        The domain is the one a message's from-domain is matched against when
+        courier chooses the provider credential for a send.
+      security:
+        - bearerAuth: [sending_domains:read]
+      responses:
+        '200':
+          description: The caller's sending domains
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/SendingDomain' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+    post:
+      tags: [sending domains]
+      operationId: registerSendingDomain
+      summary: Register a sending domain
+      description: |
+        Registers a claim on a domain, and the provider credential courier will
+        send mail from that domain with.
+
+        **Registration proves nothing by itself.** The row starts unverified and
+        is not usable: `Courier.Deliver` refuses a send whose from-domain has
+        only unverified rows, rather than falling back to the deployment's
+        credential on a domain somebody else claimed. The proof runs in
+        `verifySendingDomain`.
+
+        **The credential is sealed at rest and is never returned by any
+        operation.** It crosses this API once, on the way in, and there is no
+        read path that can produce it afterwards: a response that echoed it
+        would make a database read into a credential endpoint.
+
+        The body's vocabulary is closed. An unknown field — including
+        `account_id`, which courier reads from the caller's token and nowhere
+        else — is a 422 naming it, rather than a field silently discarded.
+      security:
+        - bearerAuth: [sending_domains:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain, provider, provider_account_id, credential]
+              additionalProperties: false
+              properties:
+                domain:
+                  type: string
+                  description: |
+                    The sending domain, e.g. `tenant.example.com`. Lowercased and
+                    stripped of a trailing dot; a value that is not a hostname is
+                    a 422.
+                provider:
+                  $ref: '#/components/schemas/SendingDomainProvider'
+                provider_account_id:
+                  type: string
+                  description: |
+                    The provider-side account the domain lives in — for
+                    Cloudflare, the account id that owns the zone. Needed to form
+                    the send URL, and never rendered in a response.
+                credential:
+                  type: string
+                  description: |
+                    The provider token, scoped to send from this domain. Sealed
+                    under `COURIER_SECRET_BOX_KEY` on the way in and never
+                    readable back.
+      responses:
+        '201':
+          description: Registered, unverified
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/parameters/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/SendingDomain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/sending_domains/{id}:
+    parameters:
+      - $ref: '#/components/parameters/SendingDomainId'
+
+    get:
+      tags: [sending domains]
+      operationId: getSendingDomain
+      summary: Fetch one sending domain
+      security:
+        - bearerAuth: [sending_domains:read]
+      responses:
+        '200':
+          description: The sending domain
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/SendingDomain' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/sending_domains/{id}/verify:
+    parameters:
+      - $ref: '#/components/parameters/SendingDomainId'
+
+    post:
+      tags: [sending domains]
+      operationId: verifySendingDomain
+      summary: Prove a sending domain and mark it verified
+      description: |
+        Runs courier's two-part proof and, on success, sets `verified_at`:
+
+          1. **DNS** — the domain must publish the `cf-bounce` MX trio, the SPF
+             TXT and the DKIM TXT that Cloudflare Email Sending's onboarding
+             flow creates. The records prove the domain is on Cloudflare DNS
+             with Email Sending onboarded.
+          2. **The credential** — one verification message is sent from the
+             domain, to an address the platform controls, with the tenant's own
+             token. The provider must accept it. DNS records can be read by
+             anyone who can see them; a token scoped to send from the domain
+             cannot be forged by anyone who cannot send.
+
+        Either half alone is not proof, and the DNS check runs first so a domain
+        that is not onboarded costs no provider request to refuse. The failure
+        names the half that is wrong: a record mismatch or a refused credential
+        is a **422** whose `errors[].field` is `domain` or `credential`; a
+        resolver that could not answer, or a credential courier cannot open, is
+        a **503**.
+
+        This is the only operation that makes a domain sendable, and a caller
+        cannot reach the `enabled` state any other way.
+      security:
+        - bearerAuth: [sending_domains:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: Verified; the domain is now usable on the send path
+          headers:
+            Idempotency-Replayed:
+              $ref: '#/components/parameters/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/SendingDomain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '409': { $ref: '#/components/responses/IdempotencyConflict' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/sending_domains/{id}/revoke:
+    parameters:
+      - $ref: '#/components/parameters/SendingDomainId'
+
+    post:
+      tags: [sending domains]
+      operationId: revokeSendingDomain
+      summary: Revoke a sending domain
+      description: |
+        Sets `status` to `revoked`. Mail through the domain stops, because the
+        send path reads `status` and never selects a revoked row.
+
+        Revocation is a **status and not a deletion**: the row stays, because
+        "this domain was verified on this date and revoked on this one" is a
+        fact a support conversation needs. Deleting the row is the operator's
+        escape hatch, not the tenant's.
+
+        It is idempotent by construction — a repeat is the same row with the
+        same status — so it takes no `Idempotency-Key`.
+      security:
+        - bearerAuth: [sending_domains:write]
+      responses:
+        '200':
+          description: Revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/SendingDomain' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1564,7 +1794,7 @@ components:
           * identity's scope vocabulary is a **closed set of six** —
             `accounts:read`, `accounts:write`, `accounts:delete`,
             `oidc_clients:write`, `audit_log:read`, `account_invitations:write`
-            — and **not one of the five names declared below can be minted by
+            — and **not one of the scope names declared below can be minted by
             it.** A check written today would refuse every credential identity is
             able to issue.
 
@@ -1676,6 +1906,18 @@ components:
       in: path
       required: true
       description: The endpoint's uuid.
+      schema: { type: string, format: uuid }
+
+    SendingDomainId:
+      name: id
+      in: path
+      required: true
+      description: |
+        The sending domain's uuid. Checked for shape only — a non-uuid is a 404
+        rather than a 422, because "does this belong to you?" and "does this
+        exist?" are the same question for a row the caller cannot see, and a
+        distinct answer for a malformed id would be an oracle that tells a
+        caller which ids are well-formed.
       schema: { type: string, format: uuid }
 
     NotificationId:
@@ -2199,6 +2441,70 @@ components:
               nullable: true
               description: Null on the last page.
 
+    SendingDomainProvider:
+      type: string
+      enum: [cloudflare]
+      description: |
+        The provider the credential belongs to. A closed set: `cloudflare` is the
+        only provider whose credential shape (an API token plus the provider
+        account id) courier's adapters speak. A second provider is a row in this
+        enum plus an adapter builder, not a branch in the send path.
+
+    SendingDomainStatus:
+      type: string
+      enum: [enabled, revoked]
+      description: |
+        `revoked` is set by `revokeSendingDomain` and stops the send path
+        selecting the row. The row is never deleted here; deletion is the
+        operator's escape hatch.
+
+    SendingDomain:
+      type: object
+      required:
+        [id, account_id, domain, provider, status, verified_at, inserted_at, updated_at]
+      description: |
+        One account's claim on a domain it sends mail from, and the state of the
+        proof.
+
+        **There is no credential in this shape, and no
+        `provider_account_id` either.** The credential is sealed at rest and has
+        no read path; `provider_account_id` is never rendered anywhere. The
+        response is this fixed set of eight fields rather than the row, so a
+        later field cannot appear in a response by accident.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: courier's row id.
+        account_id:
+          type: string
+          format: uuid
+          description: The owning account. Always the caller's.
+        domain:
+          type: string
+          description: The sending domain, lowercase.
+        provider:
+          $ref: '#/components/schemas/SendingDomainProvider'
+        status:
+          $ref: '#/components/schemas/SendingDomainStatus'
+        verified_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When the two-part proof succeeded, or null if it has not. A null here
+            is the whole of "this domain cannot send": the proof is DNS plus a
+            provider-accepted verification message, and registration alone sets
+            nothing.
+        inserted_at:
+          type: string
+          format: date-time
+          description: When the domain was registered.
+        updated_at:
+          type: string
+          format: date-time
+          description: When the row last changed.
+
     Problem:
       type: object
       description: RFC 9457, with courier's extensions. Every non-2xx.
@@ -2638,6 +2944,35 @@ components:
             detail: That Idempotency-Key is still being processed.
             code: conflict
             trace_id: 0af7651916cd43dd8448eb211c80319c
+
+    IdempotencyConflict:
+      description: |
+        The `Idempotency-Key` this request carried was reused with a different
+        body, or its first request is still in flight. The two are distinguished
+        by `code`: `idempotency_key_reused` for the first, `conflict` for the
+        second. There is no stored response to replay in either case.
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          examples:
+            reused:
+              summary: Same key, different body
+              value:
+                type: https://docs.cafaye.com/errors/idempotency_key_reused
+                title: Idempotency key reused
+                status: 409
+                detail: That Idempotency-Key was already used for a different request body.
+                code: idempotency_key_reused
+                trace_id: 0af7651916cd43dd8448eb211c80319c
+            in_flight:
+              summary: Same key, first request still running
+              value:
+                type: https://docs.cafaye.com/errors/conflict
+                title: Conflict
+                status: 409
+                detail: That Idempotency-Key is still being processed.
+                code: conflict
+                trace_id: 0af7651916cd43dd8448eb211c80319c
 
     Internal:
       description: |

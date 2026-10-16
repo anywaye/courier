@@ -814,7 +814,15 @@ defmodule CourierWeb.OpenAPIPathsTest do
       # and the two POSTs declare a 400 for the reason every other operation with
       # a body-reading verb does: the parser reads a body on `POST`, so a body
       # that is not JSON is refused before the controller runs.
-      assert map_size(responses) == 16
+      #
+      # 16 → 21 with the five sending-domain operations: `GET` and
+      # `POST /v1/sending_domains`, `GET /v1/sending_domains/{id}`,
+      # `POST /v1/sending_domains/{id}/verify` and
+      # `POST /v1/sending_domains/{id}/revoke`. The three POSTs declare a 400 for
+      # the same body-reading reason, and the two that can be retried
+      # (`registerSendingDomain`, `verifySendingDomain`) also declare a 409, so
+      # the count moved by five.
+      assert map_size(responses) == 21
 
       for {_operation, declared} <- responses, {status, response} <- declared do
         if not String.starts_with?(status, "2") do
@@ -982,6 +990,8 @@ defmodule CourierWeb.OpenAPIPathsTest do
 
       assert Map.keys(operations) |> Enum.sort() == [
                {"POST", "/v1/messages"},
+               {"POST", "/v1/sending_domains"},
+               {"POST", "/v1/sending_domains/{}/verify"},
                {"POST", "/v1/webhook_endpoints"},
                {"POST", "/v1/webhook_endpoints/{}/test"}
              ]
