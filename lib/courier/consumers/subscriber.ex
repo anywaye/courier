@@ -102,10 +102,30 @@ defmodule Courier.Consumers.Subscriber do
   alias Courier.Consumers
   alias Courier.Nats
 
-  # The subject prefix. ONE constant, and the whole "identity.> means what it
-  # says" rule lives in it: a subscription to a concrete type would be a
-  # subscription to a servant.
-  @subject "identity.>"
+  # THE SUBJECTS, DERIVED FROM THE CONSUMERS MAP AND NEVER HARDCODED.
+  #
+  # It was one constant — `"identity.>"` — while every consumer courier had was
+  # an identity event, and that was true until `billing.payment.succeeded`
+  # arrived: the receipt consumer was added to `config :courier, :consumers`,
+  # every test of the CONSUMER passed, and the subscription still asked the
+  # broker for `identity.>` alone. Measured on the launch stack (2026-10-16):
+  # courier logged "subscribed to identity.>", billing published a settled
+  # payment onto the bus, and the receipt landed in no mailbox — the registered
+  # consumer was dead wire, green tests and all. A registration that does not
+  # move the subscription is a message nobody receives, so the subscription is
+  # read off the same map the router reads.
+  #
+  # One prefix per SERVICE, not one per type: a subscription to a concrete type
+  # would be a subscription to a servant, and a service that gains a fifth
+  # event should not need courier redeployed before it can be heard.
+  @spec subjects() :: [String.t()]
+  def subjects do
+    Consumers.subscribed()
+    |> Enum.map(fn type -> type |> String.split(".") |> hd() end)
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.map(&(&1 <> ".>"))
+  end
 
   # How often the subscription is (re-)attempted. Fixed rather than growing,
   # on the same terms as `Courier.Nats`'s own reconnect interval: the bus
@@ -135,14 +155,11 @@ defmodule Courier.Consumers.Subscriber do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @doc "The subject prefix this subscriber subscribes to."
-  @spec subject() :: String.t()
-  def subject, do: @subject
 
   @impl GenServer
   def init(_opts) do
     send(self(), :subscribe)
-    {:ok, %{connection: nil, sid: nil, logged_disconnected: false}}
+    {:ok, %{connection: nil, sids: [], logged_disconnected: false}}
   end
 
   @impl GenServer
@@ -170,31 +187,44 @@ defmodule Courier.Consumers.Subscriber do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp subscribe(connection, state) do
-    if state.connection == connection and is_integer(state.sid) do
+    if state.connection == connection and state.sids != [] do
       # Already subscribed on this connection. The timer keeps running — the
       # broker's next reconnect hands us a new pid and that is the signal to
       # subscribe again.
       {:noreply, state}
     else
-      case Gnat.sub(connection, self(), @subject, []) do
-        {:ok, sid} ->
+      # EVERY subject, or none: a half-subscribed subscriber is the defect this
+      # function's history records (a second service's events arriving while
+      # the subscription still named the first), so one refused SUB rolls the
+      # whole attempt back to "no connection" and the timer tries the set
+      # again. The broker's reconnect loses every subscription on the
+      # connection, so the set is what re-arms — not one of them.
+      case Enum.reduce_while(subjects(), {:ok, []}, &subscribe_one(connection, &1, &2)) do
+        {:ok, sids} ->
           if state.connection != connection do
-            Logger.info("bus: subscribed to #{@subject}")
+            Logger.info("bus: subscribed to #{Enum.join(subjects(), ", ")}")
           end
 
-          {:noreply, %{state | connection: connection, sid: sid, logged_disconnected: false}}
+          {:noreply, %{state | connection: connection, sids: sids, logged_disconnected: false}}
 
-        {:error, reason} ->
+        {:error, reason, subject} ->
           # A refused SUB is a warning, not a crash: the retry timer is armed
           # either way and this process surviving is what lets it succeed
           # later.
           Logger.warning(
-            "bus: the broker refused the subscription to #{@subject} (#{inspect(reason)}); " <>
+            "bus: the broker refused the subscription to #{subject} (#{inspect(reason)}); " <>
               "it will be attempted again"
           )
 
-          {:noreply, %{state | connection: nil, sid: nil}}
+          {:noreply, %{state | connection: nil, sids: []}}
       end
+    end
+  end
+
+  defp subscribe_one(connection, subject, {:ok, sids}) do
+    case Gnat.sub(connection, self(), subject, []) do
+      {:ok, sid} -> {:cont, {:ok, [sid | sids]}}
+      {:error, reason} -> {:halt, {:error, reason, subject}}
     end
   end
 
@@ -205,12 +235,12 @@ defmodule Courier.Consumers.Subscriber do
   defp dark(state) do
     unless state.logged_disconnected do
       Logger.warning(
-        "bus: no connection to #{Nats.url() || "the broker"}; identity.> deliveries " <>
-          "cannot be received until one is established"
+        "bus: no connection to #{Nats.url() || "the broker"}; " <>
+          "#{Enum.join(subjects(), ", ")} deliveries cannot be received until one is established"
       )
     end
 
-    {:noreply, %{state | connection: nil, sid: nil, logged_disconnected: true}}
+    {:noreply, %{state | connection: nil, sids: [], logged_disconnected: true}}
   end
 
   # The envelope, decoded and recorded — or a NAMED refusal with nothing from

@@ -11,7 +11,7 @@ defmodule Courier.Consumers.SubscriberTest do
 
   What the file asserts:
 
-    * the subscription is to the **`identity.>` prefix**, not to the four
+    * the subscription is to the **per-service prefixes**, not to the four
       subscribed types — read off the broker's own subscription list;
     * **an `identity.>` event reaching the bus produces exactly one welcome
       mail, and the same event id delivered twice produces one** — the
@@ -143,15 +143,31 @@ defmodule Courier.Consumers.SubscriberTest do
   end
 
   describe "the subscription" do
-    test "is to the identity.> PREFIX, not to the subscribed types", ctx do
+    test "is to every service PREFIX the consumers name, not to the subscribed types", ctx do
+      # The set is DERIVED from `config :courier, :consumers`, and the receipt
+      # consumer is why: `billing.payment.succeeded` was registered while the
+      # subscription still asked the broker for `identity.>` alone, and the
+      # launch stack's first paid charge produced no receipt in mailpit while
+      # every consumer test passed. A type courier registers and does not
+      # subscribe to is a message nobody receives.
       await_subscription(ctx.server, "identity.>")
+      await_subscription(ctx.server, "billing.>")
 
       subjects = Enum.map(NatsServer.subscriptions(ctx.server), & &1.subject)
 
       assert "identity.>" in subjects
+      assert "billing.>" in subjects
       refute "identity.user.created" in subjects
+      refute "billing.payment.succeeded" in subjects
 
-      assert Subscriber.subject() == "identity.>"
+      assert Subscriber.subjects() == [ "billing.>", "identity.>" ]
+
+      # AND THE DERIVATION IS THE REGISTRY'S. A prefix that names no registered
+      # consumer is a subscription to traffic courier would drop, and a
+      # registered type whose service is missing from the set is the defect
+      # above. Held to `Consumers.subscribed/0` so the two cannot disagree.
+      services = Consumers.subscribed() |> Enum.map(&(&1 |> String.split(".") |> hd())) |> Enum.uniq()
+      assert Subscriber.subjects() == Enum.map(Enum.sort(services), &(&1 <> ".>"))
     end
 
     test "with no broker there is no subscriber at all" do
