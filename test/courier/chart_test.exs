@@ -157,7 +157,7 @@ defmodule Courier.ChartTest do
 
   defp indent(line), do: String.length(line) - String.length(String.trim_leading(line, " "))
 
-  @committed_digest "sha256:f9b14111acbacfb8b13013e78c7305887de73e8dd095cc4fd2a68976b787d901"
+  @committed_digest "sha256:e8eac92a11a6a0154673be9b12cda689fdfa3e8a05e9592ba25c207878d74a1a"
 
   defp helm_template(args \\ []) do
     {output, status} =
@@ -377,12 +377,14 @@ defmodule Courier.ChartTest do
     # manager worked around it by pinning a sha tag in the Application
     # values.
     #
-    # The committed digest is `ghcr.io/cafaye/courier:0.1.0` as
-    # resolved from the registry when this packet was written — the image
-    # built from the current master. The publish run overwrites this line
-    # with the digest it just built, so the OCI chart always names the
-    # bytes beside it, and this committed value is the floor a `push: false`
-    # run and a fresh clone render.
+    # The committed digest is the image built from the current master.
+    # The publish run overwrites this line with the digest it just built,
+    # so the OCI chart always names the bytes beside it, and this committed
+    # value is the floor a `push: false` run and a fresh clone render.
+    # The TAG does not move with it: it stays at the chart's release
+    # version, because `--set image.digest=` renders `repository:<tag>` and
+    # the empty-digest path is asserted to render the tag the chart was
+    # released with.
 
     test "commits a digest that is sha256:<64 hex> and equal to the registry's current image" do
       values = read_file("values.yaml")

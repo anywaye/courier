@@ -55,7 +55,7 @@ image:
   # templates/deployment.yaml, and kit's step, which refuses it at the
   # write.
   digest: "sha256:e8eac92a11a6a0154673be9b12cda689fdfa3e8a05e9592ba25c207878d74a1a"
-  tag: "sha-9ac1976"
+  tag: "0.1.0"
   pullPolicy: IfNotPresent
 
 # The read-only pull secret on the box, created once, out of band:
