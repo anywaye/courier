@@ -609,16 +609,21 @@ measurement; this is the change it was asking for.
     configures it **without being a boot requirement**: nothing in the request
     path reads it, so refusing to start over a migration credential would take a
     healthy release down for something no request needs.
-  * **The sequence grant is a kit defect this tree pins, not courier's bug.**
-    `cafaye.protect_table/2` at `@substrate_sha` (`15cee0e1`) grants table DML and
-    no sequence privilege, so a protected table with a `bigserial` column is
-    uninsertable by the login role — kit fixed it in `63663f8` and this
-    repository's `kit.ref` predates that. It surfaces as `42501`, the same
-    SQLSTATE the policies raise, so an assertion checking the code alone cannot
-    tell a working boundary from a table nobody can write to.
-    `20261005120000_grant_app_role_runtime_dml` closes it and the six unprotected
-    tables, minimally, and grants **no `TRUNCATE` anywhere** — it is the one DML
-    privilege with no row filter.
+  * **The sequence grant used to be a kit defect this tree pinned.**
+    `cafaye.protect_table/2` at `15cee0e1` granted table DML and no sequence
+    privilege, so a protected table with a `bigserial` column was uninsertable by
+    the login role; kit fixed it in `63663f8`, and the copy was re-taken on
+    2026-10-16 at `537441e`, which includes the fix — so `protect_table` now
+    grants USAGE on the protected table's own sequence and the
+    `notification_preferences_id_seq` grant in
+    `20261005120000_grant_app_role_runtime_dml` is a no-op kept as history.
+    `oban_jobs_id_seq` is still granted only there: `oban_jobs` is not
+    account-scoped and the substrate never touches its sequence. A missing grant
+    surfaces as `42501`, the same SQLSTATE the policies raise, so an assertion
+    checking the code alone cannot tell a working boundary from a table nobody
+    can write to; that migration grants the six unprotected tables' DML
+    minimally, and **no `TRUNCATE` anywhere** — it is the one DML privilege with
+    no row filter.
   * **`@moduletag account:` is the harness's half, and it is opt-in.** The sandbox
     already wraps every test in a transaction, so the identity is set on that
     connection rather than in a `with_account/3` — a nested transaction is a

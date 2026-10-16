@@ -25,12 +25,17 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
   dialect of row-level security in one fleet is a dialect the next reader does
   not recognise.
 
-  Copied from kit at `15cee0e1d5eacaea8e743f65981cd893da7f8873`. **NOTE that
-  this repository's own `kit.ref` (`f6d3b74`) predates the substrate** — the
-  tenancy templates were added to kit later, in `e8605c9`. So the substrate
-  below is newer than the kit commit this repository pins, and pinning is a
-  decision this packet did not make: moving `kit.ref` changes the whole stack,
-  not one migration. Reported rather than done.
+  Copied from kit at `537441eee96254c34b448e9d98f334a20df89213`, the commit
+  that added the caller scope (`begin_user`/`current_user_id`,
+  `membership_tables`/`protect_membership_table`); the same bytes also carry
+  kit's earlier `protect_table` sequence grant (`63663f8`). It is kit's
+  template byte for byte, sha256
+  `eaab2893825647495ee0db770841ac60fe855791b148423430ca44db1f8334c2`. **NOTE
+  that this repository's own `kit.ref` (`f6d3b74`) predates the substrate** —
+  the tenancy templates were added to kit later, in `e8605c9`. So the
+  substrate below is newer than the kit commit this repository pins, and
+  pinning is a decision this packet did not make: moving `kit.ref` changes the
+  whole stack, not one migration. Reported rather than done.
 
   ## THE THREE TABLES, AND HOW THEY WERE DETERMINED
 
@@ -96,7 +101,7 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
   "the application switching to that role is the NEXT packet".
   """
 
-  @substrate_sha "15cee0e1d5eacaea8e743f65981cd893da7f8873"
+  @substrate_sha "537441eee96254c34b448e9d98f334a20df89213"
 
   def up do
     provision_login_role()
@@ -415,16 +420,16 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
   #
   # Measured on the file this branch carries:
   #
-  #     git -C ../kit show 15cee0e1:templates/database/tenancy/substrate.sql \
+  #     git -C ../kit show 537441e:templates/database/tenancy/substrate.sql \
   #       | diff - priv/repo/substrate.sql
   #     #=> (no output)
   #     shasum -a 256  # both sides
-  #     #=> e2b4917be2a7f7c48964bd40fea0da93db503b4c736a42a44e44425cfbf7bf5e
+  #     #=> eaab2893825647495ee0db770841ac60fe855791b148423430ca44db1f8334c2
   defp substrate do
     path = Path.join(__DIR__, "../substrate.sql")
     bytes = File.read!(path)
     digest = Base.encode16(:crypto.hash(:sha256, bytes), case: :lower)
-    expected = "e2b4917be2a7f7c48964bd40fea0da93db503b4c736a42a44e44425cfbf7bf5e"
+    expected = "eaab2893825647495ee0db770841ac60fe855791b148423430ca44db1f8334c2"
 
     if digest != expected do
       raise """

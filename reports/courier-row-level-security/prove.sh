@@ -302,11 +302,13 @@ say "second grant courier_app cannot INSERT into notification_preferences at all
 say "-- and it fails on the SEQUENCE, not on the policy, which is the same"
 say "SQLSTATE (42501) the RLS refusals raise."
 say ""
-say "The copy of kit's substrate this repository pins (15cee0e1) predates"
-say "kit's fix (63663f8), so courier closes it in its own migration:"
-say "20261005120000_grant_app_role_runtime_dml. The probe below is therefore"
-say "now a REGRESSION check: it passes only because that migration ran, and it"
-say "goes red the moment the sequence grant is withdrawn."
+say "The copy of kit's substrate this repository carried at the time of the"
+say "packet (15cee0e1) predated kit's fix (63663f8), so courier closed it in"
+say "its own migration: 20261005120000_grant_app_role_runtime_dml. The copy was"
+say "re-taken on 2026-10-16 at 537441e, which includes the fix, so"
+say "protect_table now grants the sequence too and the migration's grant is a"
+say "no-op. The probe below stays a REGRESSION check: it goes red the moment"
+say "the usage grant from either source is withdrawn."
 ask "$identify_a insert into notification_preferences
   (user_id, notification_type, email_enabled, push_enabled, inserted_at, updated_at, account_id)
   values ('aaaaaaaa-0000-4000-8000-000000000009', 'transactional', true, true, now(), now(), '$ACCOUNT_A');"

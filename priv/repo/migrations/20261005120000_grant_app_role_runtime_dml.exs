@@ -50,19 +50,27 @@ defmodule Courier.Repo.Migrations.GrantAppRoleRuntimeDml do
   the same role control of every sequence in the database, including ones behind
   tables it must not touch.
 
-  `notification_preferences_id_seq` is here because of a **defect in the copy of
-  kit's substrate this repository pins**. `cafaye.protect_table/2` in the version
-  at `@substrate_sha` (`15cee0e1`) grants table DML and no sequence privilege, so
-  a protected table with a `bigserial` column is uninsertable by the login role:
+  `notification_preferences_id_seq` was here because of a **defect in the copy
+  of kit's substrate this repository carried when this migration was written**:
+  `cafaye.protect_table/2` at `15cee0e1` granted table DML and no sequence
+  privilege, so a protected table with a `bigserial` column was uninsertable by
+  the login role:
 
       ERROR:  permission denied for sequence notification_preferences_id_seq
 
   kit fixed exactly this in `63663f8` ("kit-31: protect_table granted DML and left
-  the login role unable to insert"), which added the `pg_depend` loop. This
-  repository's `kit.ref` predates it, so **the grant has to be made here** — and
-  it is `42501`, the same SQLSTATE the RLS policies raise, so an assertion that
-  checks the code alone cannot tell a working boundary from a table nobody can
-  write to.
+  the login role unable to insert"), which added the `pg_depend` loop, and the
+  copy was re-taken on 2026-10-16 at `537441e`, which includes it — so
+  `protect_table('notification_preferences', 'courier_app')` now grants USAGE on
+  the table's own sequence, and the notification_preferences grant below is a
+  no-op. It is kept rather than removed for two reasons: a re-grant of a held
+  privilege changes nothing, and this file is the record of the state it was
+  written for. `oban_jobs_id_seq` is **not** redundant — `oban_jobs` has no
+  `account_id`, `protect_table` refuses a table it cannot scope, and no substrate
+  call ever reaches that sequence, so this migration is the only thing that
+  grants it. It surfaces as `42501`, the same SQLSTATE the RLS policies raise, so
+  an assertion that checks the code alone cannot tell a working boundary from a
+  table nobody can write to.
 
   ## WHY NOT `GRANT courier_app TO courier` OR ANY OWNERSHIP
 
