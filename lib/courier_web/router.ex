@@ -162,6 +162,23 @@ defmodule CourierWeb.Router do
     get "/notifications/unread_count", NotificationsController, :unread_count
     post "/notifications/:id/seen", NotificationsController, :mark_seen
     post "/notifications/:id/read", NotificationsController, :mark_read
+
+    # The domains a tenant proves control of and sends mail from, as a management
+    # surface. Behind `:authenticated` for the reason every surface above is: a
+    # `tenant_sending_domains` row carries a sealed provider credential, and a
+    # row courier signs outbound mail with is not something an anonymous caller
+    # may read, register or revoke. The account is the caller's, from the token,
+    # and `CourierWeb.SendingDomains` refuses an `account_id` in a body as an
+    # unknown field.
+    #
+    # `revoke` is a POST and not behind `:idempotent`, and that is a decision
+    # rather than an omission: it sets `status` to `:revoked` and a repeat is the
+    # same row with the same status, so a retry without a key is already safe —
+    # the same idempotence-by-construction that keeps the notification marks and
+    # `PUT /v1/notification_preferences/:user_id` out of that pipeline.
+    get "/sending_domains", SendingDomainsController, :index
+    get "/sending_domains/:id", SendingDomainsController, :show
+    post "/sending_domains/:id/revoke", SendingDomainsController, :revoke
   end
 
   # The same resource, on the two POSTs. A separate scope rather than one
@@ -178,6 +195,16 @@ defmodule CourierWeb.Router do
 
     post "/webhook_endpoints", WebhookEndpointsController, :create
     post "/webhook_endpoints/:id/test", WebhookEndpointsController, :ping
+
+    # Registering a domain and proving it are both behind `:idempotent`, for the
+    # same reason `createWebhookEndpoint` is: a caller that timed out on a
+    # registration has no other way to learn whether the first attempt landed,
+    # and a retry without a key is a second domain claim refused by the
+    # `(account_id, domain)` index rather than a replay of the first. `verify`
+    # re-runs the two-part proof and re-dials the provider, so a retry is not
+    # free either; the stored response answers it without doing the work twice.
+    post "/sending_domains", SendingDomainsController, :create
+    post "/sending_domains/:id/verify", SendingDomainsController, :verify
 
     # courier's only door into its send path, and the reason this scope exists in
     # the shape it does. It is behind `:idempotent` for the reason every other POST

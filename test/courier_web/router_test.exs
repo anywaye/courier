@@ -282,6 +282,78 @@ defmodule CourierWeb.RouterTest do
     end
   end
 
+  describe "the sending domains surface" do
+    alias CourierWeb.SendingDomainsController
+
+    @sending_domain_routes [
+      {"GET", "/v1/sending_domains", :index},
+      {"POST", "/v1/sending_domains", :create},
+      {"GET", "/v1/sending_domains/8f3c2b1a-0000-4000-8000-000000000001", :show},
+      {"POST", "/v1/sending_domains/8f3c2b1a-0000-4000-8000-000000000001/verify", :verify},
+      {"POST", "/v1/sending_domains/8f3c2b1a-0000-4000-8000-000000000001/revoke", :revoke}
+    ]
+
+    test "every action resolves to CourierWeb.SendingDomainsController" do
+      for {method, path, action} <- @sending_domain_routes do
+        assert %{plug: SendingDomainsController, plug_opts: ^action} =
+                 Phoenix.Router.route_info(Router, method, path, "")
+      end
+    end
+
+    test "every action is behind the authenticated pipeline" do
+      # A `tenant_sending_domains` row carries a sealed provider credential and a
+      # domain courier signs outbound mail with; a surface that served whoever
+      # asked would hand out the ability to send as somebody else's domain.
+      for {method, path, _action} <- @sending_domain_routes do
+        assert %{pipe_through: pipelines} = Phoenix.Router.route_info(Router, method, path, "")
+
+        assert :authenticated in pipelines, "#{method} #{path} must be behind authentication"
+      end
+    end
+
+    test "the two mutating POSTs take an Idempotency-Key, and revoke does not" do
+      # Registration and verification are both retried by a caller that timed
+      # out, and neither is free on a second run — a registration is refused as a
+      # duplicate, and a verification re-dials the provider. Revocation is
+      # idempotent by construction (a repeat is the same row with the same
+      # status), so it carries no key, the same rule the notification marks
+      # follow.
+      for path <- [
+            "/v1/sending_domains",
+            "/v1/sending_domains/8f3c2b1a-0000-4000-8000-000000000001/verify"
+          ] do
+        assert %{pipe_through: pipelines} = Phoenix.Router.route_info(Router, "POST", path, "")
+        assert :idempotent in pipelines, "POST #{path} must be behind the idempotency plug"
+      end
+
+      assert %{pipe_through: pipelines} =
+               Phoenix.Router.route_info(
+                 Router,
+                 "POST",
+                 "/v1/sending_domains/8f3c2b1a-0000-4000-8000-000000000001/revoke",
+                 ""
+               )
+
+      refute :idempotent in pipelines
+    end
+
+    test "no action answers a method it does not declare" do
+      assert served_on("/v1/sending_domains") == ["GET", "POST"]
+      assert served_on("/v1/sending_domains/:id") == ["GET"]
+      assert served_on("/v1/sending_domains/:id/verify") == ["POST"]
+      assert served_on("/v1/sending_domains/:id/revoke") == ["POST"]
+    end
+
+    test "the path is the plural noun core's conventions ask for, under /v1" do
+      # core/docs/openapi-conventions.md: "Path under `/v1`, no trailing slash,
+      # plural nouns, kebab-case for multi-word."
+      for {_method, path, _action} <- @sending_domain_routes do
+        assert String.starts_with?(path, "/v1/sending_domains")
+        refute String.ends_with?(path, "/")
+      end
+    end
+  end
+
   # Which methods the router answers for a route pattern, discovered rather than
   # declared, so a route serving more than it documents shows up here. The pattern
   # has to be the router's own — `route_info/4` matches the route as written, not
