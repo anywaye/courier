@@ -139,7 +139,11 @@ defmodule Courier.TenantSendingDomain do
         changeset
 
       domain when is_binary(domain) ->
-        put_change(changeset, :domain, domain |> String.trim() |> String.downcase() |> String.trim_trailing("."))
+        put_change(
+          changeset,
+          :domain,
+          domain |> String.trim() |> String.downcase() |> String.trim_trailing(".")
+        )
 
       _other ->
         changeset

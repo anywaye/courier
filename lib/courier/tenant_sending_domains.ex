@@ -180,7 +180,9 @@ defmodule Courier.TenantSendingDomains do
   """
   @spec verify(TenantSendingDomain.t(), module() | nil) :: result()
   def verify(%TenantSendingDomain{} = domain, resolver \\ nil) do
-    resolver = resolver || Application.get_env(:courier, :sending_domain_resolver, Courier.SendingDomains.Dns.System)
+    resolver =
+      resolver ||
+        Application.get_env(:courier, :sending_domain_resolver, Courier.SendingDomains.Dns.System)
 
     with :ok <- check_dns_proof(domain.domain, resolver),
          :ok <- check_credential(domain) do
@@ -314,13 +316,26 @@ defmodule Courier.TenantSendingDomains do
     bounce = "cf-bounce." <> domain
     dkim = "cf-bounce._domainkey." <> domain
 
-    with {:ok, mx} <- resolver.mx(bounce),
+    with {:ok, mx} <- lookup(fn -> resolver.mx(bounce) end),
          :ok <- check_mx(mx),
-         {:ok, spf} <- resolver.txt(bounce),
+         {:ok, spf} <- lookup(fn -> resolver.txt(bounce) end),
          :ok <- check_spf(spf),
-         {:ok, dkim_records} <- resolver.txt(dkim),
+         {:ok, dkim_records} <- lookup(fn -> resolver.txt(dkim) end),
          :ok <- check_dkim(dkim_records) do
       :ok
+    end
+  end
+
+  # A resolver that answered `{:error, reason}` is a lookup FAILURE and not a
+  # mismatch, and the two must not be confused: "the domain publishes no MX
+  # records" is a tenant who has not finished onboarding, and "the resolver
+  # could not answer" is a courier or network problem. The proof treats a
+  # failure as "could not be proven" — never as "fine" — which is why it is a
+  # refusal here and not a fall-through to the next check.
+  defp lookup(fun) do
+    case fun.() do
+      {:ok, records} -> {:ok, records}
+      {:error, reason} -> {:error, {:dns_lookup_failed, reason}}
     end
   end
 
