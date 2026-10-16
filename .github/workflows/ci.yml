@@ -395,7 +395,24 @@ jobs:
           # the two tier greps and `mix test`: whole 1752 = no-database 807
           # (36 files) + database 945 (54 files). The floor sits AT the
           # measurement with zero headroom.
-          bin/assert-suite "$log" "whole suite (bin/prime)" 1752
+          #
+          # REMEASURED on the tree carrying cf-payment-failed — the warning for a
+          # payment attempt that did not go through: whole 1753 -> 1769, so the
+          # floor moves with it. **The baseline itself was stale by one** (the
+          # recorded floor read 1752 against a measured 1753, green throughout,
+          # because a floor is a decrease detector and cannot see a test that was
+          # added), so this raise is to the measurement plus this packet's 16, not
+          # to the old floor plus a delta. The 16 split 14 database / 2
+          # no-database by the case template, the same derivation the two tier
+          # greps use:
+          #   * `test/courier/consumers/payment_failed_test.exs` (14) is a
+          #     `Courier.DataCase` because it asserts about `consumed_events` and
+          #     `outbox_events` rows over the real loop.
+          #   * `test/courier/mailers_config_test.exs` (2) is a plain
+          #     `ExUnit.Case` because the arms are configuration substitution and
+          #     a rendered body — no row is read.
+          # 1769 is 810 + 959, so the parts still sum to the whole.
+          bin/assert-suite "$log" "whole suite (bin/prime)" 1769
       #
       # Remeasured on the tree carrying `config/kamal-backup.yml` and
       # `config/deploy.yml`: whole suite 1156, which is 577 with no database and
@@ -668,7 +685,7 @@ jobs:
       # stopped describing the tree. Both were wrong and only one of them would have
       # failed a build.
 
-      - name: tier — no database (807 tests, 36 files)
+      - name: tier — no database (810 tests, 37 files)
         # These files never touch `Courier.Repo`. They are gated on a database
         # anyway, because `mix test` is aliased to `ecto.create` first and aborts
         # before the first test when there is no server — so this tier is the
@@ -707,9 +724,9 @@ jobs:
             echo "::error::the no-database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "no database" 807
+          bin/assert-suite "$log" "no database" 810
 
-      - name: tier — database (945 tests, 54 files)
+      - name: tier — database (959 tests, 55 files)
         # Every file here goes through Courier.DataCase / CourierWeb.ConnCase
         # and therefore through the Ecto SQL sandbox: the SQL layer, the
         # migrations `mix ecto.setup` applies, Oban's tables, and the
@@ -733,7 +750,7 @@ jobs:
             echo "::error::the database tier exited $status" >&2
             exit "$status"
           fi
-          bin/assert-suite "$log" "database" 945
+          bin/assert-suite "$log" "database" 959
 
       - name: tier — the SSRF table (62 tests, in-memory resolver)
         # courier-03's table, run on its own so the log carries a line that can
@@ -814,9 +831,9 @@ jobs:
             echo
             echo "| tier | asserted | checked by |"
             echo "|---|---|---|"
-            echo "| whole suite (\`bin/prime\`) | 1747 passed | \`bin/assert-suite\` |"
-            echo "| no database, 36 files | 807 passed | tier step |"
-            echo "| database, 54 files | 945 passed | tier step |"
+            echo "| whole suite (\`bin/prime\`) | 1769 passed | \`bin/assert-suite\` |"
+            echo "| no database, 37 files | 810 passed | tier step |"
+            echo "| database, 55 files | 959 passed | tier step |"
             echo "| SSRF table | 62 passed | tier step |"
             echo "| coverage | ${COVERAGE_FAIL_UNDER}% floor (86.3% measured) | coverage step |"
             echo "| mix.lock | no diff after the gate | lockfile step |"

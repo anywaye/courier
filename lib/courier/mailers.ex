@@ -123,7 +123,7 @@ defmodule Courier.Mailers do
   # be a second place for a field to be dropped.
   @fields ~w(user_id email name url account_name invited_by role reason previous_email amount_display invoice_id)a
   @payload_types Map.new(@fields, &{&1, :string})
-  @types ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt)
+  @types ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt payment_failed)
 
   # **The kind of every type courier sends, and nothing else.** This table is the
   # deliverability gate's input and it is here — in the module that composes the
@@ -164,7 +164,8 @@ defmodule Courier.Mailers do
     {"account_security", :transactional},
     {"email_change_current", :transactional},
     {"email_change_new", :transactional},
-    {"receipt", :transactional}
+    {"receipt", :transactional},
+    {"payment_failed", :transactional}
   ]
 
   @doc """
@@ -393,6 +394,7 @@ defmodule Courier.Mailers do
       "email_change_current" -> [:email, :url]
       "email_change_new" -> [:email, :previous_email]
       "receipt" -> [:email, :amount_display]
+      "payment_failed" -> [:email, :amount_display]
     end
   end
 
@@ -419,7 +421,8 @@ defmodule Courier.Mailers do
       reason: escape(fields.reason),
       previous_email: escape(fields.previous_email),
       amount_display: escape(fields.amount_display),
-      invoice_id: escape(fields.invoice_id)
+      invoice_id: escape(fields.invoice_id),
+      billing_url: escape(billing_url())
     ]
 
     "#{type}.#{format}"
@@ -450,6 +453,16 @@ defmodule Courier.Mailers do
         {:error, :from_not_configured}
     end
   end
+
+  # Where a reader of `payment_failed` goes to update their payment method.
+  #
+  # Configuration rather than payload: the payload carries facts about the
+  # event, and this is a fact about the deployment (which page its billing
+  # screens live on) — the same split as the from-address, which is why it is
+  # read here and not required of any consumer. `nil` when unset, and the
+  # template renders the sentence without a link then: a warning that named an
+  # address nobody configured would be worse than one that asks in words.
+  defp billing_url, do: Application.get_env(:courier, :mailing, [])[:billing_url]
 
   defp subject(type, fields) do
     case subject_template(type) do

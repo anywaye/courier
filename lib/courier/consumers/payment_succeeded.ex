@@ -20,7 +20,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
   §2.6), so an event with no address on it is one nobody can mail. This is the
   subscription that field was put there for.
 
-  ## THE AMOUNT ARRIVES RENDERED, AND THIS IS THE MODULE THAT RENDERS IT
+  ## THE AMOUNT ARRIVES RENDERED, AND THIS IS THE MODULE THAT ASKS FOR IT
 
   The event carries `amount: {"amount_minor" => 1900, "currency" => "USD"}` —
   integer minor units, which is how every number in this fleet crosses a wire.
@@ -31,12 +31,10 @@ defmodule Courier.Consumers.PaymentSucceeded do
   is decided in one place, here, and a consumer on the other end gets a
   figure it can put in front of a person.
 
-  The decimal places come from a small zero-decimal table (JPY, KRW, CLP and
-  VND are the currencies that have no minor unit) and default to 2. The
-  default is the safe direction precisely because it is only a count: a
-  wrong count produces a receipt with a decimal point in it, which a reader
-  notices and which no money moved over. A currency this table does not name
-  is still a receipt.
+  The one place the figure is decided is `Courier.Consumers.AmountDisplay`,
+  shared with the failure warning (`Courier.Consumers.PaymentFailed`): billing
+  builds both events with one builder and one `amount` shape, and the two
+  mails about one subscription must not render one figure differently.
 
   ## THE INVOICE ID IS THE ONE OPTIONAL FIELD, AND THAT IS DELIBERATE
 
@@ -244,21 +242,11 @@ defmodule Courier.Consumers.PaymentSucceeded do
   ## The figure
   ## ---------------------------------------------------------------------
 
-  # The currencies with no minor unit — a number in them IS the number —
-  # rather than a table of every currency's exponent. The default of 2 is a
-  # count, and being wrong about a count is a receipt a reader notices.
-  @zero_decimal ~w(JPY KRW CLP VND ISK)
-
+  @doc """
+  The rendered amount, through the one module that renders it — see
+  `Courier.Consumers.AmountDisplay` for why it is not this file's private
+  function.
+  """
   @spec render({integer(), String.t()}) :: String.t()
-  def render({minor, currency}) do
-    currency = String.upcase(currency)
-
-    if currency in @zero_decimal do
-      "#{minor} #{currency}"
-    else
-      whole = div(minor, 100)
-      cents = rem(rem(minor, 100) + 100, 100)
-      "#{whole}.#{Integer.to_string(cents) |> String.pad_leading(2, "0")} #{currency}"
-    end
-  end
+  defdelegate render(amount), to: Courier.Consumers.AmountDisplay
 end

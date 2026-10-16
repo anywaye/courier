@@ -122,6 +122,22 @@ defmodule Courier.Deliver do
   def receipt(payload), do: deliver(:receipt, payload)
 
   @doc """
+  Sends the `payment_failed` mail — the warning a person is owed when a
+  payment attempt did not go through, and the receipt's other half.
+
+  The payload carries the same fields the receipt's does — `email` and
+  `amount_display` (required), `invoice_id` (optional) — because billing
+  builds both events with one builder and one `amount` shape. The retry
+  schedule (`next_payment_attempt` on the wire) is deliberately absent from
+  the mail: naming it would make courier render a date, and the schedule
+  belongs to the processor. See `Courier.Consumers.PaymentFailed` for the
+  event and for why the copy asks for the update without announcing an
+  ending it cannot see.
+  """
+  @spec payment_failed(map()) :: {:ok, map()} | {:error, term()}
+  def payment_failed(payload), do: deliver(:payment_failed, payload)
+
+  @doc """
   Sends the `email_change_current` mail — the notice to the address the account
   uses today, warning its owner that somebody asked to move it.
 

@@ -84,6 +84,11 @@ defmodule Courier.ComposeConfigTest do
     "DNS_CLUSTER_QUERY" => "kit's postgres clustering; irrelevant to one node",
     "SOME_APP_SSL_KEY_PATH" => "leftover from the Phoenix generator; never read on this path",
     "SOME_APP_SSL_CERT_PATH" => "leftover from the Phoenix generator; never read on this path",
+    "COURIER_BILLING_URL" =>
+      "optional — where the payment-failure warning's reader goes to update their " <>
+        "card. Unset means the mail asks in words instead of linking, which is the " <>
+        "supported state on a deployment with no billing screens; the dev stack " <>
+        "needs no value for the consumer's tests to pass.",
     "COURIER_INBOUND_RESEND_SECRET" =>
       "optional — a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone; the inbound route answers 500. A Cloudflare-only box has no webhook to configure and boots with no provider. The dev stack carries a placeholder so the surface can be exercised."
   }

@@ -57,6 +57,41 @@ defmodule Courier.MailersConfigTest do
     assert {:error, :from_not_configured} = Mailers.build(:welcome, @payload)
   end
 
+  test "the payment-failure warning carries the configured billing url as a link" do
+    # The one action the warning asks for, and the url is deployment
+    # configuration — the payload carries facts about the event, and which
+    # page the billing screens live on is a fact about the deployment.
+    mailing_config(billing_url: "https://app.example.com/billing/subscriptions")
+
+    assert {:ok, email} =
+             Mailers.build(:payment_failed, %{
+               user_id: "865e9942-4b65-432b-8bf4-5d34b9dae5b8",
+               email: "buyer@example.com",
+               amount_display: "49.00 USD"
+             })
+
+    assert email.html_body =~ ~s(href="https://app.example.com/billing/subscriptions")
+    assert email.html_body =~ "https://app.example.com/billing/subscriptions"
+    assert email.text_body =~ "https://app.example.com/billing/subscriptions"
+  end
+
+  test "with no billing url configured the warning still asks, in words" do
+    # The default is `nil`, and the template renders the sentence without a
+    # link then: a warning that named an address nobody configured would be
+    # worse than one that asks in words.
+    mailing_config(billing_url: nil)
+
+    assert {:ok, email} =
+             Mailers.build(:payment_failed, %{
+               user_id: "865e9942-4b65-432b-8bf4-5d34b9dae5b8",
+               email: "buyer@example.com",
+               amount_display: "49.00 USD"
+             })
+
+    assert email.html_body =~ "Please update your payment method from your account at any time."
+    refute email.html_body =~ "<a href="
+  end
+
   defp mailing_config(overrides) do
     Application.put_env(
       :courier,

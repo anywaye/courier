@@ -243,11 +243,12 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert conn.status == 200
 
-      # Seven preferences, not three: `account_security` is the fourth type
+      # Eight preferences, not three: `account_security` is the fourth type
       # `Courier.Mailers` can send, `email_change_current` /
-      # `email_change_new` the fifth and sixth, and `receipt` the seventh,
-      # added by the payment consumer. `NotificationPreferences.types/0`
-      # delegates to it — so the defaults cover it too.
+      # `email_change_new` the fifth and sixth, `receipt` the seventh, added by
+      # the payment consumer, and `payment_failed` the eighth, added by its
+      # sibling. `NotificationPreferences.types/0` delegates to it — so the
+      # defaults cover it too.
       assert %{
                "data" => %{
                  "user_id" => @user_id,
@@ -258,7 +259,8 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
                    _security,
                    _change_current,
                    _change_new,
-                   _receipt
+                   _receipt,
+                   _payment_failed
                  ]
                }
              } =
@@ -335,14 +337,14 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert %{"data" => %{"user_id" => @user_id, "preferences" => preferences}} = body(conn)
 
-      # The seven types `Courier.Mailers` can send — `account_security` is the
+      # The eight types `Courier.Mailers` can send — `account_security` is the
       # fourth, added by the sessions-revoked consumer, `email_change_current` /
       # `email_change_new` the fifth and sixth, added by the email-change
-      # packet, and `receipt` the seventh, added by the payment consumer.
-      # They are in this list because `NotificationPreferences.types/0`
-      # delegates to `Mailers.types/0`.
+      # packet, `receipt` the seventh, added by the payment consumer, and
+      # `payment_failed` the eighth, added by its sibling. They are in this list
+      # because `NotificationPreferences.types/0` delegates to `Mailers.types/0`.
       assert Enum.map(preferences, & &1["notification_type"]) ==
-               ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt)
+               ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt payment_failed)
 
       assert Enum.all?(preferences, &(&1["email_enabled"] and &1["push_enabled"]))
     end
@@ -387,7 +389,8 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
                    _security,
                    _change_current,
                    _change_new,
-                   _receipt
+                   _receipt,
+                   _payment_failed
                  ]
                }
              } =

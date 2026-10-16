@@ -519,23 +519,31 @@ defmodule Courier.EventsTest do
       # `Courier.Mailers` is where the messages are named, and every payload
       # courier emits takes its `notification_type` from there.
       #
-      # COURIER'S CATALOG IS NOW SEVEN; CORE'S ENUM IS THREE. The fourth,
+      # COURIER'S CATALOG IS NOW EIGHT; CORE'S ENUM IS THREE. The fourth,
       # `account_security`, was added by the sessions-revoked consumer
       # (`Courier.Consumers.SessionsRevoked`), the two email-change notices by
-      # the email-change packet, and `receipt` by the payment consumer
-      # (`Courier.Consumers.PaymentSucceeded`, the mail for a settled payment);
-      # core's four payload schemas still freeze `notification_type` to the
-      # three names below. core is not this repository's to change, so the
-      # divergence is REPORTED rather than applied:
-      # `REPORT-courier-consumer-sessionsrevoked-01.md` for the first three and
-      # `REPORT-courier-consumer-paymentreceipt-01.md` for the fourth. This
-      # assertion pins the known divergence — an EIGHTH type still fails it —
+      # the email-change packet, `receipt` by the payment consumer
+      # (`Courier.Consumers.PaymentSucceeded`, the mail for a settled payment),
+      # and `payment_failed` by its sibling (`Courier.Consumers.PaymentFailed`,
+      # the warning for an attempt that did not go through); core's four payload
+      # schemas still freeze `notification_type` to the three names below. core
+      # is not this repository's to change, so the divergence is REPORTED rather
+      # than applied: `REPORT-courier-consumer-sessionsrevoked-01.md` for the
+      # first three, `REPORT-courier-consumer-paymentreceipt-01.md` for the
+      # fourth, and `REPORT-courier-consumer-paymentfailed-01.md` for this one.
+      # This assertion pins the known divergence — a NINTH type still fails it —
       # rather than asserting an agreement that no longer holds. The day core's
       # enum grows the missing names, the `++ [...]` comes out and the two
       # lists are equal again.
       assert Mailers.types() ==
                @notification_type ++
-                 ["account_security", "email_change_current", "email_change_new", "receipt"]
+                 [
+                   "account_security",
+                   "email_change_current",
+                   "email_change_new",
+                   "receipt",
+                   "payment_failed"
+                 ]
     end
 
     test "the message ids courier mints are the shape core's pattern requires" do

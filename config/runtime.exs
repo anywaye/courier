@@ -321,7 +321,11 @@ if config_env() == :prod and serving? do
            # The deployment's own domain moves with MAIL_FROM, so "courier's own
            # mail keeps the deployment credential" keeps meaning the address
            # courier actually sends its own mail from.
-           deployment_domain: Courier.Mailers.domain_of(resolved_from)
+           deployment_domain: Courier.Mailers.domain_of(resolved_from),
+           # Where the payment-failure warning's reader goes to update their
+           # card: the deployment's own billing page. Unset keeps the nil
+           # default, and the template renders the sentence without a link then.
+           billing_url: System.get_env("COURIER_BILLING_URL") || mailing[:billing_url]
          )
 
   # THE PROVIDER ADAPTER, and the refusal is the point.

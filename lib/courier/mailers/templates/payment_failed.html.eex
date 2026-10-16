@@ -1,0 +1,11 @@
+<p><%= @greeting %></p>
+<p>We could not process your payment of <strong><%= @amount_display %></strong> for your caFaye subscription. Nothing was charged.</p>
+<%= if @invoice_id do %>
+<p>The attempt was for invoice <strong><%= @invoice_id %></strong>.</p>
+<% end %>
+<%= if @billing_url do %>
+<p>Please update your payment method here: <a href="<%= @billing_url %>"><%= @billing_url %></a></p>
+<% else %>
+<p>Please update your payment method from your account at any time.</p>
+<% end %>
+<p>You can manage your subscription at any time from your account.</p>

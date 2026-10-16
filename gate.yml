@@ -703,7 +703,18 @@ gate:
   # secret is the same as unset, the boot configures `%{}` and logs the cost
   # without naming the secret, and a set secret configures `resend`. The floor
   # sits AT the measurement with zero headroom.
-      minimum: 1752
+  #
+  # REMEASURED on the tree carrying cf-payment-failed — the warning for a
+  # payment attempt that did not go through: whole 1753 -> 1769 = no-database
+  # 810 (37 files) + database 959 (55 files). The baseline itself was stale by
+  # one (a floor is a decrease detector and cannot see a test that was added),
+  # so the raise is to the measurement plus this packet's 16. The 16 split
+  # 14 / 2 by the case template: `payment_failed_test.exs` is a
+  # `Courier.DataCase` (it asserts `consumed_events` and `outbox_events` rows),
+  # and the two `mailers_config_test.exs` arms are plain `ExUnit.Case` (config
+  # substitution and a rendered body, no row). 1769 is 810 + 959, so the parts
+  # still sum to the whole. The floor sits AT the measurement with zero headroom.
+      minimum: 1769
 
 external:
   # NOT self-contained, and saying so is the point. The gate needs a postgres

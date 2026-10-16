@@ -184,10 +184,14 @@ defmodule Courier.ConsumersTest do
       # fourth is the platform's central promise, and the reason the SUBSCRIBER
       # exists: a user signs up, and courier welcoms them — see
       # `Courier.Consumers.UserCreated` and `Courier.Consumers.Subscriber`. The
-      # fifth is the money one: a settled payment is mailed to the person it
-      # belongs to — see `Courier.Consumers.PaymentSucceeded` and
-      # `REPORT-courier-consumer-paymentreceipt-01.md`.
+      # fifth and sixth are the money pair: a settled payment is mailed to the
+      # person it belongs to — see `Courier.Consumers.PaymentSucceeded` and
+      # `REPORT-courier-consumer-paymentreceipt-01.md` — and an attempt that
+      # failed is the warning their card keeps working depends on — see
+      # `Courier.Consumers.PaymentFailed` and
+      # `REPORT-courier-consumer-paymentfailed-01.md`.
       assert Consumers.subscribed() == [
+               "billing.payment.failed",
                "billing.payment.succeeded",
                "identity.member.accepted",
                "identity.member.invited",
@@ -198,7 +202,7 @@ defmodule Courier.ConsumersTest do
       manifest = File.read!(Path.join(File.cwd!(), "cafaye.yml"))
 
       assert manifest =~
-               ~r/^consumes:\s*$\n\s*-\s*identity\.member\.invited\s*$\n\s*-\s*identity\.member\.accepted\s*$\n\s*-\s*identity\.session\.revoked\s*$\n\s*-\s*identity\.user\.created\s*$/m
+               ~r/^consumes:\s*$\n\s*-\s*identity\.member\.invited\s*$\n\s*-\s*identity\.member\.accepted\s*$\n\s*-\s*identity\.session\.revoked\s*$\n\s*-\s*identity\.user\.created\s*$\n\s*-\s*billing\.payment\.succeeded\s*$\n\s*-\s*billing\.payment\.failed\s*$/m
     end
 
     test "carries a handler for every type it subscribes to" do
