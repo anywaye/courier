@@ -142,6 +142,20 @@ config :courier, :inbound_secrets, %{"resend" => "whsec_cHViNGlzaGVhZGZha2VzZWNy
 # resolver that needs to be told something.
 config :courier, :dns_resolver, {Courier.TestSupport.TestDns, {:canned, ["93.184.216.34"]}}
 
+# The sending-domain proof's resolver in test. `Courier.TestSupport.SendingDomainDns`
+# answers from a table a test writes, so the proof is tested against the record
+# sets it exists for — Cloudflare's onboarding footprint, a partial set, a
+# foreign set — without a network. The shipped `Courier.SendingDomains.Dns.System`
+# (`:inet_res`) is what every other environment runs; it is exercised against a
+# real resolver by the same rule that says a seam is tested from both sides.
+config :courier, :sending_domain_resolver, Courier.TestSupport.SendingDomainDns
+
+# Where a tenant's provider posts mail in test: the base_url the tenant adapter
+# configuration carries. `nil` means the production API host, which is correct
+# for a deployment and wrong for a suite whose rule is no sockets — so a test
+# that sends as a tenant sets this to its own listener's URL and puts it back.
+config :courier, :tenant_sending, base_url: nil
+
 # Webhook delivery in test goes to a double that records the request instead of
 # opening a socket, so the assertions about what courier signs and sends are
 # assertions about courier and not about a listener's timing. See

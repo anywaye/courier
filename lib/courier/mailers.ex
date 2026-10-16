@@ -287,6 +287,36 @@ defmodule Courier.Mailers do
   @spec body?(Swoosh.Email.t()) :: boolean()
   def body?(%Swoosh.Email{text_body: text, html_body: html}), do: present?(text) or present?(html)
 
+  @doc """
+  The domain part of the configured sender, lowercased, or `nil` when no sender
+  is configured or it is not an address.
+
+  Public because `Courier.Deliver` needs exactly this question answered — "is
+  the message's from-domain the deployment's own?" — to tell the deployment's
+  own mail (which keeps the deployment credential, as it always has) from a
+  from-address nobody configured (which is refused). It is answered here and
+  not read a second time in the send path because there is one module that
+  knows what courier's sender is, and a second `Application.get_env` would be a
+  second answer to the same question.
+
+  This reads configuration and does not send anything: the from-address still
+  reaches the message through `build/2`, and this is the same value that
+  address carries.
+  """
+  @spec sender_domain() :: String.t() | nil
+  def sender_domain do
+    case Application.get_env(:courier, :mailing, [])[:from] do
+      {_name, address} when is_binary(address) ->
+        case String.split(address, "@") do
+          [_local, domain] when domain != "" -> String.downcase(domain)
+          _other -> nil
+        end
+
+      _other ->
+        nil
+    end
+  end
+
   defp present?(nil), do: false
   defp present?(body) when is_binary(body), do: String.trim(body) != ""
   defp present?(_other), do: false

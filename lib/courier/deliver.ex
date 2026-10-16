@@ -70,6 +70,7 @@ defmodule Courier.Deliver do
   alias Courier.OutboxEvent
   alias Courier.Repo
   alias Courier.Suppressions
+  alias Courier.TenantSendingDomains
   alias Courier.Unsubscribes
 
   @doc """
@@ -158,8 +159,9 @@ defmodule Courier.Deliver do
          :ok <- fetch_preference(user_id, type),
          :ok <- fetch_unsubscribed(email, type),
          :ok <- fetch_address(email),
-         :ok <- fetch_body(email) do
-      send_and_record(type, user_id, email)
+         :ok <- fetch_body(email),
+         {:ok, sender} <- fetch_sender(email) do
+      send_and_record(type, user_id, email, sender)
     end
   end
 
@@ -233,6 +235,72 @@ defmodule Courier.Deliver do
     if Mailers.body?(email), do: :ok, else: {:error, :empty_message}
   end
 
+  # The sender is chosen by the FROM DOMAIN, and it is the one step that can
+  # refuse a send on a fact about the deployment rather than about the
+  # recipient. See `Courier.TenantSendingDomains` for the whole model; what is
+  # here is the decision, in the three shapes there are:
+  #
+  #   * a domain this account has a VERIFIED, ENABLED row for — the tenant's
+  #     credential, opened by `Courier.TenantSendingDomains.adapter_config/1`
+  #     and handed to the provider as a per-call config override.
+  #   * a domain this account has a row for that is NOT usable — unverified,
+  #     or revoked — a REFUSAL. This is the whole point of the per-tenant
+  #     domain: a domain somebody claimed and did not prove (or proved and
+  #     then gave up) must not silently fall back to the deployment
+  #     credential, because that is one tenant's mail leaving on a domain it
+  #     did not prove, which is the exact failure this table exists to
+  #     prevent.
+  #   * a domain with NO row at all:
+  #       - the DEPLOYMENT's own configured from-domain — the deployment's
+  #         own mail. The global adapter path is untouched and the deployment
+  #         credential sends it, exactly as it does today. A deployment does
+  #         not refuse its own mail for not having been claimed.
+  #       - anything else — a REFUSAL. A from-address courier was never
+  #         configured to send as is not "the deployment's own mail", and
+  #         sending it on the deployment credential is a silent fallback to a
+  #         domain the message does not come from. `{:no_sending_domain,
+  #         domain}` is named for exactly that, and there is no branch below
+  #         that reaches the provider without a sender.
+  #
+  # The account scoping is the table's row-level security, not a predicate
+  # here: a domain another account registered is invisible to this query, so
+  # the answer for it is the same `nil` as "never registered" — which is
+  # correct, because a tenant cannot send from a domain it did not register
+  # and cannot even learn that another tenant did.
+  defp fetch_sender(email) do
+    domain = from_domain(email)
+
+    case TenantSendingDomains.for_domain(domain) do
+      %Courier.TenantSendingDomain{verified_at: nil} ->
+        {:error, {:unverified_sending_domain, domain}}
+
+      %Courier.TenantSendingDomain{status: :revoked} ->
+        {:error, {:revoked_sending_domain, domain}}
+
+      %Courier.TenantSendingDomain{} = row ->
+        {:ok, {:tenant, row}}
+
+      nil ->
+        if domain == Mailers.sender_domain() do
+          {:ok, :deployment}
+        else
+          {:error, {:no_sending_domain, domain}}
+        end
+    end
+  end
+
+  # The from-address is where the sender is chosen: `Courier.Mailers` builds
+  # the message with the deployment-configured `from`, and the domain part of
+  # that address is the key the credential lookup uses. Everything courier
+  # sends today is from `no-reply@cafaye.com` — the deployment's own
+  # configured domain — so every current send takes the deployment branch and
+  # the global adapter path's behaviour is unchanged for the mail that exists.
+  # A tenant's domain selects the tenant's credential, and a from-address that
+  # is neither is refused rather than sent on the deployment key.
+  defp from_domain(%Swoosh.Email{from: {_name, address}}) do
+    address |> String.downcase() |> String.split("@") |> List.last()
+  end
+
   # The provider call is inside the transaction on purpose. The send is the state
   # change and the row records it, and a row that exists for a send that did not
   # happen is a lie the platform will act on. The cost is that courier holds a
@@ -271,13 +339,13 @@ defmodule Courier.Deliver do
   # adding one is a change in `cafaye/core` (the event enum) plus one row in
   # `Courier.Mailers.kinds/0` — whoever makes that change must revisit this
   # function, and this paragraph is how they will know.
-  defp send_and_record(type, user_id, email) do
+  defp send_and_record(type, user_id, email, sender) do
     message_id = "courier-" <> Ecto.UUID.generate()
 
     case Repo.transaction(fn ->
            case Unsubscribes.decorate_for(type, user_id, email) do
              {:ok, email} ->
-               case Mailer.deliver(tag(email, message_id)) do
+               case deliver_to_provider(tag(email, message_id), sender) do
                  {:ok, _metadata} -> record(type, user_id, message_id, email)
                  {:error, reason} -> {:error, {:provider, reason}}
                end
@@ -311,6 +379,27 @@ defmodule Courier.Deliver do
       # failure nobody has diagnosed.
       {:error, reason} ->
         {:error, {:event_not_recorded, reason}}
+    end
+  end
+
+  # Where the sender chosen by `fetch_sender/1` actually reaches the provider.
+  # The deployment branch calls `Mailer.deliver/1` and is byte-for-byte what
+  # courier did before this table existed — the global `config :courier,
+  # Courier.Mailer` adapter and its credential. The tenant branch opens the
+  # row's sealed credential and passes a per-call config override to
+  # `Mailer.deliver/2`, which `Swoosh.Mailer.parse_config/4` merges OVER the
+  # deployment's adapter configuration for this one send and persists nowhere.
+  #
+  # `adapter_config/1` answering `{:error, :invalid_credential}` is a refusal
+  # like any other: a credential courier cannot open is a credential courier
+  # cannot send with, and it becomes `{:error, {:delivery_failed, …}}` rather
+  # than a crash or a silent fall back to the deployment key.
+  defp deliver_to_provider(email, :deployment), do: Mailer.deliver(email)
+
+  defp deliver_to_provider(email, {:tenant, row}) do
+    case TenantSendingDomains.adapter_config(row) do
+      {:ok, config} -> Mailer.deliver(email, config)
+      {:error, reason} -> {:error, reason}
     end
   end
 

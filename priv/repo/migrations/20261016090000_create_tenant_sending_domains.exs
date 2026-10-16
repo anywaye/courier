@@ -1,0 +1,118 @@
+defmodule Courier.Repo.Migrations.CreateTenantSendingDomains do
+  use Ecto.Migration
+
+  @moduledoc """
+  The domains a tenant proves control of and sends mail from, with the
+  provider credential that is allowed to send from each one.
+
+  ## Why this table exists
+
+  courier has ONE deployment adapter for the whole fleet: every tenant's mail
+  leaves from the same domain under the same credential, so one tenant's junk
+  blocklists the shared domain and every other tenant's password reset stops
+  arriving. A per-tenant sending domain ends that: tenant A's mail leaves from
+  A's domain with A's provider token, and A's reputation is A's.
+
+  Cloudflare Email Sending makes this cheap because the tenant's domain does
+  not have to be on the platform's Cloudflare account — it has to be on
+  Cloudflare DNS in the TENANT's account, with Email Sending onboarded, and
+  the tenant hands courier a token scoped to Email Sending Write on their own
+  account. courier holds the credential and presses the button; it never
+  becomes the tenant's mail provider.
+
+  ## The columns, and what each one is for
+
+    * `account_id` — the tenancy key: who registered and may manage the row.
+      Set from the authenticated principal, never from a request body.
+    * `domain` — the sending domain itself (e.g. `tenant.com`), lowercased.
+    * `provider` — which provider the credential belongs to. Closed set today:
+      `cloudflare` is the only provider whose credential shape (an API token
+      plus the provider account id) courier's adapters speak. A second provider
+      is a row in `Courier.TenantSendingDomains.providers/0` plus an adapter
+      builder — not a branch in the send path.
+    * `provider_account_id` — the provider-side account the domain lives in
+      (for Cloudflare, the account id that owns the zone). Needed to form the
+      send URL; never rendered anywhere.
+    * `credential` — the provider token, SEALED by `Courier.SecretBox` under
+      `COURIER_SECRET_BOX_KEY`, exactly like a webhook signing secret. The
+      plaintext exists in exactly one place: the process sending a mail. There
+      is no read path that returns it: `Courier.TenantSendingDomain` never
+      exposes it, and `Courier.TenantSendingDomains` only ever opens it to
+      build an adapter configuration, per send.
+    * `verified_at` — the moment the domain was proven. `NULL` means "not
+      proven", and an unproven row is not usable: `Courier.Deliver` refuses a
+      send whose from-domain has only unproven rows, rather than falling back
+      to the deployment credential on a domain somebody else claimed.
+    * `status` — `enabled` or `revoked`. Revocation deactivates a domain
+      without deleting the row: the row is the history, and deletion is the
+      operator's escape hatch, not the tenant's.
+
+  ## The two uniqueness rules, and why they are indexes
+
+    * `(account_id, domain)` — one registration per account per domain. A
+      duplicate is refused here, at register time, as a changeset error.
+    * `(domain) WHERE verified_at IS NOT NULL` — **one verified domain in the
+      whole fleet, across accounts.** This is the rule "refuses a domain
+      another account has already verified", and it is a PARTIAL index because
+      a cross-account READ is impossible: the table is protected by the
+      substrate's row-level security, and `courier_app` querying another
+      account's rows sees zero of them. The only moment the conflict can be
+      created is the write that sets `verified_at`, so that is where the
+      database enforces it — with a named constraint so the refusal reads
+      "is already verified by another account" rather than as a generic
+      duplicate. An unverified row is NOT covered: a domain another account
+      merely claimed (and never proved) does not block the real owner from
+      registering and verifying it.
+
+  ## The row-level security
+
+  `select cafaye.protect_table('tenant_sending_domains', 'courier_app')` —
+  kit's substrate, verbatim, the same call
+  `20261003090000_protect_account_scoped_tables.exs` makes for the three
+  tables it protects. This is not optional and not negotiable: a credentials
+  table one account can read is a security incident, and the substrate is
+  already there. `protect_table` enables and FORCEs row level security and
+  installs the four policies (`select`/`insert`/`update`/`delete`) scoped to
+  `cafaye.current_account_id()`, so a query that loses its account predicate
+  still cannot read another tenant's credentials.
+  """
+
+  # `up/0` and `down/0` rather than `change/0`: a `change/0` cannot reverse a
+  # bare `execute/1`, and `Courier.Release.rollback/2` is a real entrypoint.
+  def up do
+    create table(:tenant_sending_domains) do
+      add :account_id, :uuid, null: false
+      add :domain, :string, null: false
+      add :provider, :string, null: false
+      add :provider_account_id, :string, null: false
+      add :credential, :string, null: false
+      add :verified_at, :utc_datetime_usec, null: true
+      add :status, :string, null: false, default: "enabled"
+      timestamps(type: :utc_datetime_usec)
+    end
+
+    # One registration per account per domain. The changeset names this index
+    # so a duplicate reads "is already registered" rather than as a constraint
+    # violation nobody mapped.
+    create unique_index(:tenant_sending_domains, [:account_id, :domain],
+             name: :tenant_sending_domains_account_id_domain_index
+           )
+
+    # One VERIFIED domain fleet-wide, across accounts. Partial on purpose —
+    # see the moduledoc for why a cross-account read cannot enforce this and
+    # the index must.
+    create unique_index(:tenant_sending_domains, [:domain],
+             where: "verified_at is not null",
+             name: :tenant_sending_domains_verified_domain_index
+           )
+
+    # The send path's lookup is by domain; the management reads are by account.
+    create index(:tenant_sending_domains, [:account_id])
+
+    execute("select cafaye.protect_table('tenant_sending_domains', 'courier_app')")
+  end
+
+  def down do
+    drop table(:tenant_sending_domains)
+  end
+end
