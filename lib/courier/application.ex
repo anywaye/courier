@@ -7,6 +7,13 @@ defmodule Courier.Application do
 
   @impl true
   def start(_type, _args) do
+    # Load notifier types from disk (COURIER_NOTIFIERS_DIR) so consumers can
+    # add types without Elixir. Merged into the configured list before anything
+    # reads it.
+    loaded = Courier.Notifiers.Loader.load()
+    existing = Application.get_env(:courier, :notifiers, [])
+    Application.put_env(:courier, :notifiers, existing ++ loaded)
+
     # The SECOND gate on the provider adapter, and it is deliberately not a
     # re-run of the first.
     #

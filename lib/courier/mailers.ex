@@ -373,8 +373,16 @@ defmodule Courier.Mailers do
       billing_url: escape(billing_url())
     ]
 
-    "#{type}.#{format}"
-    |> Templates.render(assigns)
+    body_inner =
+      case Courier.Notifiers.template_path(type, format) do
+        path when is_binary(path) ->
+          EEx.eval_file(path, assigns: assigns) |> IO.iodata_to_binary()
+
+        nil ->
+          Templates.render("#{type}.#{format}", assigns)
+      end
+
+    body_inner
     |> then(&Templates.render("layout.#{format}", body: &1))
   end
 
@@ -422,9 +430,15 @@ defmodule Courier.Mailers do
   # Read by string rather than by `:erlang.binary_to_existing_atom`, so a
   # configuration key cannot become an atom that nothing in the code holds.
   defp subject_template(type) do
-    Application.get_env(:courier, :mailing, [])
-    |> Keyword.get(:subjects, %{})
-    |> Enum.find_value(fn {key, template} -> if to_string(key) == type, do: template end)
+    case Courier.Notifiers.subject_template(type) do
+      s when is_binary(s) ->
+        s
+
+      _ ->
+        Application.get_env(:courier, :mailing, [])
+        |> Keyword.get(:subjects, %{})
+        |> Enum.find_value(fn {key, template} -> if to_string(key) == type, do: template end)
+    end
   end
 
   defp fill(template, fields) do

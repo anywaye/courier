@@ -2,21 +2,28 @@ defmodule Courier.Notifiers do
   @moduledoc """
   Registry of notification types courier knows how to send.
 
-  Types are discovered from `config :courier, :notifiers` (a list of modules
-  implementing `Courier.Notifier`). courier ships no types of its own; the
-  consuming application registers the ones it uses. `types/0`, `kind/1`,
-  `required/1`, and `build/2` are the seam `Courier.Mailers` and
-  `Courier.Deliver` read through, so neither module needs to know which types
-  exist.
+  Types may be registered two ways, so a consumer never needs Elixir to add
+  one:
+
+    * **Modules** implementing `Courier.Notifier` (compile-time, type-safe),
+      listed in `config :courier, :notifiers`.
+    * **Directories** on disk, pointed at by `COURIER_NOTIFIERS_DIR`. Each
+      subdirectory is one type: `notifier.json` (metadata) plus
+      `body.html.eex` / `body.text.eex` (templates). Loaded at boot.
+
+  `types/0`, `kind/1`, `required/1`, `subject_template/1`,
+  `template_path/2` and `build/2` are the seam `Courier.Mailers` and
+  `Courier.Deliver` read through.
   """
 
-  @typedoc "A registered notifier module."
-  @type notifier :: module()
+  @typedoc "A registered notifier: a module or a metadata map."
+  @type notifier :: module() | map()
 
-  @doc "All registered notifier modules."
+  @doc "All registered notifiers (modules + loaded directories)."
   @spec all() :: [notifier()]
   def all do
-    Application.get_env(:courier, :notifiers, [])
+    base = Application.get_env(:courier, :notifiers, [])
+    base ++ Courier.Notifiers.Loader.load()
   end
 
   @doc "The type name for a registered notifier, or nil."
@@ -27,13 +34,16 @@ defmodule Courier.Notifiers do
     end
   end
 
-  @doc "The notifier module for a type name (string or atom), or nil."
+  def type_for(%{type: type}) when is_binary(type), do: type
+  def type_for(_), do: nil
+
+  @doc "The notifier entry for a type name (string or atom), or nil."
   @spec get(String.t() | atom()) :: notifier() | nil
   def get(type) do
     name = to_string(type)
 
-    Enum.find(all(), fn mod ->
-      Code.ensure_loaded?(mod) and function_exported?(mod, :type, 0) and mod.type() == name
+    Enum.find(all(), fn entry ->
+      type_for(entry) == name
     end)
   end
 
@@ -45,37 +55,65 @@ defmodule Courier.Notifiers do
     |> Enum.reject(&is_nil/1)
   end
 
-  @doc "What `type` is for, defaulting to :transactional for unregistered types."
+  @doc "What `type` is for, defaulting to :transactional."
   @spec kind(String.t() | atom()) :: :transactional | :bulk
   def kind(type) do
     case get(type) do
       nil -> :transactional
-      mod -> if function_exported?(mod, :kind, 0), do: mod.kind(), else: :transactional
+      mod when is_atom(mod) -> if function_exported?(mod, :kind, 0), do: mod.kind(), else: :transactional
+      %{kind: k} when k in [:transactional, :bulk] -> k
+      _ -> :transactional
     end
   end
 
   @doc "Whether `type` is bulk mail."
   @spec bulk?(String.t() | atom()) :: boolean()
-  def bulk?(type) do
-    kind(type) == :bulk
-  end
+  def bulk?(type), do: kind(type) == :bulk
 
   @doc "Required fields for `type`."
   @spec required(String.t() | atom()) :: [atom()]
   def required(type) do
     case get(type) do
       nil -> []
-      mod -> if function_exported?(mod, :required, 0), do: mod.required(), else: []
+      mod when is_atom(mod) -> if function_exported?(mod, :required, 0), do: mod.required(), else: []
+      %{required: r} when is_list(r) -> r
+      _ -> []
     end
   end
 
-  @doc "Build the message for `type` and `payload`."
+  @doc "Subject template override for `type`, or nil (falls back to config)."
+  @spec subject_template(String.t() | atom()) :: String.t() | nil
+  def subject_template(type) do
+    case get(type) do
+      mod when is_atom(mod) ->
+        if function_exported?(mod, :subject_template, 0), do: mod.subject_template(), else: nil
+
+      %{subject: s} when is_binary(s) ->
+        s
+
+      _ ->
+        nil
+    end
+  end
+
+  @doc "Template file path for `type`/`format` when loaded from disk, else nil."
+  @spec template_path(String.t() | atom(), :html | :text) :: String.t() | nil
+  def template_path(type, format) do
+    case get(type) do
+      %{html_path: p} when format == :html and is_binary(p) -> p
+      %{text_path: p} when format == :text and is_binary(p) -> p
+      _ -> nil
+    end
+  end
+
+  @doc "Builds the message for `type` and `payload`."
   @spec build(String.t() | atom(), map()) ::
           {:ok, Swoosh.Email.t()} | {:error, atom() | {:invalid_payload, Ecto.Changeset.t()}}
   def build(type, payload) when is_map(payload) do
     case get(type) do
       nil -> {:error, :unknown_notification_type}
-      mod -> mod.build(payload)
+      mod when is_atom(mod) -> mod.build(payload)
+      _map -> Courier.Mailers.build(type, payload)
     end
   end
 end
