@@ -25,7 +25,6 @@ defmodule Courier.NotificationPreference do
 
   import Ecto.Changeset
 
-  alias Courier.Mailers
 
   # Deliberately **not** `account_id`. These are the fields a request's entry may
   # name, and one a caller must not: it is set from `conn.assigns.current_account`
@@ -66,7 +65,7 @@ defmodule Courier.NotificationPreference do
 
   defp validate_notification_type(changeset) do
     validate_change(changeset, :notification_type, fn :notification_type, type ->
-      if type in Mailers.types(), do: [], else: [notification_type: "is not a notification type"]
+      if type in Courier.Notifiers.types(), do: [], else: [notification_type: "is not a notification type"]
     end)
   end
 end

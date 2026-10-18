@@ -111,7 +111,7 @@ defmodule Courier.Consumers.PaymentFailed do
   """
   @spec deliver(warning()) :: {:ok, map()} | {:error, term()}
   def deliver(warning) do
-    Deliver.payment_failed(%{
+    Deliver.email("payment_failed", %{
       "email" => warning.email,
       "user_id" => warning.payer,
       "amount_display" => warning.amount_display,

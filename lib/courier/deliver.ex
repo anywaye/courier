@@ -209,7 +209,7 @@ defmodule Courier.Deliver do
   end
 
   defp fetch_type(type) do
-    if to_string(type) in Mailers.types() do
+    if to_string(type) in Courier.Notifiers.types() do
       {:ok, to_string(type)}
     else
       {:error, :unknown_notification_type}

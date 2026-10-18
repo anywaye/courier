@@ -50,7 +50,6 @@ defmodule Courier.UnsubscribeToken do
 
   import Ecto.Changeset
 
-  alias Courier.Mailers
   alias Courier.Suppressions
 
   @primary_key {:id, Ecto.UUID, autogenerate: true}
@@ -162,7 +161,7 @@ defmodule Courier.UnsubscribeToken do
   # refuses — a row that could only ever be a no-op.
   defp validate_type(changeset) do
     validate_change(changeset, :notification_type, fn :notification_type, type ->
-      if type in Mailers.types(), do: [], else: [notification_type: "is not a notification type"]
+      if type in Courier.Notifiers.types(), do: [], else: [notification_type: "is not a notification type"]
     end)
   end
 end

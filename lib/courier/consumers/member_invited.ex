@@ -202,7 +202,7 @@ defmodule Courier.Consumers.MemberInvited do
   @spec deliver(invitation()) :: {:ok, map()} | {:error, term()}
   def deliver(invitation) do
     with :ok <- fetch_url(invitation) do
-      Deliver.team_invitation(payload(invitation))
+      Deliver.email("team_invitation", payload(invitation))
     end
   end
 

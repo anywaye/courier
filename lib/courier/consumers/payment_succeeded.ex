@@ -170,7 +170,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
     # `user_id` is the key `Courier.Deliver` attributes a send to, and the
     # value is the cafaye CUSTOMER — see the moduledoc for why the event names
     # no user and what the three checks still are.
-    Deliver.receipt(%{
+    Deliver.email("receipt", %{
       "email" => receipt.email,
       "user_id" => receipt.payer,
       "amount_display" => receipt.amount_display,

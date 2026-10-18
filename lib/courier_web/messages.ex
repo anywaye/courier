@@ -49,7 +49,7 @@ defmodule CourierWeb.Messages do
   """
 
   alias Courier.Mailers
-
+  alias Courier.Notifiers
   # The keys a body may carry, in the order `openapi.yaml` lists them.
   @wire_fields ~w(type user_id to name url account_name invited_by role reason previous_email)
 
@@ -84,7 +84,7 @@ defmodule CourierWeb.Messages do
   and the two lists agreeing is what makes the 422 on `type` mean anything.
   """
   @spec types() :: [String.t()]
-  def types, do: Mailers.types()
+  def types, do: Notifiers.types()
 
   @doc """
   Checks `params` against the vocabulary and returns the payload for
@@ -137,8 +137,7 @@ defmodule CourierWeb.Messages do
           String.trim(type) == "" ->
             [missing("type")]
 
-          type not in Mailers.types() ->
-            [%{"field" => "type", "code" => "unknown_notification_type"}]
+          type not in Notifiers.types() ->            [%{"field" => "type", "code" => "unknown_notification_type"}]
 
           true ->
             []

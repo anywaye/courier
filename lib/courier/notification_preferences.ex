@@ -142,7 +142,7 @@ defmodule Courier.NotificationPreferences do
   mail for.
   """
   @spec types() :: [String.t()]
-  def types, do: Courier.Mailers.types()
+  def types, do: Courier.Notifiers.types()
 
   # The one question both entry points ask before anything else: is this user
   # addressable by this account? A user nobody has written anything for is

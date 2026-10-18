@@ -223,7 +223,7 @@ defmodule Courier.Consumers.SessionsRevoked do
   @spec deliver(revocation()) :: {:ok, map()} | {:error, term()}
   def deliver(revocation) do
     with :ok <- fetch_reason(revocation) do
-      Deliver.account_security(%{
+      Deliver.email("account_security", %{
         "user_id" => revocation.user_id,
         "email" => revocation.email,
         "reason" => revocation.reason

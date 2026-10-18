@@ -165,7 +165,7 @@ defmodule Courier.Consumers.UserCreated do
   """
   @spec deliver(user()) :: {:ok, map()} | {:error, term()}
   def deliver(user) do
-    Deliver.welcome(%{
+    Deliver.email("welcome", %{
       "user_id" => user.user_id,
       "email" => user.email
     })

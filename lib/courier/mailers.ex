@@ -123,51 +123,8 @@ defmodule Courier.Mailers do
   # be a second place for a field to be dropped.
   @fields ~w(user_id email name url account_name invited_by role reason previous_email amount_display invoice_id)a
   @payload_types Map.new(@fields, &{&1, :string})
-  @types ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt payment_failed loan_proposal)
-
-  # **The kind of every type courier sends, and nothing else.** This table is the
-  # deliverability gate's input and it is here — in the module that composes the
-  # mail, not in configuration, not in a request body, and not in the provider —
-  # because the question "may this message carry an unsubscribe link?" has to have
-  # exactly one answer in the codebase.
-  #
-  # **All six are `:transactional` today, and that is not a gap.** There is no
-  # bulk type in courier's catalog, and adding one is a change in **core**, not
-  # here: every payload courier publishes carries `notification_type`, and
-  # `core/schemas/events/courier/email/*.schema.json` freezes that field to an
-  # enum of the names courier sent when core last froze it. A bulk type in this
-  # list would put a value on the bus that four payload schemas reject. So the
-  # switch is one row here plus one enum value in core, and `Courier.MailersTest`
-  # asserts the table covers `types/0` so neither half can be forgotten.
-  #
-  # **The default for a type with no row is `:transactional`,** and the direction
-  # of that default is the whole decision. A new type nobody classified would
-  # otherwise carry an unsubscribe link, and an account-management email with one
-  # is its own defect: a person who resets their password and then finds an
-  # unsubscribe link has learned that the link does something they did not expect,
-  # and the remedy courier can offer them is a support ticket. Failing towards "no
-  # header" is the direction a person notices; failing towards "header" is the
-  # direction they do not notice until they need the mail.
-  # A LIST OF PAIRS and not a map, and the reason is the compiler rather than
-  # the reader. Every value in this table is `:transactional` today, so a map
-  # literal gives the type checker `%{String.t() => :transactional}` and it then
-  # correctly reports that an arm matching `:bulk` can never run — right about the
-  # literal, wrong about the code, because the union is declared in the spec of
-  # `kind/1` and the table is where a bulk row will be added. `List.keyfind/3`
-  # returns something the checker cannot narrow, so the union survives. This is
-  # written down because the "simplification" back to a map is invisible in a
-  # diff and turns the gate red.
-  @kinds [
-    {"welcome", :transactional},
-    {"password_reset", :transactional},
-    {"team_invitation", :transactional},
-    {"account_security", :transactional},
-    {"email_change_current", :transactional},
-    {"email_change_new", :transactional},
-    {"receipt", :transactional},
-    {"payment_failed", :transactional},
-    {"loan_proposal", :transactional}
-  ]
+  # Types and kinds are now discovered from registered notifiers. See
+  # `Courier.Notifiers`. This module no longer owns the catalog.
 
   @doc """
   Every notification type courier sends, in the order the platform names them.
@@ -176,7 +133,7 @@ defmodule Courier.Mailers do
   in `cafaye.yml`; a new entry here is a row in the manifest in the same commit.
   """
   @spec types() :: [type()]
-  def types, do: @types
+  def types, do: Courier.Notifiers.types()
 
   @doc """
   Every type courier sends, paired with what it is for.
@@ -186,7 +143,9 @@ defmodule Courier.Mailers do
   everything, and a default that happens to be right is a default nothing checked.
   """
   @spec kinds() :: %{type() => kind()}
-  def kinds, do: Map.new(@kinds)
+  def kinds do
+    Map.new(Courier.Notifiers.types(), fn t -> {t, Courier.Notifiers.kind(t)} end)
+  end
 
   @doc """
   What `type` is for, and therefore whether it may carry `List-Unsubscribe`.
@@ -200,10 +159,7 @@ defmodule Courier.Mailers do
   """
   @spec kind(atom() | type()) :: kind()
   def kind(type) do
-    case List.keyfind(@kinds, to_string(type), 0) do
-      {_name, kind} when kind in [:transactional, :bulk] -> kind
-      _no_row -> :transactional
-    end
+    Courier.Notifiers.kind(type)
   end
 
   @doc """
@@ -361,7 +317,7 @@ defmodule Courier.Mailers do
   # is misconfigured should not hide a request that is also wrong.
 
   defp fetch_type(type) do
-    if to_string(type) in @types,
+    if to_string(type) in Courier.Notifiers.types(),
       do: {:ok, to_string(type)},
       else: {:error, :unknown_notification_type}
   end
@@ -387,17 +343,7 @@ defmodule Courier.Mailers do
   end
 
   defp required(type) do
-    case type do
-      "welcome" -> [:email]
-      "password_reset" -> [:email, :url]
-      "team_invitation" -> [:email, :url, :account_name, :invited_by]
-      "account_security" -> [:email, :reason]
-      "email_change_current" -> [:email, :url]
-      "email_change_new" -> [:email, :previous_email]
-      "receipt" -> [:email, :amount_display]
-      "payment_failed" -> [:email, :amount_display]
-      "loan_proposal" -> [:email, :url]
-    end
+    Courier.Notifiers.required(type)
   end
 
   defp compose(type, fields, from, subject) do

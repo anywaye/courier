@@ -20,6 +20,21 @@ config :courier,
   # `:dev` would let a release configure the silent adapter.
   environment: config_env()
 
+# Registered notification types (Noticed-style: courier ships the engine, the
+# consuming application registers the types it sends). Listed here so a new type
+# is one module + one line, with no edit to a central list.
+config :courier, :notifiers, [
+  Courier.Notifiers.Welcome,
+  Courier.Notifiers.PasswordReset,
+  Courier.Notifiers.TeamInvitation,
+  Courier.Notifiers.AccountSecurity,
+  Courier.Notifiers.EmailChangeCurrent,
+  Courier.Notifiers.EmailChangeNew,
+  Courier.Notifiers.Receipt,
+  Courier.Notifiers.PaymentFailed,
+  Courier.Notifiers.LoanProposal
+]
+
 # Transactional email.
 #
 # Courier composes mail and hands it to Swoosh; it never speaks to a provider
