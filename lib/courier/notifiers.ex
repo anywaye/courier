@@ -22,8 +22,9 @@ defmodule Courier.Notifiers do
   @doc "All registered notifiers (modules + loaded directories)."
   @spec all() :: [notifier()]
   def all do
-    base = Application.get_env(:courier, :notifiers, [])
-    base ++ Courier.Notifiers.Loader.load()
+    # Loader runs once at boot (see Courier.Application) and merges its result
+    # into :notifiers, so this stays a plain env read — no repeated dir scan.
+    Application.get_env(:courier, :notifiers, [])
   end
 
   @doc "The type name for a registered notifier, or nil."

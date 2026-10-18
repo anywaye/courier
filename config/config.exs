@@ -29,10 +29,7 @@ config :courier, :notifiers, [
   Courier.Notifiers.TeamInvitation,
   Courier.Notifiers.AccountSecurity,
   Courier.Notifiers.EmailChangeCurrent,
-  Courier.Notifiers.EmailChangeNew,
-  Courier.Notifiers.Receipt,
-  Courier.Notifiers.PaymentFailed,
-  Courier.Notifiers.LoanProposal
+  Courier.Notifiers.EmailChangeNew
 ]
 
 # Transactional email.

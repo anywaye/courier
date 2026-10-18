@@ -13,16 +13,23 @@ defmodule Courier.Notifiers.Loader do
   @spec load() :: [map()]
   def load do
     case System.get_env("COURIER_NOTIFIERS_DIR") do
-      nil -> []
-      "" -> []
+      nil -> load_dir(default_dir())
+      "" -> load_dir(default_dir())
       dir -> load_dir(dir)
     end
+  end
+
+  defp default_dir do
+    # Shipped product types live here so a consumer needs no Elixir to use or
+    # override them: mounting COURIER_NOTIFIERS_DIR replaces this directory.
+    Path.join(:code.priv_dir(:courier), "notifiers")
   end
 
   def load_dir(dir) do
     case File.ls(dir) do
       {:ok, entries} ->
         entries
+        |> Enum.sort()
         |> Enum.map(&Path.join(dir, &1))
         |> Enum.filter(&File.dir?/1)
         |> Enum.flat_map(&load_type/1)

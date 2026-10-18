@@ -1,0 +1,1 @@
+{"type":"payment_failed","kind":"transactional","required":["email","amount_display"],"subject":"Your caFaye payment did not go through"}
