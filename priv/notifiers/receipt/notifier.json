@@ -1,1 +1,0 @@
-{"type":"receipt","kind":"transactional","required":["email","amount_display"],"subject":"We received your caFaye payment"}

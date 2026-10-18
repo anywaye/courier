@@ -278,6 +278,10 @@ env:
     secret: true
     dev_default: "auto"
     description: "Scoped API token for introspection."
+  - name: COURIER_SERVICE_TOKEN
+    required: false
+    secret: true
+    description: "Shared token for trusted services (billing) to call the management API."
 
 repository:
   url: git@github.com:cafaye/courier.git

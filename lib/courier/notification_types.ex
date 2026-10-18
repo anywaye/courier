@@ -147,7 +147,7 @@ defmodule Courier.NotificationTypes do
   # Default types, in the order the platform names them. Templates are read
   # from priv/notifiers/<type>/ so they stay editable without Elixir.
   @default_types ~w(welcome password_reset team_invitation account_security
-                    email_change_current email_change_new receipt payment_failed)
+                    email_change_current email_change_new)
 
   defp defaults do
     dir = Path.join(:code.priv_dir(:courier), "notifiers")

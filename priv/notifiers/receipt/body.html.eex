@@ -1,6 +1,0 @@
-<p><%= @greeting %></p>
-<p>We received your payment of <strong><%= @amount_display %></strong> for your caFaye subscription. Thank you.</p>
-<%= if @invoice_id do %>
-<p>Keep this for your records. Your invoice is <strong><%= @invoice_id %></strong>.</p>
-<% end %>
-<p>You can see the receipt and manage your subscription at any time from your account.</p>
