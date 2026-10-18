@@ -1,0 +1,1 @@
+{"type":"account_security","kind":"transactional","required":["email","reason"],"subject":"Security notice for your caFaye account"}

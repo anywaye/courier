@@ -1021,6 +1021,128 @@ paths:
         '500': { $ref: '#/components/responses/Internal' }
         '503': { $ref: '#/components/responses/Unavailable' }
 
+  /v1/notification_types:
+    get:
+      tags: [notification types]
+      operationId: listNotificationTypes
+      summary: List notification types
+      security:
+        - bearerAuth: [notifications:read]
+      responses:
+        '200':
+          description: The catalog of notification types
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/NotificationType' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    post:
+      tags: [notification types]
+      operationId: createNotificationType
+      summary: Register a notification type
+      security:
+        - bearerAuth: [notifications:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationTypeInput' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/NotificationType' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
+  /v1/notification_types/{type}:
+    parameters:
+      - name: type
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [notification types]
+      operationId: getNotificationType
+      summary: Get one notification type
+      security:
+        - bearerAuth: [notifications:read]
+      responses:
+        '200':
+          description: The notification type
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/NotificationType' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    patch:
+      tags: [notification types]
+      operationId: updateNotificationType
+      summary: Update a notification type
+      security:
+        - bearerAuth: [notifications:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationTypeInput' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/NotificationType' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+    delete:
+      tags: [notification types]
+      operationId: deleteNotificationType
+      summary: Delete a notification type
+      security:
+        - bearerAuth: [notifications:write]
+      responses:
+        '204':
+          description: Deleted
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '406': { $ref: '#/components/responses/NotAcceptable' }
+        '500': { $ref: '#/components/responses/Internal' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+
   /v1/notifications:
     get:
       tags: [notifications]

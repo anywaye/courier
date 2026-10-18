@@ -822,7 +822,7 @@ defmodule CourierWeb.OpenAPIPathsTest do
       # the same body-reading reason, and the two that can be retried
       # (`registerSendingDomain`, `verifySendingDomain`) also declare a 409, so
       # the count moved by five.
-      assert map_size(responses) == 21
+      assert map_size(responses) == 26
 
       for {_operation, declared} <- responses, {status, response} <- declared do
         if not String.starts_with?(status, "2") do

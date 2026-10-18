@@ -1,0 +1,1 @@
+{"type":"team_invitation","kind":"transactional","required":["email","url","account_name","invited_by"],"subject":"%{invited_by} invited you to join %{account_name}"}

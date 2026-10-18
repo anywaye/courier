@@ -67,6 +67,8 @@ defmodule Courier.BackupTablesTest do
         "bring back inboxes whose messages say nothing",
     "notification_preferences" =>
       "a user's answer about one notification type — the thing a tenant loses first",
+    "notification_types" =>
+      "the catalog of messages courier can send: name, kind, required fields, subject and templates. A restore without it has no types to render",
     # `seen_at` and `read_at` are in here and the reason is the packet this came
     # from: the reference implementation has no equivalent, because its unread
     # state is a counter nobody stored. An in-app inbox that is restored with its

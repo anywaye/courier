@@ -179,6 +179,12 @@ defmodule CourierWeb.Router do
     get "/sending_domains", SendingDomainsController, :index
     get "/sending_domains/:id", SendingDomainsController, :show
     post "/sending_domains/:id/revoke", SendingDomainsController, :revoke
+
+    get "/notification_types", NotificationTypesController, :index
+    get "/notification_types/:type", NotificationTypesController, :show
+    post "/notification_types", NotificationTypesController, :create
+    patch "/notification_types/:type", NotificationTypesController, :update
+    delete "/notification_types/:type", NotificationTypesController, :delete
   end
 
   # The same resource, on the two POSTs. A separate scope rather than one

@@ -40,7 +40,7 @@ defmodule Courier.NotificationPreferencesTest do
   # `REPORT-courier-consumer-paymentreceipt-01.md` for the fourth and
   # `REPORT-courier-consumer-paymentfailed-01.md` for the fifth.
   @types ~w(welcome password_reset team_invitation account_security email_change_current
-            email_change_new loan_proposal payment_failed receipt)
+            email_change_new receipt payment_failed loan_proposal)
 
   # THE ACCOUNT THIS FILE WRITES AS. `notification_preferences` is protected, so
   # an INSERT with no identity set is refused `42501`. See `Courier.DataCase`.

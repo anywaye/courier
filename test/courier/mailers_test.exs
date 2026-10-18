@@ -354,8 +354,8 @@ defmodule Courier.MailersTest do
       # a type added without it fails here by name.
       assert Mailers.types() ==
                ~w(welcome password_reset team_invitation account_security
-                  email_change_current email_change_new loan_proposal payment_failed
-                  receipt)
+                  email_change_current email_change_new receipt payment_failed
+                  loan_proposal)
     end
 
     test "a type courier does not have is an error rather than a fallback" do

@@ -7,13 +7,6 @@ defmodule Courier.Application do
 
   @impl true
   def start(_type, _args) do
-    # Load notifier types from disk (COURIER_NOTIFIERS_DIR) so consumers can
-    # add types without Elixir. Merged into the configured list before anything
-    # reads it.
-    loaded = Courier.Notifiers.Loader.load()
-    existing = Application.get_env(:courier, :notifiers, [])
-    Application.put_env(:courier, :notifiers, existing ++ loaded)
-
     # The SECOND gate on the provider adapter, and it is deliberately not a
     # re-run of the first.
     #
@@ -119,7 +112,17 @@ defmodule Courier.Application do
 
     # Flattened, so the one conditional entry in the list is a list rather than a
     # nested list the supervisor would take for a child.
-    Supervisor.start_link(List.flatten(children), opts)
+    result = Supervisor.start_link(List.flatten(children), opts)
+
+    # Seed platform default notification types into the DB on first boot, so
+    # types() is never empty and consumers can use them without a setup step.
+    # Runs after the supervisor is up so Courier.Repo is available.
+    case result do
+      {:ok, _pid} -> Courier.NotificationTypes.seed_defaults()
+      _ -> :ok
+    end
+
+    result
   end
 
   # The relay reads its own options rather than the whole application env, so a
