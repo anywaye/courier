@@ -260,7 +260,8 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
                    _change_current,
                    _change_new,
                    _receipt,
-                   _payment_failed
+                   _payment_failed,
+                   _loan_proposal
                  ]
                }
              } =
@@ -344,7 +345,7 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
       # `payment_failed` the eighth, added by its sibling. They are in this list
       # because `NotificationPreferences.types/0` delegates to `Mailers.types/0`.
       assert Enum.map(preferences, & &1["notification_type"]) ==
-               ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt payment_failed)
+               ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt payment_failed loan_proposal)
 
       assert Enum.all?(preferences, &(&1["email_enabled"] and &1["push_enabled"]))
     end
@@ -390,7 +391,8 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
                    _change_current,
                    _change_new,
                    _receipt,
-                   _payment_failed
+                   _payment_failed,
+                   _loan_proposal
                  ]
                }
              } =
