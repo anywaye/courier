@@ -123,7 +123,7 @@ defmodule Courier.Mailers do
   # be a second place for a field to be dropped.
   @fields ~w(user_id email name url account_name invited_by role reason previous_email amount_display invoice_id)a
   @payload_types Map.new(@fields, &{&1, :string})
-  @types ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt payment_failed)
+  @types ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt payment_failed loan_proposal)
 
   # **The kind of every type courier sends, and nothing else.** This table is the
   # deliverability gate's input and it is here — in the module that composes the
@@ -165,7 +165,8 @@ defmodule Courier.Mailers do
     {"email_change_current", :transactional},
     {"email_change_new", :transactional},
     {"receipt", :transactional},
-    {"payment_failed", :transactional}
+    {"payment_failed", :transactional},
+    {"loan_proposal", :transactional}
   ]
 
   @doc """
@@ -395,6 +396,7 @@ defmodule Courier.Mailers do
       "email_change_new" -> [:email, :previous_email]
       "receipt" -> [:email, :amount_display]
       "payment_failed" -> [:email, :amount_display]
+      "loan_proposal" -> [:email, :url]
     end
   end
 

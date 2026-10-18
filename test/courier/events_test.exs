@@ -542,7 +542,8 @@ defmodule Courier.EventsTest do
                    "email_change_current",
                    "email_change_new",
                    "receipt",
-                   "payment_failed"
+                   "payment_failed",
+                   "loan_proposal"
                  ]
     end
 

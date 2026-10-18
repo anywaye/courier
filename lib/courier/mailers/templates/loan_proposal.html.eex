@@ -1,0 +1,4 @@
+<p><%= @greeting %></p>
+<p>Somebody has recorded a loan with you and is asking you to review the figures.</p>
+<p><a href="<%= @url %>">Review and confirm or dispute</a></p>
+<p>If you do not recognise this, you can ignore this message.</p>
