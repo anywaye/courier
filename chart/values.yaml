@@ -54,7 +54,7 @@ image:
   # is REFUSED by the template rather than rendered — see
   # templates/deployment.yaml, and kit's step, which refuses it at the
   # write.
-  digest: "sha256:de3c43da16a9df50040261b737f85722487f25a1d8a57f302645bf08e898622a"
+  digest: "sha256:fcdc20752f78d9d49047f4f2ec4948ea1cabcb94df1e7ea81704e594207714d0"
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
