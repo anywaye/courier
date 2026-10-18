@@ -1666,3 +1666,5 @@ custom classes must fully style the input
 <!-- phoenix:ecto-end -->
 
 <!-- usage-rules-end -->
+## Secrets
+- No `.env` files with values. Use `cafe secret set/get/list` (dev) and `cafe dev` (injects). See `docs/secrets.md`.

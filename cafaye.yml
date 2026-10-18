@@ -263,6 +263,22 @@ consumes:
 # service, and the services that will depend on it depend the other way round.
 dependencies: []
 
+env:
+  - name: PORT
+    required: false
+    secret: false
+    description: "Listen port."
+  - name: DATABASE_URL
+    required: true
+    secret: true
+    dev_default: "auto"
+    description: "Postgres DSN."
+  - name: COURIER_IDENTITY_TOKEN
+    required: false
+    secret: true
+    dev_default: "auto"
+    description: "Scoped API token for introspection."
+
 repository:
   url: git@github.com:cafaye/courier.git
   defaultBranch: master

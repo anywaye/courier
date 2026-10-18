@@ -72,3 +72,5 @@ courier-*.tar
 # source file" case above with a credential-adjacent file: an account id is not
 # a secret, but the cache is not ours to publish either.
 /.cloudflare/
+keyring/
+secrets/
