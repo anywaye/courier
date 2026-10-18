@@ -648,6 +648,91 @@ signing is the relay's — the same place SPF, DMARC and everything else about t
 domain lives. If the relay does not sign, the header is on the wire and the mail
 client ignores it.
 
+## Notification types (the catalog)
+
+courier does not ship a fixed list of notification types. The catalog is a table
+(`notification_types`) that courier creates and migrates on boot, and types are
+added, changed and removed through the HTTP API — no Elixir, no restart, no
+mounted files:
+
+```sh
+# List the types courier knows how to send.
+curl -H "Authorization: Bearer $TOKEN" https://courier.example.com/v1/notification_types
+
+# Register a new type. `required` names the fields its template needs;
+# `subject` is a template with %{key} placeholders filled from the payload;
+# `html_template` and `text_template` are EEx templates.
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
+  https://courier.example.com/v1/notification_types -d '{
+    "type": "welcome",
+    "kind": "transactional",
+    "required": ["email", "name"],
+    "subject": "Welcome to caFaye, %{name}",
+    "html_template": "<p>Hi <%= @greeting %></p><p><a href=\\"<%= @url %>\\">Confirm</a></p>",
+    "text_template": "Hi <%= @greeting %>\\n\\nConfirm: <%= @url %>"
+  }'
+
+# Update a type's templates or subject.
+curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
+  https://courier.example.com/v1/notification_types/welcome -d '{
+    "subject": "Welcome, %{name}"
+  }'
+
+# Remove a type.
+curl -X DELETE -H "Authorization: Bearer $TOKEN" \\
+  https://courier.example.com/v1/notification_types/welcome
+```
+
+### What a template may reference
+
+Every template is rendered with these assigns (use `<%= @name %>` in EEx):
+
+- `greeting` — `"Hi,"` or `"Hi <name>,"` (the name is already escaped)
+- `email` — the recipient's address, escaped
+- `url` — an optional link
+- `account_name`, `invited_by`, `role` — invitation facts
+- `reason` — for `account_security` (`"password reset"` or `"email address changed"`)
+- `previous_email` — the address a change is moving from
+- `amount_display`, `invoice_id` — money facts (already rendered)
+- `billing_url` — where a reader updates their payment method (or nil)
+
+A template that references an assign that is not in this list renders empty
+for it. A template that does not parse is rejected at create/update time
+with a 422, so a broken template never reaches a send.
+
+`required` names the fields `Courier.Mailers` validates before rendering:
+`user_id`, `email`, `name`, `url`, `account_name`, `invited_by`, `role`,
+`reason`, `previous_email`, `amount_display`, `invoice_id`. A type that
+requires a field courier does not know about is rejected at create time.
+
+### Defaults
+
+On first boot (when the table is empty) courier seeds eight platform types:
+`welcome`, `password_reset`, `team_invitation`, `account_security`,
+`email_change_current`, `email_change_new`, `receipt`, `payment_failed`.
+`loan_proposal` was removed from the defaults in this release; any deployment
+that still needs it can register it through the API above. The full list of
+defaults lives in `priv/notifiers/<type>/` in the source tree and is the source
+for the seed.
+
+### Subject templates
+
+`subject` is a string with `%{key}` placeholders filled from the payload.
+A placeholder naming a field the payload does not carry is a configuration
+error (`:subject_misconfigured`), not a mail with a hole in it.
+
+### Kinds
+
+`transactional` (the default) or `bulk`. The kind decides whether the message
+carries `List-Unsubscribe` and `List-Unsubscribe-Post` headers. All of
+courier's defaults are `transactional`.
+
+### Rendering
+
+Templates are EEx, rendered at send time and wrapped in one shared layout per
+format (text and HTML), so every email courier sends is wrapped alike. A change
+to the wrapper is a change to one template.
+
 ## Not here yet
 
 `courier.notification.suppressed` still has no caller for a **refused send**:

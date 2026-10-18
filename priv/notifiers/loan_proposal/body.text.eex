@@ -1,7 +1,0 @@
-<%= @greeting %>
-
-Somebody has recorded a loan with you and is asking you to review the figures.
-
-Review and confirm or dispute: <%= @url %>
-
-If you do not recognise this, you can ignore this message.

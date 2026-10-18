@@ -67,7 +67,6 @@ config :courier, :mailing,
     # reason the receipt's does not: the amount is in the body and a subject
     # that varies per attempt is a mailbox that cannot be scanned.
     payment_failed: "Your caFaye payment did not go through",
-    loan_proposal: "Review the loan figures on your caFaye account"
   }
 
 # `api_client: false` is the default, and it is the right one for the adapter

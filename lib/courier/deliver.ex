@@ -153,18 +153,6 @@ defmodule Courier.Deliver do
   def payment_failed(payload), do: deliver(:payment_failed, payload)
 
   @doc """
-  Sends the `loan_proposal` mail — the notice a counterparty is owed when a
-  lender has recorded a loan and is asking them to review the figures.
-
-  The payload carries `user_id`, `email` and `url`; the `url` is the review
-  link the counterparty opens to confirm or dispute. The amount is deliberately
-  not in the subject, for the same reason the receipt's is not: a mailbox that
-  cannot be scanned is worse than one that can.
-  """
-  @spec loan_proposal(map()) :: {:ok, map()} | {:error, term()}
-  def loan_proposal(payload), do: deliver(:loan_proposal, payload)
-
-  @doc """
   Sends the `email_change_current` mail — the notice to the address the account
   uses today, warning its owner that somebody asked to move it.
 
