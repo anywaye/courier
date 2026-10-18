@@ -101,41 +101,19 @@ defmodule CourierWeb.Plugs.Principal do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    case service_token(conn) do
-      :ok ->
+    case resolver().resolve(conn) do
+      {:ok, %Principal{} = principal} ->
         conn
-        |> assign(:current_account, nil)
-        |> assign(:current_principal, nil)
+        |> assign(:current_account, principal.account_id)
+        |> assign(:current_principal, principal)
 
-      :not_a_service_token ->
-        case resolver().resolve(conn) do
-          {:ok, %Principal{} = principal} ->
-            conn
-            |> assign(:current_account, principal.account_id)
-            |> assign(:current_principal, principal)
+      :error ->
+        unauthorized(conn)
 
-          :error ->
-            unauthorized(conn)
-
-          {:error, :unavailable} ->
-            unavailable(conn)
-        end
+      {:error, :unavailable} ->
+        unavailable(conn)
     end
   end
-
-  defp service_token(conn) do
-    case Application.get_env(:courier, :service_token) do
-      token when is_binary(token) and token != "" ->
-        case Plug.Conn.get_req_header(conn, "authorization") do
-          ["Bearer " <> presented] when presented == token -> :ok
-          _ -> :not_a_service_token
-        end
-
-      _ ->
-        :not_a_service_token
-    end
-  end
-
   defp unauthorized(conn) do
     conn
     |> put_resp_content_type("application/problem+json")

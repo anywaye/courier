@@ -90,9 +90,7 @@ defmodule Courier.ComposeConfigTest do
         "supported state on a deployment with no billing screens; the dev stack " <>
         "needs no value for the consumer's tests to pass.",
     "COURIER_INBOUND_RESEND_SECRET" =>
-      "optional — a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone; the inbound route answers 500. A Cloudflare-only box has no webhook to configure and boots with no provider. The dev stack carries a placeholder so the surface can be exercised.",
-    "COURIER_SERVICE_TOKEN" =>
-      "optional — shared token for trusted services (billing) to call the management API. Unset means only identity-authenticated callers are allowed."
+      "optional — a hard bounce or a spam complaint is discarded and courier goes on mailing an address that has said it is gone; the inbound route answers 500. A Cloudflare-only box has no webhook to configure and boots with no provider. The dev stack carries a placeholder so the surface can be exercised."
   }
 
   describe "the mailpit service" do

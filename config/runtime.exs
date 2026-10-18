@@ -297,10 +297,6 @@ if config_env() == :prod and serving? do
            """)
 end
 
-# Optional shared service token: lets a trusted internal service (billing)
-# call the management API (notification types) without an identity-issued
-# bearer. Unset means only identity-authenticated callers are allowed.
-config :courier, :service_token, System.get_env("COURIER_SERVICE_TOKEN")
 
 # The From address of every transactional email is deployment configuration:
 # an operator sets MAIL_FROM / MAIL_FROM_NAME and redeploys, nobody commits a
