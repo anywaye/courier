@@ -105,6 +105,8 @@ imagePullSecrets: courier-ghcr
 # cheapest possible way to find out, and it happens before the first customer
 # request rather than after a support ticket.
 secretName: courier-secrets
+# Secret carrying the OWNER (migration) credentials. Defaults to secretName when unset.
+migrationSecretName: courier-owner-secrets
 
 # How many copies of the service run. One is the default for a service
 # whose state is the cluster's, not the pod's; raise it when the
