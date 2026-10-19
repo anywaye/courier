@@ -1,5 +1,7 @@
 # courier
 
+**Current direction (2026-10-19):** Ship is the product. The cafaye stack is internal infrastructure; we are not selling or supporting it as a standalone product as of this date. We continue to develop and improve it, treating the founder as the primary customer and keeping "build once, run everywhere" true, with the expectation that it may be offered again later.
+
 cafaye **courier** — transactional email, notification preferences, and every
 outbound webhook. Phoenix 1.8 API-only service, Elixir 1.20 / OTP 29, Postgres.
 
