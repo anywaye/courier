@@ -282,7 +282,7 @@ env:
 repository:
   url: git@github.com:cafaye/courier.git
   defaultBranch: master
-  visibility: public
+  visibility: private
 
 owner:
   team: courier
