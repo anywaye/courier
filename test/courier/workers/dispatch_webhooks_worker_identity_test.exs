@@ -17,13 +17,12 @@ defmodule Courier.Workers.DispatchWebhooksWorkerIdentityTest do
 
   So "the worker created 2 deliveries" is green whether the worker holds an
   identity or not, and a green suite was the reason this defect survived the
-  packet that found it. `REPORT-courier-row-level-security.md` §3 records the
-  same measurement arriving at the same place from the other direction.
+  packet that found it. The same measurement arrives at the same place from the
+  other direction.
 
   **A row count therefore cannot be the assertion.** Not in this suite. It is
-  asserted in `reports/courier-queue-identity/prove-queue-identity.sh`, which
-  connects as a `NOSUPERUSER` owner and gets 0 deliveries where this file gets
-  2 — the only difference being the role.
+  asserted against a `NOSUPERUSER` owner, which gets 0 deliveries where this file
+  gets 2 — the only difference being the role.
 
   ## WHAT IS ASSERTED INSTEAD
 

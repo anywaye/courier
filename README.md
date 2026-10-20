@@ -767,8 +767,8 @@ each version keeps running under Apache-2.0. BSL is not an open-source
 licence, and the licence's own Notice says that out loud.
 
 The fleet's decision describes the intent as "free to run, free to self-host,
-never to offer a competing service" (OPS-D2, `CAFAYE-OPS.md:176`). The
+never to offer a competing service" (OPS-D2, `cafaye/notes/ops.md:181`). The
 parameters chosen do not carry the first half of that sentence, and the
 discrepancy is recorded rather than smoothed over in
-`REPORT-ops-lic-services-a-courier.md`.
+`REPORT-ops-lic-services-a-courier`.
 

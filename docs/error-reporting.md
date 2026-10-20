@@ -2,9 +2,7 @@
 
 How an unhandled error in courier becomes a redacted, deduplicated, throttled row
 in a GlitchTip the other two services also write to — and why each piece is the
-shape it is. The measured defects and the licensing verification are in
-[`../REPORT-error-reporting.md`](../REPORT-error-reporting.md); this document is the
-design and the citations.
+shape it is. This document is the design and the citations.
 
 ## The three layers, and which one reports
 

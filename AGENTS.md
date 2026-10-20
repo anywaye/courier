@@ -656,7 +656,7 @@ measurement; this is the change it was asking for.
     user who does not exist — which leaks **less**, since the 404 existed only to
     withhold the fact that a row exists. **This is a contract change and
     `openapi.yaml` still declares the 404.** Reported, not reconciled: see
-    `REPORT-courier-app-role.md`.
+    `REPORT-courier-app-role`.
   * **A floor that only moves when a test is WRITTEN is a floor that cannot see a
     test changing what it needs.** This packet added one test and moved
     `error_reporting_test.exs` between tiers, because it now reads
@@ -932,7 +932,7 @@ file is read as this file's. Measured on this tree: **1 failure in 8 whole-suite
 `bin/prime` runs, 0 in 12 isolated runs of the file.** The failing assertion
 predates this packet and runs against spans this packet does not produce; what
 this packet did was add one request to the file, which does not make an existing
-race reachable and is stated in `REPORT-courier-24-unsubscribe.md` so the next
+race reachable and is stated in `REPORT-courier-24-unsubscribe` so the next
 reader counting runs knows it. The two available fixes are both worse: filtering
 `request_spans/0` more narrowly would weaken the presence assertion every other
 test in the file depends on — the "a check over nothing passes" failure the
@@ -1147,7 +1147,7 @@ came out of writing it, and each is a place the obvious version is wrong:
     token resolves, so an unknown token is inactive for everybody.
   * **Both scope claim names are read, and neither is assumed absent.** `scopes`
     and `scope` are emitted byte for byte because the fleet has not agreed on
-    one (MD7, open in the manager's `DECISIONS.md`): core requires `scopes`,
+    one (MD7, open in the manager's `cafaye/notes/decisions.md`): core requires `scopes`,
     gateway reads `scope`. courier reads the union. A claim that is present and is
     **not a string** is `{:error, :unreadable}` rather than an empty set — the
     array is the shape a losing side of MD7 could adopt, and reading it as "no
@@ -1448,7 +1448,7 @@ whose unset state courier is designed to live in indefinitely:
   (`kit/templates/compose/docker-compose.yml:540` and
   `kit/templates/substrate/install.sh:1365`), which `courier.email.delivered`
   and the rest of the `courier.` catalog match — measured against a real
-  broker, `REPORT-courier-brk2-outbox-publisher.md`'s stream section. It is not
+  broker, `REPORT-courier-brk2-outbox-publisher`'s stream section. It is not
   in `docker-compose.yml` yet; the dev stack publishes when one line
   (`NATS_URL: nats://nats:4222` in the courier service) is added.
 
@@ -1668,3 +1668,11 @@ custom classes must fully style the input
 <!-- usage-rules-end -->
 ## Secrets
 - No `.env` files with values. Use `cafe secret set/get/list` (dev) and `cafe dev` (injects). See `docs/secrets.md`.
+
+## Packet identifiers
+
+`REPORT-x`, `HANDOFF-x` and `MEASUREMENTS-x` name **work packets, not
+files**. The written reports were removed on 2026-10-20: duplicated across
+repositories, owned by nobody, rotting faster than they were read. What
+survives of a packet is its entry in `CHANGELOG.md` and, where a decision was
+made, in `DECISIONS.md`. A citation to a packet id points at that entry.

@@ -77,9 +77,8 @@ defmodule Courier.Repo.Migrations.GrantAppRoleRuntimeDml do
   kit's cluster grants `<service>_app` **to** `<service>` and never the reverse,
   so the owner can impersonate the weaker role to prove the boundary from outside
   it. That is the whole of the impersonation arrangement and this migration
-  relies on it: `reports/courier-row-level-security/prove.sh` runs the denials
-  `SET ROLE courier_app` from the owner, which is only possible because the
-  membership runs that way. Nothing here changes a role's attributes — no
+  relies on it: the denials are run `SET ROLE courier_app` from the owner, which
+  is only possible because the membership runs that way. Nothing here changes a role's attributes — no
   `BYPASSRLS`, no `SUPERUSER`, no ownership, no `CREATE` on the schema.
 
   ## DOWN IS A REVOKE, NOT A `DROP ROLE`

@@ -216,8 +216,8 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    `cafaye_observed` returns `sqlstate` and nothing else, so it is exposed to
       --    exactly that; what has kept it out of reach is that its probe table is
       --    `id uuid … default gen_random_uuid()`, which is why 39 assertions have been
-      --    green through this defect. `reports/substrate-sequence-grant/` is where the
-      --    message is required, and it is where the two are told apart.
+      --    green through this defect. The message is required there, and it is
+      --    where the two are told apart.
       execute format('grant usage on schema public to %I', login_role);
       if to_regnamespace('cafaye') is not null then
         execute format('grant usage on schema cafaye to %I', login_role);

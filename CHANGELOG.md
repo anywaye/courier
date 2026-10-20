@@ -47,7 +47,7 @@ document lands in both files in one commit, because core asserts the two agree.
   check is vacuous while the address-suppression check is unchanged. And the
   attribution is a customer id because billing has no users and the consumer
   rule forbids looking anybody up. Reported with the core enum gap in
-  `REPORT-courier-consumer-paymentreceipt-01.md`.
+  `REPORT-courier-consumer-paymentreceipt-01`.
 
 - **A third provider: Cloudflare Email, through the same
   `COURIER_MAIL_ADAPTER` seam.** Cloudflare Email Routing is receive-only and
@@ -164,7 +164,7 @@ document lands in both files in one commit, because core asserts the two agree.
   container port), and the readiness probe is `/readyz` (baked into the
   template, not a value). The chart is the deploy artifact for the Argo
   `Application` in `kit/templates/substrate/manifests/applications/courier.yaml`
-  — it is NOT a second deploy path. `DEPLOYMENT.md` is explicit that there
+  — it is NOT a second deploy path. `cafaye/notes/deployment.md` is explicit that there
   is no helm-from-CI template in kit and one may never be added, because
   a second deploy path beside Argo is a split brain. The chart is pulled
   by Argo, or it does not run.
@@ -246,7 +246,7 @@ document lands in both files in one commit, because core asserts the two agree.
     a person sees. No template, body, partial or view was added.
   - **Six defects were found while writing it, and five of them were in this
     code rather than in the tree it was written against.** They are written down
-    in `REPORT-courier-inapp-notifications-01.md` with the measurements; the two
+    in `REPORT-courier-inapp-notifications-01` with the measurements; the two
     worth reading there are `Repo.transaction/1` wrapping its function's return
     (`record/2` answered `{:ok, {:ok, …}}` and 31 tests failed on a shape nobody
     had written down), and Ecto's `on_conflict: :nothing` documentation being

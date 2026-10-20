@@ -24,7 +24,7 @@
 #    Phoenix routers and every route in both is a string literal on one line.
 #    Nothing here is registered through a constant, so the gap between "routes
 #    courier serves" and "registrations the checker can see" is zero — MEASURED,
-#    not assumed, and `REPORT-courier-account-scope-01.md` prints the command that
+#    not assumed, and `REPORT-courier-account-scope-01` prints the command that
 #    measures it (`route_defs=0` was D18's own number for a service the checker
 #    could not read, and a floor is only a floor while it means something about
 #    the thing it floors).
@@ -64,7 +64,7 @@
 #    authenticated paths (each `/v1` controller action, and the `:idempotent`
 #    plug's claim/lookup/store), and neither route reaches any of those call
 #    sites. core's checker re-derives the same answer from the router and is the
-#    reason these three rows are `false`: `REPORT-courier-account-scope-01.md`
+#    reason these three rows are `false`: `REPORT-courier-account-scope-01`
 #    shows it reading courier's sixteen routes and naming nine as
 #    account-resolving and five as not, which is the same nine and the same five
 #    this file declares.

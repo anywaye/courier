@@ -44,8 +44,7 @@ defmodule Courier.Workers.DispatchWebhooksWorker do
   in any log.
 
   That is what this worker used to do, and it is measured rather than asserted —
-  `reports/courier-queue-identity/prove-queue-identity.sh`, against a
-  `NOSUPERUSER` owner as kit's cluster creates one:
+  against a `NOSUPERUSER` owner as kit's cluster creates one:
 
       without identity   {:ok, %{dispatched: 0}}   0 deliveries   0 log lines
       with identity      {:ok, %{dispatched: 2}}   2 deliveries

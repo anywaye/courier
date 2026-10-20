@@ -237,7 +237,7 @@ defmodule Courier.Events do
   about this envelope the other three do not do.** Nothing was rendered, nothing
   was addressed and nothing left, so there is no message to name; and core's
   catalog calls this type's subject "the recipient", which core's D8
-  (`DECISIONS.md`) settles as the **user id** rather than the address — an address
+  (`cafaye/notes/decisions.md`) settles as the **user id** rather than the address — an address
   is mutable and `subject` is the per-entity ordering key, so a correlation key
   that the recipient can change is a key that moves under a consumer.
 

@@ -309,8 +309,8 @@ defmodule CourierWeb.Router do
   # plug's, for its claim); `/unsubscribe/:token`, `/inbound/resend`
   # and the two probes reach no policy and so need no identity. If a future change
   # makes one of them touch `notification_preferences` or `webhook_endpoints`,
-  # `reports/courier-row-level-security/prove-unauthenticated.sh` goes red on its
-  # table list rather than on a symptom somebody reports later.
+  # the RLS suite goes red on its table list rather than on a symptom somebody
+  # reports later.
   #
   # **Both verbs, on one path, and that is §3.2's own sentence**: "The target of
   # the POST action is the same as the one in the GET action for a manual

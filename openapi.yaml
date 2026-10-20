@@ -231,7 +231,7 @@
 #     of those was a string in a unique index, paid for by every write.
 #
 # Retention is 24 hours, scoped to the `(account, endpoint, key)` triple with
-# `endpoint` the concrete path. REPORT-courier-14-coreversion.md has the
+# `endpoint` the concrete path. REPORT-courier-14-coreversion has the
 # measurements, including the two Elixir behaviours that had to be discovered the
 # hard way and are now written into the code that depends on them.
 #

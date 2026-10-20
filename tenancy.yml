@@ -18,7 +18,7 @@
 # those two were given non-fatal severities for. What they cost is real and is
 # stated rather than assumed — **the checker cannot prove this enumeration is
 # closed**, so this file and `test/courier/**` are what hold it, and
-# `REPORT-courier-tenancy-declare.md` maps which holds what.
+# `REPORT-courier-tenancy-declare` maps which holds what.
 #
 # CARRIED OVER, AND THE CARRYING IS THE FINDING: the `rls` block records what
 # the DATABASE does, and courier's database does it — **six tables are
@@ -464,7 +464,7 @@ entryPoints:
   # WHAT THIS BOUNDARY NOW IS, and the split is the finding. `addressable/2`
   # compares the acting account against the stored row's `account_id`, and
   # `Courier.NotificationPreferences`'s moduledoc, the suite and
-  # `REPORT-courier-app-role.md` all record what the role switch did to it: as
+  # `REPORT-courier-app-role` all record what the role switch did to it: as
   # `courier_app` the `owner/1` read is a subject of the `select` policy, so
   # another account's row is not returned at all and **the comparison never
   # runs**. `test/courier/notification_preferences_test.exs` sets the

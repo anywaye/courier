@@ -30,7 +30,7 @@ defmodule Courier.EventsTest do
   `courier.notification.suppressed` is the one that is not, because it has no
   `message_id` (nothing was rendered, so there is no notification to be about)
   and its subject is the recipient rather than the notification. That difference
-  is core's D8, in core's `DECISIONS.md`, and a builder that got it wrong would
+  is core's D8, in core's `cafaye/notes/decisions.md`, and a builder that got it wrong would
   be a publisher of an event no consumer could join.
 
   ## A builder is a shape, not an emission

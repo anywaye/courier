@@ -50,8 +50,8 @@ defmodule Courier.NotificationsBoundaryTest do
   `pg_class` rather than proved by a denial — because **a denial cannot be made
   from this connection**: it is `courier_app`, which is not the owner, and
   `Courier.OwnerRepo` is a superuser here, which bypasses RLS unconditionally.
-  `reports/courier-row-level-security/prove.sh` §5 is where the owner's denials
-  are made for real, by `SET ROLE` out of superuser.
+  The owner's denials are made for real elsewhere, by `SET ROLE` out of
+  superuser.
 
   ## THE CONTROL, AND IT IS A REAL TABLE RATHER THAN A FIXTURE
 
@@ -368,8 +368,8 @@ defmodule Courier.NotificationsBoundaryTest do
     #
     # So the FORCE half is read out of `pg_class`, which is the only in-suite
     # witness, and the owner's denials are proved where they can be made honestly:
-    # `reports/courier-row-level-security/prove.sh`, which `SET ROLE`s out of
-    # superuser. Adding a fourth copy here would be a proof that cannot fail,
+    # a `SET ROLE` out of superuser. Adding a fourth copy here would be a proof
+    # that cannot fail,
     # which is the thing this file exists to avoid.
     test "the test connection is NOT a superuser, so the denials above mean something" do
       # **THE PRECONDITION, ASSERTED.** Every denial in this file is worthless if

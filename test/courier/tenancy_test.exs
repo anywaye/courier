@@ -19,8 +19,7 @@ defmodule Courier.TenancyTest do
       B's rows would therefore pass **whether or not the identity was ever set**,
       which is a test that cannot fail. This is the whole finding the packet
       exists to close: 1276 green tests could not see an inert boundary.
-      The denial is proved in `reports/courier-row-level-security/prove.sh` and
-      `prove-identity-leak.sh`, which connect as `courier_app`
+      The denial is proved by connections that are `courier_app`
       (`NOSUPERUSER`, `NOBYPASSRLS`).
 
     * **That the identity does not outlive the transaction.** This one was

@@ -125,7 +125,7 @@
 #     `account_name`, `invited_by` and `url`, and **the accept URL is
 #     unrecoverable from any event** — identity returns the invitation token in
 #     its 201 and stores only the digest. See
-#     `REPORT-courier-consumer-invite-01.md` and the handler's moduledoc. The
+#     `REPORT-courier-consumer-invite-01` and the handler's moduledoc. The
 #     subscription is declared anyway, because the consumer, its dedupe and its
 #     retry budget are the part that had never been built, and the payload gap
 #     is one line in identity rather than a reason not to have the other end of
@@ -145,7 +145,7 @@
 #     notification: the payload carries a `user_id`, which is a real person, and
 #     `Courier.Notifications` needs nothing else. **Email is deliberately not
 #     attempted** — the payload carries no address, and courier has no identity
-#     client (the refusal in `REPORT-courier-consumer-invite-01.md` §2.6
+#     client (the refusal in `REPORT-courier-consumer-invite-01` §2.6
 #     stands). The unblock is one line in identity's `NewMemberAccepted`: carry
 #     the member's address.
 #
@@ -155,7 +155,7 @@
 #     `tenancy.go:55-70`. courier subscribes to what is published — a
 #     subscription to a type no publisher declares fails on somebody else's
 #     deploy (core's rule 6) — and the divergence is reported rather than
-#     renamed: `REPORT-courier-consumer-memberaccepted-01.md`.
+#     renamed: `REPORT-courier-consumer-memberaccepted-01`.
 #
 #   - `identity.session.revoked` is the third entry, and the first one that
 #     sends mail. identity publishes it from `internal/outbox/recovery.go`
@@ -170,7 +170,7 @@
 #     consumes whose payload is sufficient for a mail**: the invitation was
 #     missing the one field that mattered and the acceptance carried no address
 #     at all. The reason-branching decision and the core enum gap are reported
-#     in `REPORT-courier-consumer-sessionsrevoked-01.md`.
+#     in `REPORT-courier-consumer-sessionsrevoked-01`.
 #
 #   - `identity.user.created` is the fourth entry, and the one the platform's
 #     central promise was waiting for: a user signs up, and courier welcoms
