@@ -34,7 +34,7 @@ defmodule Courier.Consumers.MemberAcceptedTest do
     * **No email address.** The mail a member would want ("you joined account
       X") needs the address and the account name; the payload carries neither,
       and courier has no identity client. The handler mails nobody — see the
-      moduledoc and `REPORT-courier-consumer-memberaccepted-01.md`.
+      moduledoc and `REPORT-courier-consumer-memberaccepted-01`.
     * **No account name.** `params` carries `role` and nothing else: the
       account is a column on the event row, and a blank where the name should
       be is the one outcome this packet exists to prevent.

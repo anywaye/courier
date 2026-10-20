@@ -39,7 +39,7 @@ defmodule Courier.NatsPublisherBusTest do
   `nats stream add cafaye --subjects "identity.>,billing.>,courier.>,muse.>,
   darkroom.>" ...` accepted a real publish on `courier.email.delivered` and
   stored the envelope at seq 1 — recorded in
-  `REPORT-courier-brk2-outbox-publisher.md`'s stream section, reproducible with
+  `REPORT-courier-brk2-outbox-publisher`'s stream section, reproducible with
   `evidence/brk2-broker-proof.exs`.
   """
 

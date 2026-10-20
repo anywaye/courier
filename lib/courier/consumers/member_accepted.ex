@@ -23,7 +23,7 @@ defmodule Courier.Consumers.MemberAccepted do
   recorded in the source comment at `tenancy.go:55-70`. **This handler subscribes
   to what is actually published** — a subscription to a type no publisher declares
   fails on somebody else's deploy (core's rule 6) — and the divergence is
-  reported rather than renamed: `REPORT-courier-consumer-memberaccepted-01.md`.
+  reported rather than renamed: `REPORT-courier-consumer-memberaccepted-01`.
 
   ## THE SURFACE DECISION: IN-APP, AND THE PAYLOAD IS WHY
 
@@ -37,7 +37,7 @@ defmodule Courier.Consumers.MemberAccepted do
       ever had.
     * **Email** — `Courier.Mailers` + `Courier.Deliver`. The payload has **no
       address**, and courier has deliberately no identity client
-      (`REPORT-courier-consumer-invite-01.md` §2.6 — a second identity client in
+      (`REPORT-courier-consumer-invite-01` §2.6 — a second identity client in
       exchange for one field was refused, and the refusal stands). The mail a
       member would want ("you joined account X") also needs `account_name`,
       which the payload does not carry and courier cannot look up.
@@ -57,7 +57,7 @@ defmodule Courier.Consumers.MemberAccepted do
   rejected**, and the reason is the in-app packet's own warning: a new type is a
   decision about how a consumer renders it, this module renders nothing, and
   "naming a type with no renderer behind it is how a type ships that nothing can
-  display" (`REPORT-courier-inapp-notifications-01.md`). `welcome` has a
+  display" (`REPORT-courier-inapp-notifications-01`). `welcome` has a
   renderer's worth of semantics behind it already; a second name for the same
   fact would not have.
 

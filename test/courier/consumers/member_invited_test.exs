@@ -42,7 +42,7 @@ defmodule Courier.Consumers.MemberInvitedTest do
 
   The fix belongs in identity — carry the token, or a redeemable URL, in the
   event — and this repository does not touch identity. It is REPORTED, in
-  `REPORT-courier-consumer-invite-01.md`.
+  `REPORT-courier-consumer-invite-01`.
 
   ## WHY THE LOOKUPS ARE NOT BUILT ANYWAY
 

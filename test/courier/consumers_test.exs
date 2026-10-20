@@ -186,10 +186,10 @@ defmodule Courier.ConsumersTest do
       # `Courier.Consumers.UserCreated` and `Courier.Consumers.Subscriber`. The
       # fifth and sixth are the money pair: a settled payment is mailed to the
       # person it belongs to — see `Courier.Consumers.PaymentSucceeded` and
-      # `REPORT-courier-consumer-paymentreceipt-01.md` — and an attempt that
+      # `REPORT-courier-consumer-paymentreceipt-01` — and an attempt that
       # failed is the warning their card keeps working depends on — see
       # `Courier.Consumers.PaymentFailed` and
-      # `REPORT-courier-consumer-paymentfailed-01.md`.
+      # `REPORT-courier-consumer-paymentfailed-01`.
       assert Consumers.subscribed() == [
                "billing.payment.failed",
                "billing.payment.succeeded",

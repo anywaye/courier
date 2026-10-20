@@ -64,7 +64,7 @@ defmodule Courier.Consumers.SessionsRevoked do
   `ConfirmEmailChangeNew` reads the user after `SetEmail` in the same
   transaction, so the event carries the address the account now uses. That
   choice is identity's, measured and recorded in
-  `REPORT-identity-event-payloads-01.md` §2.3: "a notice confirming a change
+  `REPORT-identity-event-payloads-01` §2.3: "a notice confirming a change
   belongs at the address the account now uses." This handler mails what the
   event carries and nothing else — the old-address-as-warning alternative is a
   payload change (the event is one field, not two), not a consumer change.
@@ -103,7 +103,7 @@ defmodule Courier.Consumers.SessionsRevoked do
   value, and `core/schemas/events/courier/email/delivered.schema.json` freezes
   that field to an enum of the three current names. The switch is one row here
   plus one enum value in core, and core is not this repository's to change:
-  `REPORT-courier-consumer-sessionsrevoked-01.md`.
+  `REPORT-courier-consumer-sessionsrevoked-01`.
   """
 
   alias Courier.ConsumedEvent

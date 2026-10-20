@@ -528,9 +528,9 @@ defmodule Courier.EventsTest do
       # the warning for an attempt that did not go through); core's four payload
       # schemas still freeze `notification_type` to the three names below. core
       # is not this repository's to change, so the divergence is REPORTED rather
-      # than applied: `REPORT-courier-consumer-sessionsrevoked-01.md` for the
-      # first three, `REPORT-courier-consumer-paymentreceipt-01.md` for the
-      # fourth, and `REPORT-courier-consumer-paymentfailed-01.md` for this one.
+      # than applied: `REPORT-courier-consumer-sessionsrevoked-01` for the
+      # first three, `REPORT-courier-consumer-paymentreceipt-01` for the
+      # fourth, and `REPORT-courier-consumer-paymentfailed-01` for this one.
       # This assertion pins the known divergence — a NINTH type still fails it —
       # rather than asserting an agreement that no longer holds. The day core's
       # enum grows the missing names, the `++ [...]` comes out and the two

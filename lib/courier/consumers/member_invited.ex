@@ -48,7 +48,7 @@ defmodule Courier.Consumers.MemberInvited do
   **The fix belongs in identity** and this repository does not touch identity.
   It is one line in `NewMemberInvited` — carry the token, or a redeemable URL,
   in the payload — and it is REPORTED rather than applied:
-  `REPORT-courier-consumer-invite-01.md`.
+  `REPORT-courier-consumer-invite-01`.
 
   The alternative considered and rejected: look up `account_name` and the
   inviter's name over HTTP anyway. That is a second identity client — a second

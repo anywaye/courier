@@ -48,7 +48,7 @@ defmodule Courier.UnsubscribeHeadersTest do
   `account_security`, and the two email-change notices are exactly that
   reported divergence — all three are `:transactional`, so they change nothing
   here, and the gap is recorded in
-  `REPORT-courier-consumer-sessionsrevoked-01.md` rather than hidden by this
+  `REPORT-courier-consumer-sessionsrevoked-01` rather than hidden by this
   file's "no bulk mail" claim, which is about the `:bulk` arm and still holds.
 
   So the positive case is proved where it can be proved honestly: on a real

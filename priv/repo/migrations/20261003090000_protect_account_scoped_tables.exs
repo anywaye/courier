@@ -94,7 +94,7 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
   does not yet turn it on per request. **Until it does, courier's own reads of
   these three tables go through as the role that owns them**, which is why
   nothing in the Elixir suite changed behaviour here — see
-  `REPORT-courier-row-level-security.md` §3 for the measurement, which is the
+  `REPORT-courier-row-level-security` §3 for the measurement, which is the
   reason this file is safe to land alone.
 
   `identity` made the same split, in the same order, and called the next step

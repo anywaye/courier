@@ -154,14 +154,14 @@ config :courier, :consumers, %{
   # payment event with no address on it is one nobody can act on. The payload
   # carries the recipient (`email`) and the settled amount, so this handler
   # sends and looks nothing up. Reported in
-  # `REPORT-courier-consumer-paymentreceipt-01.md`.
+  # `REPORT-courier-consumer-paymentreceipt-01`.
   "billing.payment.succeeded" => Courier.Consumers.PaymentSucceeded,
   # The receipt's other half, and the one money event that asks a person to
   # ACT: a failed payment attempt reached the bus and nobody was told until
   # this subscription existed — a card that quietly stops working is revenue
   # that stops arriving. Same payload family as the receipt and the same
   # recipient fact, so the handler sends and looks nothing up. Reported in
-  # `REPORT-courier-consumer-paymentfailed-01.md`.
+  # `REPORT-courier-consumer-paymentfailed-01`.
   "billing.payment.failed" => Courier.Consumers.PaymentFailed,
   # The second subscription, and the first one courier can ACT on: the payload
   # carries `user_id`, which is a real person, so the handler records an in-app

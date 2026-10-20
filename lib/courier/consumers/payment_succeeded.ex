@@ -16,7 +16,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
   `subscription_id`, `invoice_id`, `payment_intent_id`, `paid`, `amount`,
   `attempt_count` — plus the one field `with_recipient` adds, `email`, which
   exists precisely because of the fleet's consumer design: courier has no
-  billing client and no billing tables (REPORT-courier-consumer-invite-01.md
+  billing client and no billing tables (REPORT-courier-consumer-invite-01
   §2.6), so an event with no address on it is one nobody can mail. This is the
   subscription that field was put there for.
 
@@ -60,7 +60,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
   USER — it names the cafaye CUSTOMER the money moved for. Billing has no
   users: its `customers` row is account-owned, whose id is what the event
   carries as `cafaye_customer_id`, and the platform's consumer rule forbids
-  looking people up anywhere (REPORT-courier-consumer-invite-01.md §2.6), so
+  looking people up anywhere (REPORT-courier-consumer-invite-01 §2.6), so
   neither the user nor their address can be derived from an account.
 
   So the payer's customer id is the identifier this handler attributes the
@@ -78,7 +78,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
   event's `user_id` carries the CUSTOMER's id for this one type, which is the
   payer, not a person with settings. A `payer_identity` field core owned would
   be the honest fix and is reported in
-  `REPORT-courier-consumer-paymentreceipt-01.md`.
+  `REPORT-courier-consumer-paymentreceipt-01`.
 
   ## THE CORE ENUM GAP, REPORTED AND NOT APPLIED
 
@@ -88,7 +88,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
   freezes that field to the seven names courier sent when core last froze it.
   The switch is one row in `Courier.Mailers` plus one enum value in core, and
   core is not this repository's to change:
-  `REPORT-courier-consumer-paymentreceipt-01.md`.
+  `REPORT-courier-consumer-paymentreceipt-01`.
   """
 
   alias Courier.ConsumedEvent

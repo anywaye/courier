@@ -72,7 +72,7 @@
 #   changed anything. If the CONTROL fails, that is the first thing to check,
 #   and it is a pre-existing defect in the repository's own suite — not
 #   something this script retries, sleeps past, or hides. See
-#   REPORT-core-10-courier.md.
+#   REPORT-core-10-courier.
 #
 # EXIT CODES
 #

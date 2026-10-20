@@ -43,7 +43,7 @@ defmodule Courier.Workers.DispatchWebhooksWorkerIdentityTest do
   Delete the `Courier.Tenancy.with_account/3` call from `DispatchWebhooksWorker`
   and every recorded read carries `nil` instead of the event's account. Verified
   red before verified green; see
-  `REPORT-courier-queue-identity-01.md` §5.
+  `REPORT-courier-queue-identity-01` §5.
 
   ## `async: false`, AND WHY
 

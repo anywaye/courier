@@ -24,7 +24,7 @@ defmodule Courier.NotificationsBoundaryTest do
   and a named subject of all four policies on both tables. A superuser bypasses
   RLS whatever `FORCE ROW LEVEL SECURITY` says, which is how 1276 green tests
   once could not tell an enforced boundary from an inert one
-  (`REPORT-courier-row-level-security.md` §3). The first test in the last
+  (`REPORT-courier-row-level-security` §3). The first test in the last
   describe block asserts that precondition, so it fails loudly if the
   connection ever becomes one that bypasses the policies again.
 
@@ -380,7 +380,7 @@ defmodule Courier.NotificationsBoundaryTest do
       #     rolname | rolsuper | rolbypassrls
       #     kaka    | t        | t
       #
-      # which is the whole of `REPORT-courier-row-level-security.md` §3.
+      # which is the whole of `REPORT-courier-row-level-security` §3.
       assert superuser?() == false,
              """
              The test connection is a superuser, so it bypasses row-level security

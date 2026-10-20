@@ -36,9 +36,9 @@ defmodule Courier.NotificationPreferencesTest do
   # and somebody who turns receipts or failure warnings off is deciding about
   # their own accounting, which is theirs to decide. The core enum gap (the
   # delivered-event schema still freezes three) is reported, not hidden here:
-  # `REPORT-courier-consumer-sessionsrevoked-01.md` for the first three,
-  # `REPORT-courier-consumer-paymentreceipt-01.md` for the fourth and
-  # `REPORT-courier-consumer-paymentfailed-01.md` for the fifth.
+  # `REPORT-courier-consumer-sessionsrevoked-01` for the first three,
+  # `REPORT-courier-consumer-paymentreceipt-01` for the fourth and
+  # `REPORT-courier-consumer-paymentfailed-01` for the fifth.
   @types ~w(welcome password_reset team_invitation account_security email_change_current
             email_change_new receipt payment_failed)
 

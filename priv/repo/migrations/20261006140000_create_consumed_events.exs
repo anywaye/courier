@@ -144,7 +144,7 @@ defmodule Courier.Repo.Migrations.CreateConsumedEvents do
       # The relay has the same latent defect: `ProcessOutboxWorker.mark_refused/2`
       # writes `to_string(reason)` into its own `varchar(255)` with no bound. It
       # is not fixed here — this packet does not touch the relay — and it is
-      # reported in `REPORT-courier-consumer-invite-01.md` rather than fixed in a
+      # reported in `REPORT-courier-consumer-invite-01` rather than fixed in a
       # packet about the other direction of the bus.
       add :last_error, :text
 
