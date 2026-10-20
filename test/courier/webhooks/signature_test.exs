@@ -1,6 +1,6 @@
 defmodule Courier.Webhooks.SignatureTest do
   @moduledoc """
-  The Standard Webhooks signature, exactly as `moon/refs/standard-webhooks`
+  The Standard Webhooks signature, exactly as `reference/standard-webhooks`
   specifies it. PLAN.md §7 adopted the spec with no custom scheme, so every
   assertion here is a claim about the spec and not about courier:
 

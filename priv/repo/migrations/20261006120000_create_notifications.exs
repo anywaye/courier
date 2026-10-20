@@ -12,7 +12,7 @@ defmodule Courier.Repo.Migrations.CreateNotifications do
   recipient it does not have — a row per (event, recipient) pair where the
   event's own facts are repeated N times and cannot be stated once. Two tables
   say what is true: the event happened, and here it is for these people. The
-  reference implementation (`moon/REF-jumpstart-inventory.md` §1.1) stores it
+  reference implementation (`cafaye/notes/reference/jumpstart-inventory.md` §1.1) stores it
   the same way, and this migration is the port of the **shape**, not of the
   rendering.
 

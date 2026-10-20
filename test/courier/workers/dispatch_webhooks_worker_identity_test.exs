@@ -188,7 +188,7 @@ defmodule Courier.Workers.DispatchWebhooksWorkerIdentityTest do
       # :count)`. `webhook_deliveries` carries no `account_id`, so the account's
       # own rows are reached through `endpoint_id` — and a whole-table count is a
       # claim about every other test in the repository as much as about this code,
-      # which is the test-level shape of the weakness `moon/DEBT.md` D18 tracks.
+      # which is the test-level shape of the weakness `cafaye/notes/debt.md` D18 tracks.
       assert [delivery] = Repo.all(where(WebhookDelivery, endpoint_id: ^endpoint.id))
       assert delivery.event_id == row.id
     end

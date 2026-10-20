@@ -91,7 +91,7 @@ repo="$(cd "$here/.." && pwd)"
 
 core="${CAFAYE_CORE:-}"
 if [ -z "$core" ]; then
-  for candidate in "$repo/../core" "$repo/../../cafaye/core" "$HOME/Code/any/moon/cafaye/core"; do
+  for candidate in "$repo/../core" "$repo/../../cafaye/core" "$HOME/Code/any/cafaye/core"; do
     if [ -x "$candidate/harness/bin/gate-check" ]; then
       core="$(cd "$candidate" && pwd)"
       break

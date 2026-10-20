@@ -2,7 +2,7 @@
 #
 # Checked by cafaye/core's contract harness, from the fleet root:
 #
-#     /Users/kaka/Code/any/moon/cafaye/core/harness/bin/tenancy-check .
+#     /Users/kaka/Code/any/cafaye/core/harness/bin/tenancy-check .
 #
 # `identity/tenancy.yml` is the reference shape and was read in full before this
 # file was written. Two things are carried over deliberately and one is not.

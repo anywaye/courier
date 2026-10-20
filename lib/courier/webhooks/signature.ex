@@ -1,7 +1,7 @@
 defmodule Courier.Webhooks.Signature do
   @moduledoc """
   The Standard Webhooks signature, byte for byte as
-  `moon/refs/standard-webhooks/spec/standard-webhooks.md` specifies it.
+  `reference/standard-webhooks/spec/standard-webhooks.md` specifies it.
 
   PLAN.md §7 adopted the spec for courier's outbound webhooks and said "No
   custom scheme", so this module has no opinions of its own. Every name, every

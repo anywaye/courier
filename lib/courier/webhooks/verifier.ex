@@ -39,7 +39,7 @@ defmodule Courier.Webhooks.Verifier do
 
   # Five minutes. The spec §Verifying signatures requires "some allowable
   # tolerance" without naming one, and the reference implementations in
-  # `moon/refs/standard-webhooks/libraries/` (go: `var tolerance = 5 * time.Minute`;
+  # `reference/standard-webhooks/libraries/` (go: `var tolerance = 5 * time.Minute`;
   # python: `webhook_tolerance = timedelta(minutes=5)`) all chose five. courier
   # verifies the same window, so a customer can point an official library at a
   # courier webhook and get the same answer courier documents.

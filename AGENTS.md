@@ -1,8 +1,8 @@
 # AGENTS.md
 
 Conventions for `courier`, the cafaye notification service. Read this before
-changing anything. The house rules in `moon/PLAN.md` §1 and §3 apply on top of
-it: tests first, every packet ends in a green suite and a commit, never push
+changing anything. The house rules apply on top of
+it: SSH remotes for the repositories cafaye owns, and tests first: write the test, watch it fail, then implement, every packet ends in a green suite and a commit, never push
 from a worker branch.
 
 ## What this repository is
@@ -13,7 +13,7 @@ notification preferences, and every outbound webhook. The contracts and the
 manifest schema are owned by `cafaye/core`; `cafaye.yml` here is a draft
 validated against `core/schemas/cafaye.manifest.schema.json` and is regenerated
 by `cafe init` when core freezes the format. Nothing is copied from
-`moon/refs/jumpstart-pro` — it is a behavioral spec for later packets, and
+`reference/jumpstart-pro` — it is a behavioral spec for later packets, and
 PLAN.md §2 forbids copying from it.
 
 ## Layout
@@ -1050,7 +1050,7 @@ Webhooks](https://www.standardwebhooks.com) and said "No custom scheme", which
 means the base string is `msg_id.timestamp.payload`, the headers are
 `webhook-id` / `webhook-timestamp` / `webhook-signature`, and a consumer can
 verify a delivery with an official library without learning anything about
-courier. `moon/refs/standard-webhooks/spec/standard-webhooks.md` is the authority;
+courier. `reference/standard-webhooks/spec/standard-webhooks.md` is the authority;
 cite the section in the moduledoc when you touch any of it. Renaming a header or
 "improving" the base string breaks every customer integration at once, and the
 only way to find out is from them.
