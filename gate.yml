@@ -255,7 +255,7 @@ gate:
       # REMEASURED on the tree carrying the IN-APP NOTIFICATION RECORD, and
       # **ALL 61 ARE IN THE DATABASE TIER.** The split is read off the case
       # templates by the same `grep` the two tier steps in
-      # `.github/workflows/ci.yml` use, so it cannot be a guess:
+      # `ci/ci.yml` use, so it cannot be a guess:
       #
       #   * `test/courier/notifications_test.exs` — 45 tests, a
       #     `Courier.DataCase`, because every claim in it is a claim about a ROW.
@@ -481,7 +481,7 @@ gate:
   # **The +6 are the same file, `test/courier/chart_test.exs`, and
   # for the same reason: the publish workflow's contract is what two
   # files on disk state** — the caller at
-  # `.github/workflows/publish.yml` and `chart/Chart.yaml` — and a
+  # `ci/publish.yml` and `chart/Chart.yaml` — and a
   # claim about files is a claim no database can check. The six
   # assert the caller exists, triggers on a push to master, calls
   # kit's composed `publish.reusable.yml@master`, grants
@@ -879,11 +879,33 @@ external:
   #     inside the tree and are gitignored.
 
 ci:
+  # THE FILE CI RUNS, AND WHY IT IS NOT A WORKFLOW ANY MORE.
+  #
+  # The paragraphs below describe the GitHub Actions workflow this repository
+  # used to have. That workflow is gone: the fleet's CI is no longer GitHub
+  # Actions. The gate runs in a dev sandbox — the same sandbox the work
+  # happens in — and what the runner executes is `ci/pipeline.sh`.
+  #
+  # The pipeline is this repository's own: its gate, its build and its ship,
+  # in one script, in the repository, where a person can run it by hand as
+  # well as a sandbox. The CI runs it with CI_DRY_RUN=1, so a CI run gates
+  # the tree and stops before the ship; the ship is a deliberate act and not
+  # a side effect of a push.
+  #
+  # WHAT FOLLOWS IS KEPT, AND WHY. The notes below were written about the
+  # workflow this repository used to have. The claims they make about the GATE
+  # — which command it is, which flag it carries, which tier is deliberately
+  # not declared here — are still true and are still the reason this block is
+  # what it is. The claims they make about the workflow's shape (its job names,
+  # its `run:` bodies, the line numbers in a file that no longer exists) are
+  # how the workflow was, and the workflow is gone. Nothing here is a
+  # declaration about a file CI runs.
+  #
   # The workflow, and the argv it runs. Checked TEXTUALLY against the workflow's
   # `run:` bodies, so a workflow that stops calling the gate becomes
   # `gate.ci-disagrees` rather than a quiet divergence. courier's gate job runs
   # `./bin/prime` unmodified — the repository's own rule is that the CI gate is
   # the same command, not a CI variant of it — and every element of `invokes`
   # has to appear in one of those bodies.
-  workflow: .github/workflows/ci.yml
+  workflow: ci/pipeline.sh
   invokes: [bin/prime]

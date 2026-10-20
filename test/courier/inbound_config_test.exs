@@ -27,7 +27,7 @@ defmodule Courier.InboundConfigTest do
 
   `config/runtime.exs` is not evaluated in the test environment — it is guarded by
   `config_env() == :prod` and running it would need a `DATABASE_URL` and a
-  `SECRET_KEY_BASE` as well. The **release** job in `.github/workflows/ci.yml`
+  `SECRET_KEY_BASE` as well. The **release** job in `ci/ci.yml`
   asserts the refusal for real, alongside the one for `COURIER_SECRET_BOX_KEY`,
   because that is the only place a production `runtime.exs` is ever evaluated.
   """

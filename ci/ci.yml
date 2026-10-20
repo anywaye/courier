@@ -1,3 +1,19 @@
+# THIS FILE IS NOT A GITHUB ACTIONS WORKFLOW ANY MORE, AND NOTHING RUNS IT.
+#
+# The fleet's CI runs in dev sandboxes: the same sandbox the work happens in,
+# on the machine the developer chose. This file is the SPECIFICATION those
+# checks read — the steps, the floors, the exemptions — kept where the
+# repository can hold it and read it.
+#
+# What executes is `ci/the pipeline` (named in this repository's `gate.yml`, under
+# `ci.workflow`), and the CI service reads that declaration and runs it.
+#
+# The GitHub Actions spelling is retired, not deleted, because the checks in
+# this repository read this file to hold the specification still: a gate that
+# checks a specification nobody executes is a gate checking a fiction, and a
+# gate that checks nothing is worse. The steps below are the specification
+# the executable CI is measured against, and the day this file stops being
+# that, the checks move with it.
 ---
 # courier's CI.
 #
@@ -79,7 +95,7 @@ jobs:
   #
   # The `.github/workflows/` in this path is not decoration. GitHub resolves a
   # cross-repository reusable workflow at
-  # `{owner}/{repo}/.github/workflows/{file}@{ref}` and documents that
+  # `{owner}/{repo}/ci/{file}@{ref}` and documents that
   # subdirectories of the workflows directory are not supported, so a
   # `uses: cafaye/kit/workflows/ci.reusable.yml@master` line resolves to nothing
   # and the build is red before it starts. kit-04 owns that move.
@@ -88,7 +104,7 @@ jobs:
   # adopts kit") and the `on.workflow_call` block of the workflow itself.
   ci:
     name: ci (kit)
-    uses: cafaye/kit/.github/workflows/ci.reusable.yml@master
+    uses: cafaye/kit/ci/ci.reusable.yml@master
     with:
       language: elixir
       # The directory holding mix.exs. The repository is flat, so this is '.'.
@@ -187,7 +203,7 @@ jobs:
 
       - name: kit's `versions` input must equal mise.toml
         # The check that keeps the one unavoidable duplicate from becoming a lie.
-        run: bin/toolchain-pins --check .github/workflows/ci.yml
+        run: bin/toolchain-pins --check ci/ci.yml
 
       - name: the gate
         # bin/prime, unmodified: `mix local.hex --force`, `mix deps.get`,
@@ -258,7 +274,7 @@ jobs:
           # UNCHANGED at 878 (47 files). The +6 are the same file,
           # `chart_test.exs`, and for the same reason: the publish workflow's
           # contract is what two files on disk state — the caller at
-          # `.github/workflows/publish.yml` and `chart/Chart.yaml` — and a
+          # `ci/publish.yml` and `chart/Chart.yaml` — and a
           # claim about files is a claim no database can check. The six
           # assert the caller exists, triggers on a push to master, calls
           # kit's composed `publish.reusable.yml@master`, grants

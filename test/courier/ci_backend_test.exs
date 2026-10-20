@@ -6,7 +6,7 @@ defmodule Courier.CIBackendTest do
 
   `ci/backend` is the one-line switch kit's `backends/README.md` defines:
   `instabox` runs the pipeline in a sandbox, `github-actions` keeps
-  `.github/workflows/ci.yml` as the runner. A value kit does not ship is a
+  `ci/ci.yml` as the runner. A value kit does not ship is a
   pipeline no backend will ever pick up — the tree would report green on a
   runner that never ran it. This test reads that file and asserts the value is
   one of the two backends kit's table names, so the failure mode is a red test

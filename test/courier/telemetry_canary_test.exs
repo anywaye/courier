@@ -69,7 +69,7 @@ defmodule Courier.TelemetryCanaryTest do
   "these tests never touch `Courier.Repo`", and a claim about the tier that is
   true only because the request was answered early is the same kind of claim this
   file exists to disprove. So the file is a `Courier.DataCase`, it is counted in
-  the database tier, and the numbers in `.github/workflows/ci.yml` were re-measured
+  the database tier, and the numbers in `ci/ci.yml` were re-measured
   in the commit that moved it.
 
   ## The canary is SHORT, and that is deliberate

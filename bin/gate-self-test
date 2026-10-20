@@ -298,14 +298,14 @@ expect_red "proof regex matches none" "proof-missing"
 
 # 4. ci.workflow names a workflow this repository does not have.
 d="$work/b4"; make_copy "$d"
-swap "$d/gate.yml" "  workflow: .github/workflows/ci.yml" "  workflow: .github/workflows/nope.yml"
+swap "$d/gate.yml" "  workflow: ci/ci.yml" "  workflow: .github/workflows/nope.yml"
 check "$d" b4-ci-missing
 expect_red "ci workflow absent" "ci-missing"
 
 # 5. ci.workflow is a real file that never invokes the gate: the CI gate and the
 #    local gate drifting apart, which is the failure this format exists to catch.
 d="$work/b5"; make_copy "$d"
-cat > "$d/.github/workflows/decoy.yml" <<'YAML'
+cat > "$d/ci/decoy.yml" <<'YAML'
 name: decoy
 on: [push]
 jobs:
@@ -316,7 +316,7 @@ jobs:
       - name: build the docs
         run: mix docs
 YAML
-swap "$d/gate.yml" "  workflow: .github/workflows/ci.yml" "  workflow: .github/workflows/decoy.yml"
+swap "$d/gate.yml" "  workflow: ci/ci.yml" "  workflow: .github/workflows/decoy.yml"
 check "$d" b5-ci-disagrees
 expect_red "ci never runs the gate" "ci-disagrees"
 

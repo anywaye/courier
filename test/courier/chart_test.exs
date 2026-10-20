@@ -30,7 +30,7 @@ defmodule Courier.ChartTest do
   ## The publish loop, and why the caller is asserted too
 
   The chart above is only the pull half. The push half is
-  `.github/workflows/publish.yml` — kit's caller template
+  `ci/publish.yml` — kit's caller template
   (`kit/templates/publish/publish.yml`) copied verbatim: one `uses:` of
   kit's composed `publish.reusable.yml`, which builds and pushes the image
   `config/deploy.yml` deploys and packages and pushes this chart. The
@@ -38,7 +38,7 @@ defmodule Courier.ChartTest do
   it, and the fork is the drift kit exists to prevent. So the test asserts
   the facts that make the loop work, not that a file exists:
 
-  * the caller calls `cafaye/kit/.github/workflows/publish.reusable.yml@master`
+  * the caller calls `cafaye/kit/ci/publish.reusable.yml@master`
     — there is exactly one composition and it is kit's;
   * it grants `packages: write` — a reusable workflow can request a
     permission but cannot grant itself one, and a caller that omits it gets
@@ -70,7 +70,7 @@ defmodule Courier.ChartTest do
 
   @repo_root Path.join(__DIR__, "../..")
   @chart_dir Path.join(@repo_root, "chart")
-  @workflow_path Path.join(@repo_root, ".github/workflows/publish.yml")
+  @workflow_path Path.join(@repo_root, "ci/publish.yml")
 
   # The substrate's `Application` pins this targetRevision
   # (`kit/templates/substrate/manifests/applications/courier.yaml`). It is a
@@ -195,7 +195,7 @@ defmodule Courier.ChartTest do
     end
 
     test "calls kit's composed publish workflow — a caller that inlines the steps has forked the composition" do
-      assert uses(workflow()) == "cafaye/kit/.github/workflows/publish.reusable.yml@master"
+      assert uses(workflow()) == "cafaye/kit/ci/publish.reusable.yml@master"
     end
 
     test "grants packages: write — a reusable workflow can request a permission but cannot grant itself one" do
@@ -361,7 +361,7 @@ defmodule Courier.ChartTest do
   end
 
   describe "the image digest — the one that reaches the pod" do
-    # THE CONTRACT (cafaye/kit/.github/workflows/chart.reusable.yml, lines
+    # THE CONTRACT (cafaye/kit/ci/chart.reusable.yml, lines
     # 58-116 "THE IMAGE DIGEST — THE ONE THAT REACHES THE POD, AND THE ONE
     # THAT WAS MEASURED MISSING" and the `pin the image by digest` step
     # 277-365): the chart's `values.yaml` carries

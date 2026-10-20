@@ -85,7 +85,7 @@ if [ "$count" -lt "$floor" ]; then
   echo "assert-suite: $label — $count passed, floor is $floor." >&2
   echo "  $((floor - count)) test(s) fewer than the commit that last raised this floor." >&2
   echo "  If a test was deleted, put it back. If tests were added, raise the floor" >&2
-  echo "  in .github/workflows/ci.yml — both are one-line diffs, and only one of" >&2
+  echo "  in ci/ci.yml — both are one-line diffs, and only one of" >&2
   echo "  them changes what this repository verifies." >&2
   exit 1
 fi

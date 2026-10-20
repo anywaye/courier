@@ -3,10 +3,10 @@
 #
 # A backend's job is only to provide an environment and call this script; the
 # gate is courier's. Which backend ran is recorded in `ci/backend`, and
-# switching is one line — `github-actions` keeps `.github/workflows/ci.yml` as
+# switching is one line — `github-actions` keeps `ci/ci.yml` as
 # the runner (kit's `backends/README.md` is the contract).
 #
-# WHERE EVERY COMMAND COMES FROM: `.github/workflows/ci.yml` IN THIS
+# WHERE EVERY COMMAND COMES FROM: `ci/ci.yml` IN THIS
 # REPOSITORY. That file is the source of truth; when it changes, change this
 # file with it.
 #
@@ -25,7 +25,7 @@
 #      below. `gate.yml` declares the command as `[mise, run, prime]` for the
 #      same reason: `bin/prime`'s first act is `mix`, which exists only under
 #      the pinned toolchain.
-#   3. NO PATH ENTRIES: no step in `.github/workflows/*.yml` appends to
+#   3. NO PATH ENTRIES: no step in `ci/*.yml` appends to
 #      `$GITHUB_PATH`, so `PATHS` below is empty. If a workflow ever gains one,
 #      copy it there in the same order.
 #
@@ -56,7 +56,7 @@ log "pipeline: $REPO_NAME at $REPO_DIR"
 # The gate CI names. `./bin/prime`, verbatim — see the header.
 GATE=(./bin/prime)
 
-# No `echo … >> $GITHUB_PATH` line in `.github/workflows/*.yml` — verified, so
+# No `echo … >> $GITHUB_PATH` line in `ci/*.yml` — verified, so
 # this stays empty rather than carrying a guess.
 PATHS=()
 
@@ -94,7 +94,7 @@ if [ -f mise.toml ] && command -v mise >/dev/null 2>&1; then
   mise install
   # The workflow's own check: the pins CI would install must equal mise.toml.
   # Offline and cheap, and it fails here rather than three minutes into deps.
-  ./bin/toolchain-pins --check .github/workflows/ci.yml
+  ./bin/toolchain-pins --check ci/ci.yml
   GATE=(mise exec -- "${GATE[@]}")
 elif [ -f mise.toml ]; then
   echo "pipeline: mise.toml is present and mise is NOT on PATH — the gate runs on the machine's own toolchain"
