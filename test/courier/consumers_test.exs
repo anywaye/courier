@@ -171,7 +171,7 @@ defmodule Courier.ConsumersTest do
 
   describe "subscribed/0" do
     test "is the fleet's five, and cafaye.yml declares the same list" do
-      # A consumer nobody can read is a consumer nobody deployed. `caf dev`,
+      # A consumer nobody can read is a consumer nobody deployed. `cafe dev`,
       # `pantry` and core's contract harness read the manifest, so the two lists
       # are checked against each other rather than trusted to agree.
       #
