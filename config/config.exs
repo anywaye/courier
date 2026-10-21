@@ -33,7 +33,7 @@ config :courier,
 # names a key the payload does not carry is a configuration error, not a mail
 # with a hole in it.
 config :courier, :mailing,
-  from: {"caFaye", "no-reply@cafaye.com"},
+  from: {"Cafaye", "no-reply@cafaye.com"},
   # Where a reader of the payment-failure warning goes to update their card.
   # Optional and nil here; `config/runtime.exs` sets it from
   # `COURIER_BILLING_URL` on a deployment that has billing screens to point
@@ -46,8 +46,8 @@ config :courier, :mailing,
   # deployment_domain/0`. `config/runtime.exs` moves it with `MAIL_FROM`.
   deployment_domain: "cafaye.com",
   subjects: %{
-    welcome: "Welcome to caFaye",
-    password_reset: "Reset your caFaye password",
+    welcome: "Welcome to Cafaye",
+    password_reset: "Reset your Cafaye password",
     team_invitation: "%{invited_by} invited you to join %{account_name}",
     # Reason-agnostic on purpose: the subject is one line per TYPE in this
     # configuration, and `account_security` covers two reasons. The body is
@@ -55,18 +55,18 @@ config :courier, :mailing,
     # would need a `%{reason}` placeholder the two values would fill clumsily
     # ("…: password reset"). A label that names the fact's kind is the honest
     # subject for a type that is one shape with two renderings.
-    account_security: "Security notice for your caFaye account",
-    email_change_current: "Confirm an email address change on your caFaye account",
-    email_change_new: "Confirm your new caFaye email address",
+    account_security: "Security notice for your Cafaye account",
+    email_change_current: "Confirm an email address change on your Cafaye account",
+    email_change_new: "Confirm your new Cafaye email address",
     # A subject with no placeholder, because the one field a reader might want
     # in it — the amount — is in the body. A subject template is one line of the
     # payload; the amount belongs where the eye lands first, and a subject that
     # varies per payment is a mailbox that cannot be scanned.
-    receipt: "We received your caFaye payment",
+    receipt: "We received your Cafaye payment",
     # The failure's subject, and it also carries no placeholder for the same
     # reason the receipt's does not: the amount is in the body and a subject
     # that varies per attempt is a mailbox that cannot be scanned.
-    payment_failed: "Your caFaye payment did not go through",
+    payment_failed: "Your Cafaye payment did not go through",
   }
 
 # `api_client: false` is the default, and it is the right one for the adapter

@@ -36,7 +36,7 @@ defmodule Courier.MailersConfigTest do
 
     assert {:ok, email} = Mailers.build(:welcome, @payload)
 
-    assert email.subject == "Welcome to caFaye"
+    assert email.subject == "Welcome to Cafaye"
     assert email.from == {"Mailer Test", "mailer-test@cafaye.com"}
   end
 
@@ -45,7 +45,7 @@ defmodule Courier.MailersConfigTest do
 
     assert {:error, :subject_misconfigured} = Mailers.build(:welcome, @payload)
 
-    Courier.NotificationTypes.update("welcome", %{subject: "Welcome to caFaye"})
+    Courier.NotificationTypes.update("welcome", %{subject: "Welcome to Cafaye"})
   end
 
   test "a type with no subject is not reachable through the API" do

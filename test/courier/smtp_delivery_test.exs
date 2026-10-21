@@ -67,7 +67,7 @@ defmodule Courier.SmtpDeliveryTest do
       # The subject is courier's, from the `:mailing` configuration, rendered
       # through the template — so this is also the assertion that the subject
       # templates still resolve.
-      assert message.data =~ "Subject: Welcome to caFaye"
+      assert message.data =~ "Subject: Welcome to Cafaye"
 
       # The body is the rendered template, not an empty multipart. A message
       # that "arrives" with a subject line and no body is still useless, and

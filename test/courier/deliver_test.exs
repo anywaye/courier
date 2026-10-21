@@ -68,7 +68,7 @@ defmodule Courier.DeliverTest do
     test "sends the mail" do
       assert {:ok, _result} = Deliver.welcome(payload())
 
-      assert_email_sent(subject: "Welcome to caFaye", to: [{"Kaka", "kaka@example.com"}])
+      assert_email_sent(subject: "Welcome to Cafaye", to: [{"Kaka", "kaka@example.com"}])
     end
 
     test "returns the notification's message id and the id of the event recording it" do
@@ -193,7 +193,7 @@ defmodule Courier.DeliverTest do
       {:ok, _} = Deliver.password_reset(payload(%{url: "https://cafaye.com/reset?t=1"}))
       {:ok, _} = Deliver.team_invitation(payload(%{account_name: "Moon", invited_by: "Ruto"}))
 
-      assert_email_sent(subject: "Reset your caFaye password")
+      assert_email_sent(subject: "Reset your Cafaye password")
       assert_email_sent(subject: "Ruto invited you to join Moon")
     end
   end
@@ -231,7 +231,7 @@ defmodule Courier.DeliverTest do
                  payload(%{email: @email, url: "https://cafaye.com/reset?t=1"})
                )
 
-      assert_email_sent(subject: "Reset your caFaye password")
+      assert_email_sent(subject: "Reset your Cafaye password")
       assert [%{type: "courier.email.delivered"}] = outbox()
     end
 
@@ -273,7 +273,7 @@ defmodule Courier.DeliverTest do
                  payload(%{email: @email, url: "https://cafaye.com/reset?t=1"})
                )
 
-      assert_email_sent(subject: "Reset your caFaye password")
+      assert_email_sent(subject: "Reset your Cafaye password")
       assert [%{type: "courier.email.delivered"}] = sends()
     end
 

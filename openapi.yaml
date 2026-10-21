@@ -344,7 +344,7 @@ info:
   # field or response shape changed at all**. A client generated from 2.3.0 keeps
   # working against it, which is what makes it minor.
   version: 2.4.0
-  title: caFaye courier
+  title: Cafaye courier
   description: |
     Transactional email, notification preferences, in-app notifications, and
     outbound webhooks.

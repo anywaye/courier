@@ -210,7 +210,7 @@ defmodule Courier.Consumers.SubscriberTest do
       # One mail, and the outbox row that proves it is one send.
       assert [email] = drain_emails()
       assert [{_name, "kaka@example.com"}] = email.to
-      assert email.subject == "Welcome to caFaye"
+      assert email.subject == "Welcome to Cafaye"
 
       assert Repo.aggregate(Courier.OutboxEvent, :count, :id) == 1
     end

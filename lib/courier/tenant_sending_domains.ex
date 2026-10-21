@@ -388,8 +388,8 @@ defmodule Courier.TenantSendingDomains do
   defp check_credential(domain) do
     email =
       Swoosh.Email.new()
-      |> Swoosh.Email.from({"caFaye", "no-reply@" <> domain.domain})
-      |> Swoosh.Email.to({"caFaye", @verification_recipient})
+      |> Swoosh.Email.from({"Cafaye", "no-reply@" <> domain.domain})
+      |> Swoosh.Email.to({"Cafaye", @verification_recipient})
       |> Swoosh.Email.subject("cafaye sending domain verification")
       |> Swoosh.Email.text_body(
         "cafaye is verifying the sending domain #{domain.domain}. " <>
