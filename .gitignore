@@ -61,7 +61,7 @@ courier-*.tar
 # The tracked `docker-compose.yml` is the opposite case and is NOT ignored. That
 # one is hand-written, it is courier's own override on kit's shared stack, and it
 # is reviewed.
-/caf.dev.compose.yaml
+/cafe.dev.compose.yaml
 
 
 # The `cf` CLI's local cache, discovered committed by accident: a `git add -A`
