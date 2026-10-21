@@ -2,10 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>caFaye</title>
+    <title>Cafaye</title>
   </head>
   <body>
     <div class="wrapper"><%= @body %></div>
-    <p class="footer">You are receiving this message from caFaye.</p>
+    <p class="footer">You are receiving this message from Cafaye.</p>
   </body>
 </html>

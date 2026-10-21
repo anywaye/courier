@@ -669,7 +669,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
     "type": "welcome",
     "kind": "transactional",
     "required": ["email", "name"],
-    "subject": "Welcome to caFaye, %{name}",
+    "subject": "Welcome to Cafaye, %{name}",
     "html_template": "<p>Hi <%= @greeting %></p><p><a href=\\"<%= @url %>\\">Confirm</a></p>",
     "text_template": "Hi <%= @greeting %>\\n\\nConfirm: <%= @url %>"
   }'

@@ -99,7 +99,7 @@ defmodule Courier.Consumers.UserCreatedTest do
 
       assert_email_sent(fn email ->
         assert [{_name, "kaka@example.com"}] = email.to
-        assert email.subject == "Welcome to caFaye"
+        assert email.subject == "Welcome to Cafaye"
       end)
     end
 
@@ -129,7 +129,7 @@ defmodule Courier.Consumers.UserCreatedTest do
 
       assert_email_sent(fn email ->
         assert [{_name, "kaka@example.com"}] = email.to
-        assert email.subject == "Welcome to caFaye"
+        assert email.subject == "Welcome to Cafaye"
       end)
 
       # One row, and it is marked from the handler's success.

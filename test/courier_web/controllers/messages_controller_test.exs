@@ -324,7 +324,7 @@ defmodule CourierWeb.MessagesControllerTest do
 
       assert [%Swoosh.Email{} = email] = sent()
       assert email.to == [{"Kaka", recipient}]
-      assert email.from == {"caFaye", "no-reply@cafaye.com"}
+      assert email.from == {"Cafaye", "no-reply@cafaye.com"}
     end
 
     test "the message carries the returned id, so a bounce quoting it can be tied back" do
@@ -351,7 +351,7 @@ defmodule CourierWeb.MessagesControllerTest do
       assert conn.status == 200
 
       assert [%Swoosh.Email{} = email] = sent()
-      assert email.subject == "Reset your caFaye password"
+      assert email.subject == "Reset your Cafaye password"
       assert email.text_body =~ url
       assert email.html_body =~ url
     end
@@ -402,7 +402,7 @@ defmodule CourierWeb.MessagesControllerTest do
       assert conn.status == 200
 
       assert [%Swoosh.Email{} = email] = sent()
-      assert email.subject == "Confirm an email address change on your caFaye account"
+      assert email.subject == "Confirm an email address change on your Cafaye account"
       assert email.text_body =~ url
       assert email.html_body =~ url
       assert data(conn)["notification_type"] == "email_change_current"
@@ -422,7 +422,7 @@ defmodule CourierWeb.MessagesControllerTest do
       assert conn.status == 200
 
       assert [%Swoosh.Email{} = email] = sent()
-      assert email.subject == "Confirm your new caFaye email address"
+      assert email.subject == "Confirm your new Cafaye email address"
       assert email.text_body =~ "kaka@example.com"
       assert email.html_body =~ "kaka@example.com"
       assert data(conn)["notification_type"] == "email_change_new"

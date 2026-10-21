@@ -117,7 +117,7 @@ defmodule Courier.Consumers.PaymentFailedTest do
         # Swoosh normalizes a single `{name, address}` recipient into a one-item
         # list, so the assertion is against the list.
         assert email.to == [{"", "buyer@example.com"}]
-        assert email.subject == "Your caFaye payment did not go through"
+        assert email.subject == "Your Cafaye payment did not go through"
         assert email.html_body =~ "49.00 USD"
         assert email.text_body =~ "49.00 USD"
         assert email.html_body =~ "in_1URCjNCmN780pAiWMWoH0Bxd"

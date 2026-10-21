@@ -134,7 +134,7 @@ defmodule Courier.UnsubscribeHeadersTest do
       {:ok, _result} = Deliver.welcome(payload("welcome"))
 
       assert_email_sent(fn email ->
-        assert email.subject == "Welcome to caFaye"
+        assert email.subject == "Welcome to Cafaye"
         assert [{_name, @email}] = email.to
         assert Mailers.body?(email)
         assert email.headers["message-id"] =~ ~r/^<courier-[0-9a-f-]+@cafaye\.com>$/
@@ -183,7 +183,7 @@ defmodule Courier.UnsubscribeHeadersTest do
 
       assert [received] = Courier.TestSupport.SmtpServer.take(server)
       refute received.data =~ "List-Unsubscribe"
-      assert received.data =~ "Subject: Welcome to caFaye"
+      assert received.data =~ "Subject: Welcome to Cafaye"
     end
   end
 

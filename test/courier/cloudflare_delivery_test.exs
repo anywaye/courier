@@ -70,7 +70,7 @@ defmodule Courier.CloudflareDeliveryTest do
       payload = decode!(request.body)
 
       # The sender courier built: `config :courier, :mailing`'s from address.
-      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "caFaye"}
+      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "Cafaye"}
 
       # The recipient the platform handed in — Cloudflare's `to` is the address
       # itself, not a personalizations wrapper.
@@ -79,7 +79,7 @@ defmodule Courier.CloudflareDeliveryTest do
       # The subject is courier's, from the `:mailing` configuration, rendered
       # through the template — so this is also the assertion that the subject
       # templates still resolve.
-      assert payload["subject"] == "Welcome to caFaye"
+      assert payload["subject"] == "Welcome to Cafaye"
 
       # The content is the rendered template in both formats. A message that
       # "arrives" with a subject and no body is still useless, and would pass
@@ -436,7 +436,7 @@ defmodule Courier.CloudflareDeliveryTest do
 
       email =
         new()
-        |> from({"caFaye", "no-reply@cafaye.com"})
+        |> from({"Cafaye", "no-reply@cafaye.com"})
         |> to({"Ada", "ada@example.com"})
         |> cc({"Bead", "bead@example.com"})
         |> bcc("quiet@example.com")
@@ -468,7 +468,7 @@ defmodule Courier.CloudflareDeliveryTest do
       assert [request] = CloudflareServer.take(server)
       payload = decode!(request.body)
 
-      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "caFaye"}
+      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "Cafaye"}
       assert payload["to"] == %{"address" => "ada@example.com", "name" => "Ada"}
       assert payload["cc"] == %{"address" => "bead@example.com", "name" => "Bead"}
       assert payload["bcc"] == "quiet@example.com"
@@ -507,7 +507,7 @@ defmodule Courier.CloudflareDeliveryTest do
       # The REST API's named-address object is {address, name}; {email, name}
       # is the Workers binding shape and is refused with 400
       # invalid_request_schema (measured live on cafaye.com).
-      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "caFaye"}
+      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "Cafaye"}
       assert payload["to"] == %{"address" => "shape@example.com", "name" => "Shape"}
       refute Map.has_key?(payload["from"], "email")
       refute Map.has_key?(payload["to"], "email")
@@ -522,7 +522,7 @@ defmodule Courier.CloudflareDeliveryTest do
 
       email =
         Swoosh.Email.new()
-        |> Swoosh.Email.from({"caFaye", "no-reply@cafaye.com"})
+        |> Swoosh.Email.from({"Cafaye", "no-reply@cafaye.com"})
         |> Swoosh.Email.to("bare@example.com")
         |> Swoosh.Email.subject("Bare")
         |> Swoosh.Email.text_body("hi")
@@ -533,7 +533,7 @@ defmodule Courier.CloudflareDeliveryTest do
       payload = decode!(request.body)
 
       assert payload["to"] == "bare@example.com"
-      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "caFaye"}
+      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "Cafaye"}
     end
   end
 

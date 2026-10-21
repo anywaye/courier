@@ -15,7 +15,7 @@ defmodule Courier.MailersTest do
 
   alias Courier.Mailers
 
-  @from_name "caFaye"
+  @from_name "Cafaye"
   @from_address "no-reply@cafaye.com"
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
@@ -74,7 +74,7 @@ defmodule Courier.MailersTest do
     test "the subject is the configured one" do
       assert {:ok, email} = Mailers.build(:welcome, welcome_payload())
 
-      assert email.subject == "Welcome to caFaye"
+      assert email.subject == "Welcome to Cafaye"
     end
 
     test "the body greets the person by name and offers the link it was sent" do
@@ -144,7 +144,7 @@ defmodule Courier.MailersTest do
     test "the subject is the configured one" do
       assert {:ok, email} = Mailers.build(:password_reset, password_reset_payload())
 
-      assert email.subject == "Reset your caFaye password"
+      assert email.subject == "Reset your Cafaye password"
     end
   end
 
@@ -210,7 +210,7 @@ defmodule Courier.MailersTest do
       # type and the body is where the reason-specific wording lives.
       assert {:ok, email} = Mailers.build(:account_security, account_security_payload())
 
-      assert email.subject == "Security notice for your caFaye account"
+      assert email.subject == "Security notice for your Cafaye account"
     end
 
     test "the password-reset reason renders the password wording" do
@@ -267,7 +267,7 @@ defmodule Courier.MailersTest do
     test "the subject is the configured one" do
       assert {:ok, email} = Mailers.build(:email_change_current, email_change_current_payload())
 
-      assert email.subject == "Confirm an email address change on your caFaye account"
+      assert email.subject == "Confirm an email address change on your Cafaye account"
     end
 
     test "the body names the account's address and carries the confirmation link" do
@@ -315,7 +315,7 @@ defmodule Courier.MailersTest do
     test "the subject is the configured one" do
       assert {:ok, email} = Mailers.build(:email_change_new, email_change_new_payload())
 
-      assert email.subject == "Confirm your new caFaye email address"
+      assert email.subject == "Confirm your new Cafaye email address"
     end
 
     test "the body names the address the account is moving from" do
@@ -365,7 +365,7 @@ defmodule Courier.MailersTest do
     test "the type may be given as a string, because it arrives as one over JSON" do
       assert {:ok, email} = Mailers.build("welcome", welcome_payload())
 
-      assert email.subject == "Welcome to caFaye"
+      assert email.subject == "Welcome to Cafaye"
     end
   end
 
@@ -373,7 +373,7 @@ defmodule Courier.MailersTest do
     test "hands the built email to Swoosh, which in test is the test process" do
       assert {:ok, _metadata} = Mailers.deliver(:welcome, welcome_payload())
 
-      assert_email_sent(subject: "Welcome to caFaye", to: [{"Kaka", "kaka@example.com"}])
+      assert_email_sent(subject: "Welcome to Cafaye", to: [{"Kaka", "kaka@example.com"}])
     end
   end
 
@@ -383,7 +383,7 @@ defmodule Courier.MailersTest do
   # the fixtures are stable.
   defp shared_chrome(body) do
     for line <- String.split(body, "\n"),
-        String.contains?(line, "caFaye"),
+        String.contains?(line, "Cafaye"),
         not String.contains?(line, "Kaka"),
         do: String.trim(line)
   end
