@@ -195,7 +195,7 @@ defmodule Courier.Consumers.SessionsRevokedTest do
 
       assert_email_sent(fn email ->
         assert [{_name, "kaka@example.com"}] = email.to
-        assert email.subject == "Security notice for your Cafaye account"
+        assert email.subject == "Security notice for your Anywaye account"
         assert email.text_body =~ "Your password was changed."
       end)
     end

@@ -49,7 +49,7 @@ defmodule Courier.NatsPublisher.Bus do
 
   Core's event-outbox.md: "No mapping table, no prefix rewriting." A row whose
   `type` is `courier.email.delivered` is published on the subject
-  `courier.email.delivered`, which is the subject the `cafaye` stream's
+  `courier.email.delivered`, which is the subject the `anywaye` stream's
   `courier.>` filter claims. It is read off the envelope, so a new event type
   needs no change here — and the only check is that the type is prefixed with
   this service's own name, which is the fleet's contract rule rather than a
@@ -62,7 +62,7 @@ defmodule Courier.NatsPublisher.Bus do
   row claimable with the reason recorded, and the event leaves the table only
   once a stream exists that covers its subject. A publisher that created one
   would be a service choosing a stream name, a retention policy and a replication
-  factor for the fleet's bus. kit's stack defines `cafaye` with
+  factor for the fleet's bus. kit's stack defines `anywaye` with
   `identity.>,billing.>,courier.>,muse.>,darkroom.>`; courier's half of that is
   `courier.>` and it is decided there.
   """

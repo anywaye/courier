@@ -136,7 +136,7 @@ defmodule Courier.Notifications do
   # what a person is told about inside the product.
   #
   # The three are deliberately three. Folding this list into `Courier.Events`'s
-  # would make every in-app event a bus event, and `cafaye.yml`'s
+  # would make every in-app event a bus event, and `anywaye.yml`'s
   # `exposes.events` is a contract with core's `schemas/events/**` — a type that
   # appears there has a payload schema somebody wrote and froze.
   #

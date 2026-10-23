@@ -1,7 +1,7 @@
 defmodule Courier.Consumers do
   @moduledoc """
   courier's consumer: subscribe, claim, dispatch, mark. The fleet's **first**
-  one — every `consumes:` in every `cafaye.yml` was empty before this, so there
+  one — every `consumes:` in every `anywaye.yml` was empty before this, so there
   was no subscriber anywhere and every service published into a bus nobody read.
 
   ## THE ANSWER TO "WHAT DOES THE CONSUMER MARK, AND WHEN?"
@@ -74,7 +74,7 @@ defmodule Courier.Consumers do
   ## THE REGISTRY IS CONFIGURATION, AND IT IS A CLOSED SET
 
   `subscribed/0` is the list, read from `config :courier, :consumers`. It is
-  asserted against `cafaye.yml`'s `consumes:` in both directions, because a
+  asserted against `anywaye.yml`'s `consumes:` in both directions, because a
   subscription declared in one and absent from the other is a message courier
   receives and drops — the same outcome as no subscription, one step harder to
   see. And no entry may be a `courier.` type: core's rule 2 is that a service
@@ -97,7 +97,7 @@ defmodule Courier.Consumers do
         }
 
   @doc """
-  Every event type courier subscribes to, in the order `cafaye.yml` declares.
+  Every event type courier subscribes to, in the order `anywaye.yml` declares.
 
   Read from `config :courier, :consumers`, whose keys are the type and whose
   values are the module with a `handle/1`. **This list and the manifest's

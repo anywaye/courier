@@ -15,8 +15,8 @@ defmodule Courier.MailersTest do
 
   alias Courier.Mailers
 
-  @from_name "Cafaye"
-  @from_address "no-reply@cafaye.com"
+  @from_name "Anywaye"
+  @from_address "no-reply@anywaye.com"
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
   defp welcome_payload(overrides \\ %{}) do
@@ -25,7 +25,7 @@ defmodule Courier.MailersTest do
         user_id: @user_id,
         email: "kaka@example.com",
         name: "Kaka",
-        url: "https://cafaye.com/verify?token=abc123"
+        url: "https://anywaye.com/verify?token=abc123"
       },
       overrides
     )
@@ -37,7 +37,7 @@ defmodule Courier.MailersTest do
         user_id: @user_id,
         email: "kaka@example.com",
         name: "Kaka",
-        url: "https://cafaye.com/reset?token=t0ken"
+        url: "https://anywaye.com/reset?token=t0ken"
       },
       overrides
     )
@@ -52,7 +52,7 @@ defmodule Courier.MailersTest do
         account_name: "Moon Labs",
         invited_by: "Ruto",
         role: "member",
-        url: "https://cafaye.com/invitations/i_01J9Z8"
+        url: "https://anywaye.com/invitations/i_01J9Z8"
       },
       overrides
     )
@@ -74,20 +74,20 @@ defmodule Courier.MailersTest do
     test "the subject is the configured one" do
       assert {:ok, email} = Mailers.build(:welcome, welcome_payload())
 
-      assert email.subject == "Welcome to Cafaye"
+      assert email.subject == "Welcome to Anywaye"
     end
 
     test "the body greets the person by name and offers the link it was sent" do
       assert {:ok, email} = Mailers.build(:welcome, welcome_payload())
 
       assert email.html_body =~ "Kaka"
-      assert email.html_body =~ "https://cafaye.com/verify?token=abc123"
+      assert email.html_body =~ "https://anywaye.com/verify?token=abc123"
     end
 
     test "a plain-text alternative carries the same link" do
       assert {:ok, email} = Mailers.build(:welcome, welcome_payload())
 
-      assert email.text_body =~ "https://cafaye.com/verify?token=abc123"
+      assert email.text_body =~ "https://anywaye.com/verify?token=abc123"
     end
 
     test "the body's layout is the shared one, so every email is wrapped alike" do
@@ -103,13 +103,13 @@ defmodule Courier.MailersTest do
       assert {:ok, email} =
                Mailers.build(:welcome, welcome_payload(%{name: nil}))
 
-      assert email.html_body =~ "https://cafaye.com/verify?token=abc123"
+      assert email.html_body =~ "https://anywaye.com/verify?token=abc123"
     end
 
     test "a payload without a link still builds" do
       assert {:ok, email} = Mailers.build(:welcome, welcome_payload(%{url: nil}))
 
-      refute email.html_body =~ "<a href=\"https://cafaye.com/verify"
+      refute email.html_body =~ "<a href=\"https://anywaye.com/verify"
     end
 
     test "a payload with no address is an error, not an email to nobody" do
@@ -131,7 +131,7 @@ defmodule Courier.MailersTest do
     test "the body carries the reset link and nothing else can stand in for it" do
       assert {:ok, email} = Mailers.build(:password_reset, password_reset_payload())
 
-      assert email.html_body =~ "https://cafaye.com/reset?token=t0ken"
+      assert email.html_body =~ "https://anywaye.com/reset?token=t0ken"
     end
 
     test "the link has no url in it" do
@@ -144,7 +144,7 @@ defmodule Courier.MailersTest do
     test "the subject is the configured one" do
       assert {:ok, email} = Mailers.build(:password_reset, password_reset_payload())
 
-      assert email.subject == "Reset your Cafaye password"
+      assert email.subject == "Reset your Anywaye password"
     end
   end
 
@@ -160,7 +160,7 @@ defmodule Courier.MailersTest do
 
       assert email.html_body =~ "Moon Labs"
       assert email.html_body =~ "Ruto"
-      assert email.html_body =~ "https://cafaye.com/invitations/i_01J9Z8"
+      assert email.html_body =~ "https://anywaye.com/invitations/i_01J9Z8"
     end
 
     test "the body names the role the inviter chose" do
@@ -210,7 +210,7 @@ defmodule Courier.MailersTest do
       # type and the body is where the reason-specific wording lives.
       assert {:ok, email} = Mailers.build(:account_security, account_security_payload())
 
-      assert email.subject == "Security notice for your Cafaye account"
+      assert email.subject == "Security notice for your Anywaye account"
     end
 
     test "the password-reset reason renders the password wording" do
@@ -258,7 +258,7 @@ defmodule Courier.MailersTest do
           user_id: @user_id,
           email: "kaka@example.com",
           name: "Kaka",
-          url: "https://cafaye.com/email-changes/confirm?token=ch4nge"
+          url: "https://anywaye.com/email-changes/confirm?token=ch4nge"
         },
         overrides
       )
@@ -267,7 +267,7 @@ defmodule Courier.MailersTest do
     test "the subject is the configured one" do
       assert {:ok, email} = Mailers.build(:email_change_current, email_change_current_payload())
 
-      assert email.subject == "Confirm an email address change on your Cafaye account"
+      assert email.subject == "Confirm an email address change on your Anywaye account"
     end
 
     test "the body names the account's address and carries the confirmation link" do
@@ -277,9 +277,9 @@ defmodule Courier.MailersTest do
       assert {:ok, email} = Mailers.build(:email_change_current, email_change_current_payload())
 
       assert email.html_body =~ "kaka@example.com"
-      assert email.html_body =~ "https://cafaye.com/email-changes/confirm?token=ch4nge"
+      assert email.html_body =~ "https://anywaye.com/email-changes/confirm?token=ch4nge"
       assert email.text_body =~ "kaka@example.com"
-      assert email.text_body =~ "https://cafaye.com/email-changes/confirm?token=ch4nge"
+      assert email.text_body =~ "https://anywaye.com/email-changes/confirm?token=ch4nge"
     end
 
     test "a payload with no link is an error, not a mail with no way to confirm" do
@@ -315,7 +315,7 @@ defmodule Courier.MailersTest do
     test "the subject is the configured one" do
       assert {:ok, email} = Mailers.build(:email_change_new, email_change_new_payload())
 
-      assert email.subject == "Confirm your new Cafaye email address"
+      assert email.subject == "Confirm your new Anywaye email address"
     end
 
     test "the body names the address the account is moving from" do
@@ -365,7 +365,7 @@ defmodule Courier.MailersTest do
     test "the type may be given as a string, because it arrives as one over JSON" do
       assert {:ok, email} = Mailers.build("welcome", welcome_payload())
 
-      assert email.subject == "Welcome to Cafaye"
+      assert email.subject == "Welcome to Anywaye"
     end
   end
 
@@ -373,7 +373,7 @@ defmodule Courier.MailersTest do
     test "hands the built email to Swoosh, which in test is the test process" do
       assert {:ok, _metadata} = Mailers.deliver(:welcome, welcome_payload())
 
-      assert_email_sent(subject: "Welcome to Cafaye", to: [{"Kaka", "kaka@example.com"}])
+      assert_email_sent(subject: "Welcome to Anywaye", to: [{"Kaka", "kaka@example.com"}])
     end
   end
 
@@ -383,7 +383,7 @@ defmodule Courier.MailersTest do
   # the fixtures are stable.
   defp shared_chrome(body) do
     for line <- String.split(body, "\n"),
-        String.contains?(line, "Cafaye"),
+        String.contains?(line, "Anywaye"),
         not String.contains?(line, "Kaka"),
         do: String.trim(line)
   end

@@ -10,7 +10,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
   `20261003090000_protect_account_scoped_tables` reads `priv/repo/substrate.sql`
   at migrate time. A database that ran it before 2026-10-16 therefore holds the
   file as it was then — kit `15cee0e1`: **eight** functions, and a
-  `cafaye.protect_table` that predates kit `63663f8` ("kit-31"), which added the
+  `anywaye.protect_table` that predates kit `63663f8` ("kit-31"), which added the
   `pg_depend` loop granting the login role USAGE on the protected table's own
   sequences. A database created after the copy moved to kit `537441e` gets
   **twelve** functions and the current `protect_table`.
@@ -42,7 +42,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
   database took. The previous body is embedded below ONLY as that inverse — it is
   not the copy to read or copy from (the copy is `priv/repo/substrate.sql`, and
   kit's checker compares that file). The full teardown of the substrate remains
-  `20261003090000`'s own `down`, which drops the `cafaye` schema cascade.
+  `20261003090000`'s own `down`, which drops the `anywaye` schema cascade.
 
   ## THIS FILE AND THE DIGEST CHECK, NAMED
 
@@ -71,13 +71,13 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
     # additions in reverse of their definition. `if exists` because a
     # database from the fresh path installed them through 20261003090000
     # and a rollback here must not fail on a function this migration did not
-    # add. No table in this repository carries a `_cafaye_members` policy,
+    # add. No table in this repository carries a `_anywaye_members` policy,
     # so dropping `protect_membership_table` cannot strand one.
     execute(sql_protect_table_previous())
-    execute("drop function if exists cafaye.membership_tables()")
-    execute("drop function if exists cafaye.protect_membership_table(regclass, text, text)")
-    execute("drop function if exists cafaye.begin_user(uuid)")
-    execute("drop function if exists cafaye.current_user_id()")
+    execute("drop function if exists anywaye.membership_tables()")
+    execute("drop function if exists anywaye.protect_membership_table(regclass, text, text)")
+    execute("drop function if exists anywaye.begin_user(uuid)")
+    execute("drop function if exists anywaye.current_user_id()")
   end
 
   # kit 537441e, verbatim: the bytes of priv/repo/substrate.sql. A heredoc
@@ -85,7 +85,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
   # body is the template bytes.
   defp sql_protect_table do
     """
-    create or replace function cafaye.protect_table(
+    create or replace function anywaye.protect_table(
       p_table regclass,
       p_login_role text default null
     )
@@ -94,7 +94,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
     as $caf$
     declare
       login_role text := coalesce(p_login_role, current_user || '_app');
-      qual text := 'account_id = (select cafaye.current_account_id())';
+      qual text := 'account_id = (select anywaye.current_account_id())';
       base text;
       seq_name text;
     begin
@@ -104,7 +104,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    six lines into a function, with the table named by the context and the
       --    fix not. This is the check that turns that into one sentence.
       if not exists (select 1 from pg_roles where rolname = login_role and rolcanlogin) then
-        raise exception 'cafaye.protect_table(%, %): % is not a LOGIN role on this cluster.', p_table, login_role, login_role
+        raise exception 'anywaye.protect_table(%, %): % is not a LOGIN role on this cluster.', p_table, login_role, login_role
           using errcode = 'undefined_object',
                 hint = 'kit''s cluster provisions <service> and <service>_app. Either the _app role has not been provisioned — this service was added to KIT_POSTGRES_DATABASES before it existed, and the init script only runs on a fresh volume — or pass the login role explicitly as the second argument.';
       end if;
@@ -117,7 +117,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
         select 1 from pg_attribute
         where attrelid = p_table and attname = 'account_id' and not attisdropped
       ) then
-        raise exception 'cafaye.protect_table(%, %): the table has no account_id column, so there is nothing to scope it by.', p_table, login_role
+        raise exception 'anywaye.protect_table(%, %): the table has no account_id column, so there is nothing to scope it by.', p_table, login_role
           using errcode = 'undefined_column',
                 hint = 'Either the column is spelled something else — write the policy yourself and name the fleet''s key — or this table is not account-scoped and should not be protected. A service holding no customer rows is core''s honest zero and needs none of this.';
       end if;
@@ -130,7 +130,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    through its primary key still has to filter on `account_id`, and without
       --    this index that is a full scan behind a primary-key lookup. Named
       --    deterministically so a re-run converges rather than making a second one.
-      execute format('create index if not exists %I on %s (account_id)', base || '_cafaye_account_id_idx', p_table);
+      execute format('create index if not exists %I on %s (account_id)', base || '_anywaye_account_id_idx', p_table);
 
       -- 3. REVOKE FROM PUBLIC BEFORE ENABLING. A table's default privileges come
       --    from its owner and from whatever has been granted on it; PUBLIC is not
@@ -181,25 +181,25 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --
       --    DROP before CREATE so the function is re-runnable, and so a policy whose
       --    definition has been corrected here cannot survive a re-run.
-      execute format('drop policy if exists %I on %s', base || '_cafaye_select', p_table);
-      execute format('drop policy if exists %I on %s', base || '_cafaye_insert', p_table);
-      execute format('drop policy if exists %I on %s', base || '_cafaye_update', p_table);
-      execute format('drop policy if exists %I on %s', base || '_cafaye_delete', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_select', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_insert', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_update', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_delete', p_table);
 
-      execute format('create policy %I on %s for select to %I, %I using (%s)', base || '_cafaye_select', p_table, current_user, login_role, qual);
-      execute format('create policy %I on %s for insert to %I, %I with check (%s)', base || '_cafaye_insert', p_table, current_user, login_role, qual);
-      execute format('create policy %I on %s for update to %I, %I using (%s) with check (%s)', base || '_cafaye_update', p_table, current_user, login_role, qual, qual);
-      execute format('create policy %I on %s for delete to %I, %I using (%s)', base || '_cafaye_delete', p_table, current_user, login_role, qual);
+      execute format('create policy %I on %s for select to %I, %I using (%s)', base || '_anywaye_select', p_table, current_user, login_role, qual);
+      execute format('create policy %I on %s for insert to %I, %I with check (%s)', base || '_anywaye_insert', p_table, current_user, login_role, qual);
+      execute format('create policy %I on %s for update to %I, %I using (%s) with check (%s)', base || '_anywaye_update', p_table, current_user, login_role, qual, qual);
+      execute format('create policy %I on %s for delete to %I, %I using (%s)', base || '_anywaye_delete', p_table, current_user, login_role, qual);
 
       -- 6. AND THE LOGIN ROLE GETS DML AND NOTHING ELSE. No ownership, no DDL, no
       --    CREATE on the schema, no ability to change a policy. A grant that gives a
       --    login role more than it needs is a grant that has to be re-examined every
       --    time somebody adds a privilege, and this is the one place that list lives.
       --
-      --    USAGE on `cafaye` is in the list and is not optional: without it the login
-      --    role cannot resolve `cafaye.begin_account/1` at all, so the first thing a
+      --    USAGE on `anywaye` is in the list and is not optional: without it the login
+      --    role cannot resolve `anywaye.begin_account/1` at all, so the first thing a
       --    service does after adopting this is a `permission denied for schema
-      --    cafaye` on every request.
+      --    anywaye` on every request.
       --
       --    USAGE ON A SEQUENCE is in the list for the same reason and it is the one
       --    that is INVISIBLE until a service writes a row. A table's INSERT reads its
@@ -213,14 +213,14 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    which is SQLSTATE 42501 — the code the policies themselves raise. An
       --    assertion that checks the code alone cannot tell a working boundary from a
       --    table nobody can write to. `templates/database/tenancy/isolation.sql`'s
-      --    `cafaye_observed` returns `sqlstate` and nothing else, so it is exposed to
+      --    `anywaye_observed` returns `sqlstate` and nothing else, so it is exposed to
       --    exactly that; what has kept it out of reach is that its probe table is
       --    `id uuid … default gen_random_uuid()`, which is why 39 assertions have been
       --    green through this defect. The message is required there, and it is
       --    where the two are told apart.
       execute format('grant usage on schema public to %I', login_role);
-      if to_regnamespace('cafaye') is not null then
-        execute format('grant usage on schema cafaye to %I', login_role);
+      if to_regnamespace('anywaye') is not null then
+        execute format('grant usage on schema anywaye to %I', login_role);
       end if;
       execute format('grant select, insert, update, delete on table %s to %I', p_table, login_role);
 
@@ -288,7 +288,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
 
   defp sql_current_user_id do
     """
-    create or replace function cafaye.current_user_id()
+    create or replace function anywaye.current_user_id()
     returns uuid
     language plpgsql
     stable
@@ -299,16 +299,16 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       -- `missing_ok = true` and the empty check are the two cases `begin_account`'s
       -- reader handles, copied rather than re-derived: an unset dotted GUC reads as
       -- set-to-empty, and a caller with no identity is a legitimate state.
-      raw := current_setting('cafaye.user_id', true);
+      raw := current_setting('anywaye.user_id', true);
       if raw is null or raw = '' then
         return null;
       end if;
       return raw::uuid;
     exception
       when invalid_text_representation then
-        raise exception 'cafaye.user_id is set to % which is not a uuid', raw
+        raise exception 'anywaye.user_id is set to % which is not a uuid', raw
           using errcode = '22023',
-                hint = 'cafaye.begin_user/1 takes a uuid. A request that reaches the '
+                hint = 'anywaye.begin_user/1 takes a uuid. A request that reaches the '
                        'database with a malformed user has a bug in whatever '
                        'authenticated it, and this is the cheapest place to find it.';
     end
@@ -318,16 +318,16 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
 
   defp sql_begin_user do
     """
-    create or replace function cafaye.begin_user(p_user uuid)
+    create or replace function anywaye.begin_user(p_user uuid)
     returns void
     language plpgsql
     as $caf$
     begin
       if p_user is null then
-        perform set_config('cafaye.user_id', '', true);
+        perform set_config('anywaye.user_id', '', true);
         return;
       end if;
-      perform set_config('cafaye.user_id', p_user::text, true);
+      perform set_config('anywaye.user_id', p_user::text, true);
     end
     $caf$;
     """
@@ -335,7 +335,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
 
   defp sql_protect_membership_table do
     """
-    create or replace function cafaye.protect_membership_table(
+    create or replace function anywaye.protect_membership_table(
       p_table regclass,
       p_user_column text,
       p_login_role text default null
@@ -354,7 +354,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    nothing instead of a migration that stops.
       if p_user_column is null
          or p_user_column !~ '^[A-Za-z_][A-Za-z0-9_$]*$' then
-        raise exception 'cafaye.protect_membership_table(%, %): the user column must be one bare column name, and % is not one.', p_table, coalesce(p_user_column, '<null>'), coalesce(p_user_column, 'null')
+        raise exception 'anywaye.protect_membership_table(%, %): the user column must be one bare column name, and % is not one.', p_table, coalesce(p_user_column, '<null>'), coalesce(p_user_column, 'null')
           using errcode = 'undefined_column',
                 hint = 'The second argument is the column on this table holding the member''s `users.id` — `user_id` in every service kit has shipped. It is a column of this table and nothing else.';
       end if;
@@ -371,7 +371,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
         select 1 from pg_attribute
         where attrelid = p_table and attname = p_user_column and not attisdropped
       ) then
-        raise exception 'cafaye.protect_membership_table(%, %): the table has no % column.', p_table, p_user_column, p_user_column
+        raise exception 'anywaye.protect_membership_table(%, %): the table has no % column.', p_table, p_user_column, p_user_column
           using errcode = 'undefined_column',
                 hint = 'A membership table is read by the column that names the member. Name the one this table has; if it has none, this table is not a membership table and does not want this mechanism.';
       end if;
@@ -381,7 +381,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    also raises if the table has no `account_id`, which a membership table
       --    must have: it is the edge of the account graph, not a user-scoped
       --    resource that happens to mention accounts.
-      perform cafaye.protect_table(p_table, p_login_role);
+      perform anywaye.protect_table(p_table, p_login_role);
 
       base := (select c.relname from pg_class c where c.oid = p_table::regclass::oid);
 
@@ -391,24 +391,24 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    caller's memberships. Without the index that scan is sequential however
       --    few rows it returns.
       execute format('create index if not exists %I on %s (%I)',
-                     base || '_cafaye_' || p_user_column || '_idx', p_table, p_user_column);
+                     base || '_anywaye_' || p_user_column || '_idx', p_table, p_user_column);
 
       -- 4. ONE POLICY, FOR ONE COMMAND, FOR THE TWO NAMED ROLES, PREDICATED ON THE
       --    CALLER rather than on an account.
-      qual := format('%I = (select cafaye.current_user_id())', p_user_column);
+      qual := format('%I = (select anywaye.current_user_id())', p_user_column);
 
       --    DROP before CREATE, so a re-run converges and a corrected qualifier cannot
       --    survive one.
-      execute format('drop policy if exists %I on %s', base || '_cafaye_members', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_members', p_table);
       execute format('create policy %I on %s for select to %I, %I using (%s)',
-                     base || '_cafaye_members', p_table, current_user, login_role, qual);
+                     base || '_anywaye_members', p_table, current_user, login_role, qual);
 
-      -- 5. USAGE on `cafaye`, for the reason the other two functions grant it:
-      --    without it the login role cannot call `cafaye.begin_user/1` and every
-      --    membership read fails with `permission denied for schema cafaye` — which
+      -- 5. USAGE on `anywaye`, for the reason the other two functions grant it:
+      --    without it the login role cannot call `anywaye.begin_user/1` and every
+      --    membership read fails with `permission denied for schema anywaye` — which
       --    reads as a permissions bug rather than as the missing GRANT that it is.
-      if to_regnamespace('cafaye') is not null then
-        execute format('grant usage on schema cafaye to %I', login_role);
+      if to_regnamespace('anywaye') is not null then
+        execute format('grant usage on schema anywaye to %I', login_role);
       end if;
     end
     $caf$;
@@ -417,7 +417,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
 
   defp sql_membership_tables do
     """
-    create or replace function cafaye.membership_tables()
+    create or replace function anywaye.membership_tables()
     returns table (table_schema text, table_name text, user_column text)
     language sql
     stable
@@ -427,7 +427,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
         select fn.oid
           from pg_proc fn
           join pg_namespace fns on fns.oid = fn.pronamespace
-         where fns.nspname = 'cafaye'
+         where fns.nspname = 'anywaye'
            and fn.proname = 'current_user_id'
            and fn.pronargs = 0
       ),
@@ -456,7 +456,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
             on att.attrelid = pol.polrelid
            and att.attnum = ud.refobjsubid
            and not att.attisdropped
-         where pol.polname like '%!_cafaye!_members' escape '!'
+         where pol.polname like '%!_anywaye!_members' escape '!'
            and pol.polcmd = 'r'
       )
 
@@ -483,7 +483,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
   # kit 15cee0e1, verbatim (same trailing-newline note), used only by `down`.
   defp sql_protect_table_previous do
     """
-    create or replace function cafaye.protect_table(
+    create or replace function anywaye.protect_table(
       p_table regclass,
       p_login_role text default null
     )
@@ -492,7 +492,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
     as $caf$
     declare
       login_role text := coalesce(p_login_role, current_user || '_app');
-      qual text := 'account_id = (select cafaye.current_account_id())';
+      qual text := 'account_id = (select anywaye.current_account_id())';
       base text;
     begin
       -- 0. THE LOGIN ROLE HAS TO EXIST, and saying so by name is the difference
@@ -501,7 +501,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    six lines into a function, with the table named by the context and the
       --    fix not. This is the check that turns that into one sentence.
       if not exists (select 1 from pg_roles where rolname = login_role and rolcanlogin) then
-        raise exception 'cafaye.protect_table(%, %): % is not a LOGIN role on this cluster.', p_table, login_role, login_role
+        raise exception 'anywaye.protect_table(%, %): % is not a LOGIN role on this cluster.', p_table, login_role, login_role
           using errcode = 'undefined_object',
                 hint = 'kit''s cluster provisions <service> and <service>_app. Either the _app role has not been provisioned — this service was added to KIT_POSTGRES_DATABASES before it existed, and the init script only runs on a fresh volume — or pass the login role explicitly as the second argument.';
       end if;
@@ -514,7 +514,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
         select 1 from pg_attribute
         where attrelid = p_table and attname = 'account_id' and not attisdropped
       ) then
-        raise exception 'cafaye.protect_table(%, %): the table has no account_id column, so there is nothing to scope it by.', p_table, login_role
+        raise exception 'anywaye.protect_table(%, %): the table has no account_id column, so there is nothing to scope it by.', p_table, login_role
           using errcode = 'undefined_column',
                 hint = 'Either the column is spelled something else — write the policy yourself and name the fleet''s key — or this table is not account-scoped and should not be protected. A service holding no customer rows is core''s honest zero and needs none of this.';
       end if;
@@ -527,7 +527,7 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --    through its primary key still has to filter on `account_id`, and without
       --    this index that is a full scan behind a primary-key lookup. Named
       --    deterministically so a re-run converges rather than making a second one.
-      execute format('create index if not exists %I on %s (account_id)', base || '_cafaye_account_id_idx', p_table);
+      execute format('create index if not exists %I on %s (account_id)', base || '_anywaye_account_id_idx', p_table);
 
       -- 3. REVOKE FROM PUBLIC BEFORE ENABLING. A table's default privileges come
       --    from its owner and from whatever has been granted on it; PUBLIC is not
@@ -578,28 +578,28 @@ defmodule Courier.Repo.Migrations.SubstrateCompletion do
       --
       --    DROP before CREATE so the function is re-runnable, and so a policy whose
       --    definition has been corrected here cannot survive a re-run.
-      execute format('drop policy if exists %I on %s', base || '_cafaye_select', p_table);
-      execute format('drop policy if exists %I on %s', base || '_cafaye_insert', p_table);
-      execute format('drop policy if exists %I on %s', base || '_cafaye_update', p_table);
-      execute format('drop policy if exists %I on %s', base || '_cafaye_delete', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_select', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_insert', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_update', p_table);
+      execute format('drop policy if exists %I on %s', base || '_anywaye_delete', p_table);
 
-      execute format('create policy %I on %s for select to %I, %I using (%s)', base || '_cafaye_select', p_table, current_user, login_role, qual);
-      execute format('create policy %I on %s for insert to %I, %I with check (%s)', base || '_cafaye_insert', p_table, current_user, login_role, qual);
-      execute format('create policy %I on %s for update to %I, %I using (%s) with check (%s)', base || '_cafaye_update', p_table, current_user, login_role, qual, qual);
-      execute format('create policy %I on %s for delete to %I, %I using (%s)', base || '_cafaye_delete', p_table, current_user, login_role, qual);
+      execute format('create policy %I on %s for select to %I, %I using (%s)', base || '_anywaye_select', p_table, current_user, login_role, qual);
+      execute format('create policy %I on %s for insert to %I, %I with check (%s)', base || '_anywaye_insert', p_table, current_user, login_role, qual);
+      execute format('create policy %I on %s for update to %I, %I using (%s) with check (%s)', base || '_anywaye_update', p_table, current_user, login_role, qual, qual);
+      execute format('create policy %I on %s for delete to %I, %I using (%s)', base || '_anywaye_delete', p_table, current_user, login_role, qual);
 
       -- 6. AND THE LOGIN ROLE GETS DML AND NOTHING ELSE. No ownership, no DDL, no
       --    CREATE on the schema, no ability to change a policy. A grant that gives a
       --    login role more than it needs is a grant that has to be re-examined every
       --    time somebody adds a privilege, and this is the one place that list lives.
       --
-      --    USAGE on `cafaye` is in the list and is not optional: without it the login
-      --    role cannot resolve `cafaye.begin_account/1` at all, so the first thing a
+      --    USAGE on `anywaye` is in the list and is not optional: without it the login
+      --    role cannot resolve `anywaye.begin_account/1` at all, so the first thing a
       --    service does after adopting this is a `permission denied for schema
-      --    cafaye` on every request.
+      --    anywaye` on every request.
       execute format('grant usage on schema public to %I', login_role);
-      if to_regnamespace('cafaye') is not null then
-        execute format('grant usage on schema cafaye to %I', login_role);
+      if to_regnamespace('anywaye') is not null then
+        execute format('grant usage on schema anywaye to %I', login_role);
       end if;
       execute format('grant select, insert, update, delete on table %s to %I', p_table, login_role);
     end

@@ -16,7 +16,7 @@ defmodule Courier.Webhooks.UrlGuard do
   | `file:`, `ftp:`, `gopher:`, `data:`, `javascript:` and no scheme at all | not HTTP; a client that follows one of these is reading courier's filesystem or talking a protocol nobody expected |
   | loopback `127.0.0.0/8`, `::1`, `0.0.0.0`, `::` | courier's own process, and every sidecar, admin port and debug server sharing the host |
   | link-local `169.254.0.0/16`, `fe80::/10` | the cloud instance metadata service. It answers on `169.254.169.254` and hands out credentials for everything else in the account |
-  | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7` | the service network: databases, caches, internal APIs, and the other cafaye services |
+  | `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7` | the service network: databases, caches, internal APIs, and the other anywaye services |
   | `::ffff:0:0/96` mapped onto any of the above | the same addresses wearing an IPv6 costume |
   | `localhost` and `*.localhost`, `*.local` | names that resolve to loopback by rule, before any DNS answer is involved |
 

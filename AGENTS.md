@@ -1,8 +1,8 @@
 # AGENTS.md
 
-Conventions for `courier`, the cafaye notification service. Read this before
+Conventions for `courier`, the anywaye notification service. Read this before
 changing anything. The house rules apply on top of it: SSH remotes for the
-repositories cafaye owns; tests first — write the test, watch it fail, then
+repositories anywaye owns; tests first — write the test, watch it fail, then
 implement; every packet ends in a green suite and a commit; never push from a
 worker branch.
 
@@ -11,8 +11,8 @@ worker branch.
 `courier`, Elixir 1.20 / OTP 29, Phoenix 1.8, **API only**: no HTML, no
 LiveView, no assets, no dashboard, no gettext. It owns transactional email,
 notification preferences, and every outbound webhook. The contracts and the
-manifest schema are owned by `cafaye/core`; `cafaye.yml` here is a draft
-validated against `core/schemas/cafaye.manifest.schema.json` and is regenerated
+manifest schema are owned by `anywaye/core`; `anywaye.yml` here is a draft
+validated against `core/schemas/anywaye.manifest.schema.json` and is regenerated
 by `cafe init` when core freezes the format. Nothing is copied from
 `reference/jumpstart-pro` — it is a behavioral spec for later packets, and
 PLAN.md §2 forbids copying from it.
@@ -348,7 +348,7 @@ drops unused deps from the lockfile, formats, and runs the suite. `bin/prime`
 is the gate for a clean checkout; `mix precommit` is what a change must pass.
 
 **The gate is declared in `gate.yml`, not discovered.** Written against
-`cafaye/core`'s `schemas/gate.schema.json` and checked by its
+`anywaye/core`'s `schemas/gate.schema.json` and checked by its
 `harness/bin/gate-check`, which reads `command`, `miseTask`, `entrypoint`, the
 `external.requirements`, the `ci` block, and the `proof`. Two things follow.
 First, the proof: `bin/prime` must print `Result: N passed` at or above the floor
@@ -611,7 +611,7 @@ measurement; this is the change it was asking for.
     path reads it, so refusing to start over a migration credential would take a
     healthy release down for something no request needs.
   * **The sequence grant used to be a kit defect this tree pinned.**
-    `cafaye.protect_table/2` at `15cee0e1` granted table DML and no sequence
+    `anywaye.protect_table/2` at `15cee0e1` granted table DML and no sequence
     privilege, so a protected table with a `bigserial` column was uninsertable by
     the login role; kit fixed it in `63663f8`, and the copy was re-taken on
     2026-10-16 at `537441e`, which includes the fix — so `protect_table` now
@@ -902,7 +902,7 @@ forbids this request from carrying authorization at all.
 
 **And courier sends no bulk mail, so the positive branch of the send path is
 unreachable today — and the reason is in core, not here.** All three types are
-`:transactional`, and adding a fourth is a change in `cafaye/core`: every payload
+`:transactional`, and adding a fourth is a change in `anywaye/core`: every payload
 courier publishes carries `notification_type`, and
 `core/schemas/events/courier/email/*.schema.json` freezes that field to an enum of
 the three names courier sends. The switch is one row in `kinds/0` **plus** one enum
@@ -989,7 +989,7 @@ whose body carries no `message_id`, a shape the adapter supports deliberately)
 records `nil` and courier invents nothing, because the existing "holds no sent
 message" warning is then the honest answer; and the provider's id goes in a
 **column**, not in the event's `data`, because `courier.email.delivered`'s schema
-in `cafaye/core` is `additionalProperties: false` and a fifth key would fail
+in `anywaye/core` is `additionalProperties: false` and a fifth key would fail
 core's own schema on the bus. `test/courier/bounce_correlation_test.exs` drives
 both halves for real — a send through `Courier.Adapters.CloudflareEmail` against
 a real HTTP fixture, and a signed `POST /inbound/resend` quoting the id it
@@ -1124,7 +1124,7 @@ without identity's JWT verifier is locked rather than open.
 **The door has a key now, and the key is `account_id`.** `Courier.Principal.
 Introspection` is what `config :courier, :principal` names outside test: it reads
 the caller's token from `Authorization: Bearer` and asks identity
-`POST /v1/introspections`. The token is **opaque** — `cafaye_` plus random bytes,
+`POST /v1/introspections`. The token is **opaque** — `anywaye_` plus random bytes,
 SHA-256 in the row — so there is no claim to read locally and no key to verify
 against, and asking identity is the only way to learn an `account_id`. Four rules
 came out of writing it, and each is a place the obvious version is wrong:
@@ -1148,7 +1148,7 @@ came out of writing it, and each is a place the obvious version is wrong:
     token resolves, so an unknown token is inactive for everybody.
   * **Both scope claim names are read, and neither is assumed absent.** `scopes`
     and `scope` are emitted byte for byte because the fleet has not agreed on
-    one (MD7, open in the manager's `cafaye/notes/decisions.md`): core requires `scopes`,
+    one (MD7, open in the manager's `anywaye/notes/decisions.md`): core requires `scopes`,
     gateway reads `scope`. courier reads the union. A claim that is present and is
     **not a string** is `{:error, :unreadable}` rather than an empty set — the
     array is the shape a losing side of MD7 could adopt, and reading it as "no
@@ -1444,7 +1444,7 @@ whose unset state courier is designed to live in indefinitely:
   typo is a deployment that believes it has a bus and does not, and that belongs
   at boot where an operator reads it. An empty string counts as unset. The stack
   must define a JetStream stream whose subject filter covers what courier
-  publishes: kit's `cafaye` stream carries
+  publishes: kit's `anywaye` stream carries
   `identity.>,billing.>,courier.>,muse.>,darkroom.>`
   (`kit/templates/compose/docker-compose.yml:540` and
   `kit/templates/substrate/install.sh:1365`), which `courier.email.delivered`

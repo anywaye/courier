@@ -7,7 +7,7 @@ defmodule CourierWeb.ErrorEnvelopeController do
 
   Two reasons, and the second is the one that matters.
 
-  It is **not a customer API operation.** It takes no cafaye principal, it is not
+  It is **not a customer API operation.** It takes no anywaye principal, it is not
   in `openapi.yaml`, and a generated client should not have it. Putting it on the
   public router would mean either giving it a principal requirement the Sentry SDK
   cannot satisfy — the SDK holds a DSN, not a JWT — or adding a third exclusion to

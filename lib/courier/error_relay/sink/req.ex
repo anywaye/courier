@@ -38,7 +38,7 @@ defmodule Courier.ErrorRelay.Sink.Req do
   require Logger
 
   @sentry_auth_version "7"
-  @client "cafaye-error-relay/1"
+  @client "anywaye-error-relay/1"
 
   @impl Courier.ErrorRelay.Sink
   def forward(envelope, opts) do

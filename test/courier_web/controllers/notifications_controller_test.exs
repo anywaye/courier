@@ -463,7 +463,7 @@ defmodule CourierWeb.NotificationsControllerTest do
       conn = post(owner_conn(), "/v1/notifications/not-a-uuid/seen")
 
       assert %{"type" => type, "code" => "not_found"} = problem(conn)
-      assert type == "https://docs.cafaye.com/errors/not_found"
+      assert type == "https://docs.anywaye.com/errors/not_found"
     end
 
     test "carries a title, a status, and a detail" do

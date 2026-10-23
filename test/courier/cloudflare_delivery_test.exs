@@ -70,7 +70,7 @@ defmodule Courier.CloudflareDeliveryTest do
       payload = decode!(request.body)
 
       # The sender courier built: `config :courier, :mailing`'s from address.
-      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "Cafaye"}
+      assert payload["from"] == %{"address" => "no-reply@anywaye.com", "name" => "Anywaye"}
 
       # The recipient the platform handed in — Cloudflare's `to` is the address
       # itself, not a personalizations wrapper.
@@ -79,7 +79,7 @@ defmodule Courier.CloudflareDeliveryTest do
       # The subject is courier's, from the `:mailing` configuration, rendered
       # through the template — so this is also the assertion that the subject
       # templates still resolve.
-      assert payload["subject"] == "Welcome to Cafaye"
+      assert payload["subject"] == "Welcome to Anywaye"
 
       # The content is the rendered template in both formats. A message that
       # "arrives" with a subject and no body is still useless, and would pass
@@ -436,11 +436,11 @@ defmodule Courier.CloudflareDeliveryTest do
 
       email =
         new()
-        |> from({"Cafaye", "no-reply@cafaye.com"})
+        |> from({"Anywaye", "no-reply@anywaye.com"})
         |> to({"Ada", "ada@example.com"})
         |> cc({"Bead", "bead@example.com"})
         |> bcc("quiet@example.com")
-        |> reply_to({"Support", "support@cafaye.com"})
+        |> reply_to({"Support", "support@anywaye.com"})
         |> subject("Shapes")
         |> text_body("plain")
         |> html_body("<p>rich</p>")
@@ -468,7 +468,7 @@ defmodule Courier.CloudflareDeliveryTest do
       assert [request] = CloudflareServer.take(server)
       payload = decode!(request.body)
 
-      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "Cafaye"}
+      assert payload["from"] == %{"address" => "no-reply@anywaye.com", "name" => "Anywaye"}
       assert payload["to"] == %{"address" => "ada@example.com", "name" => "Ada"}
       assert payload["cc"] == %{"address" => "bead@example.com", "name" => "Bead"}
       assert payload["bcc"] == "quiet@example.com"
@@ -506,8 +506,8 @@ defmodule Courier.CloudflareDeliveryTest do
 
       # The REST API's named-address object is {address, name}; {email, name}
       # is the Workers binding shape and is refused with 400
-      # invalid_request_schema (measured live on cafaye.com).
-      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "Cafaye"}
+      # invalid_request_schema (measured live on anywaye.com).
+      assert payload["from"] == %{"address" => "no-reply@anywaye.com", "name" => "Anywaye"}
       assert payload["to"] == %{"address" => "shape@example.com", "name" => "Shape"}
       refute Map.has_key?(payload["from"], "email")
       refute Map.has_key?(payload["to"], "email")
@@ -522,7 +522,7 @@ defmodule Courier.CloudflareDeliveryTest do
 
       email =
         Swoosh.Email.new()
-        |> Swoosh.Email.from({"Cafaye", "no-reply@cafaye.com"})
+        |> Swoosh.Email.from({"Anywaye", "no-reply@anywaye.com"})
         |> Swoosh.Email.to("bare@example.com")
         |> Swoosh.Email.subject("Bare")
         |> Swoosh.Email.text_body("hi")
@@ -533,7 +533,7 @@ defmodule Courier.CloudflareDeliveryTest do
       payload = decode!(request.body)
 
       assert payload["to"] == "bare@example.com"
-      assert payload["from"] == %{"address" => "no-reply@cafaye.com", "name" => "Cafaye"}
+      assert payload["from"] == %{"address" => "no-reply@anywaye.com", "name" => "Anywaye"}
     end
   end
 
@@ -543,7 +543,7 @@ defmodule Courier.CloudflareDeliveryTest do
       put_adapter(port)
 
       # The header `Courier.Deliver.tag/2` attaches to EVERY message it sends:
-      # `<courier-<uuid>@cafaye.com>` under the lowercase `message-id` key.
+      # `<courier-<uuid>@anywaye.com>` under the lowercase `message-id` key.
       # Before this packet the adapter forwarded it verbatim and Cloudflare
       # refused the whole message with 400 / 10202 — which the test server now
       # reproduces, so a regression here is red, not silently accepted.
@@ -578,7 +578,7 @@ defmodule Courier.CloudflareDeliveryTest do
 
       decorated =
         email
-        |> Swoosh.Email.header("List-Unsubscribe", "<https://cafaye.com/u?t=1>")
+        |> Swoosh.Email.header("List-Unsubscribe", "<https://anywaye.com/u?t=1>")
         |> Swoosh.Email.header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
 
       assert {:ok, _receipt} = Courier.Mailer.deliver(decorated)
@@ -589,7 +589,7 @@ defmodule Courier.CloudflareDeliveryTest do
       # RFC 8058: both headers are accepted by Cloudflare and are how the bulk
       # mail courier sends stays compliant. Dropping them would be a
       # deliverability and compliance regression, not a tidy-up.
-      assert payload["headers"]["List-Unsubscribe"] == "<https://cafaye.com/u?t=1>"
+      assert payload["headers"]["List-Unsubscribe"] == "<https://anywaye.com/u?t=1>"
       assert payload["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     end
 
@@ -631,7 +631,7 @@ defmodule Courier.CloudflareDeliveryTest do
   end
 
   # A welcome message carrying the exact edit `Courier.Deliver.tag/2` makes:
-  # `<courier-<uuid>@cafaye.com>` under the lowercase `message-id` key. It goes
+  # `<courier-<uuid>@anywaye.com>` under the lowercase `message-id` key. It goes
   # through `Mailers.build/2`, the same composer the rest of the file uses.
   defp tagged_welcome(user_id, email) do
     {:ok, built} = Mailers.build(:welcome, %{user_id: user_id, email: email, name: "Tagged"})
@@ -639,7 +639,7 @@ defmodule Courier.CloudflareDeliveryTest do
     Swoosh.Email.header(
       built,
       "message-id",
-      "<courier-#{Ecto.UUID.generate()}@cafaye.com>"
+      "<courier-#{Ecto.UUID.generate()}@anywaye.com>"
     )
   end
 

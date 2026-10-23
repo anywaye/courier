@@ -1,8 +1,8 @@
 # tenancy.yml — what courier declares about its own account boundary.
 #
-# Checked by cafaye/core's contract harness, from the fleet root:
+# Checked by anywaye/core's contract harness, from the fleet root:
 #
-#     /Users/kaka/Code/any/cafaye/core/harness/bin/tenancy-check .
+#     /Users/kaka/Code/any/anywaye/core/harness/bin/tenancy-check .
 #
 # `identity/tenancy.yml` is the reference shape and was read in full before this
 # file was written. Two things are carried over deliberately and one is not.
@@ -22,15 +22,15 @@
 #
 # CARRIED OVER, AND THE CARRYING IS THE FINDING: the `rls` block records what
 # the DATABASE does, and courier's database does it — **six tables are
-# row-level-security FORCED**, by `cafaye.protect_table/2` calls in
+# row-level-security FORCED**, by `anywaye.protect_table/2` calls in
 # `20261003090000_protect_account_scoped_tables.exs` (`idempotency_keys`,
 # `notification_preferences`, `webhook_endpoints`),
 # `20261006120000_create_notifications.exs` (`notification_events`,
 # `notifications`) and `20261016090000_create_tenant_sending_domains.exs`
 # (`tenant_sending_domains`). kit's substrate writes
 # `alter table … force row level security` and four policies per table —
-# `_cafaye_select`, `_cafaye_insert`, `_cafaye_update`, `_cafaye_delete` — each
-# qualified on `cafaye.current_account_id()`. So the database half is real, and
+# `_anywaye_select`, `_anywaye_insert`, `_anywaye_update`, `_anywaye_delete` — each
+# qualified on `anywaye.current_account_id()`. So the database half is real, and
 # saying so in this file is correct.
 #
 # WHAT THE DECLARATION SAYS INSTEAD, AND WHY: `databaseEnforced: false` with an
@@ -138,12 +138,12 @@ rls:
   #      and `tenancy.rls-policy-absent` fires on each one — measured, not
   #      inferred. Pointing `sources` at a hand-written `.sql` copy gets past
   #      the table check and fails on the policy name, because the policies are
-  #      written by `cafaye.protect_table/2` and the scanner cannot follow a
+  #      written by `anywaye.protect_table/2` and the scanner cannot follow a
   #      function call to the four policies it creates.
   #   2. The old comment here claimed "none of the ten migrations mentions
   #      `row level security`, `create policy`…". There are SEVENTEEN migrations
   #      now, and the claim was always literally true and misleading in intent:
-  #      the DDL is inside a `select cafaye.protect_table(…)` string, so a text
+  #      the DDL is inside a `select anywaye.protect_table(…)` string, so a text
   #      scan for the DDL's own words finds nothing while the database is
   #      forced. A comment that says "no RLS DDL" about a tree that calls
   #      `protect_table` five times is the same defect as the declaration it
@@ -656,7 +656,7 @@ entryPoints:
       # and the vocabulary was wrong: a `query-filter` names a predicate, and
       # `Tenancy.with_account(Repo, event.account_id, fn -> … end)` is not one —
       # it opens the transaction that puts the account on the connection as
-      # `set_config('cafaye.account_id', …, is_local := true)`, which is the
+      # `set_config('anywaye.account_id', …, is_local := true)`, which is the
       # schema's own fourth description ("the point where the request's account
       # is resolved onto the context every later read reads from") rather than
       # its first. The predicate this fan-out really runs is one line further

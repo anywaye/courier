@@ -21,13 +21,13 @@
 #   # 2. create the stream with kit's verbatim argv (install.sh step 10 and
 #   #    compose's nats-stream-init are the same command)
 #   docker run --rm natsio/nats-box:0.20.0 nats --server nats://host.docker.internal:14222 \
-#     stream add cafaye --subjects "identity.>,billing.>,courier.>,muse.>,darkroom.>" \
+#     stream add anywaye --subjects "identity.>,billing.>,courier.>,muse.>,darkroom.>" \
 #     --storage file --retention limits --max-age 7d --discard old --replicas 1 --defaults
 #
 #   # 3. the same publish again — this is the assertion the packet is for
 #   NATS_URL=nats://127.0.0.1:14222 mise exec -- mix run evidence/brk2-broker-proof.exs
 #   docker run --rm natsio/nats-box:0.20.0 nats --server nats://host.docker.internal:14222 \
-#     stream info cafaye
+#     stream info anywaye
 #
 # Exit 0 means the broker acknowledged the publish; the answer is printed.
 
@@ -58,7 +58,7 @@ envelope =
       "user_id" => Ecto.UUID.bingenerate() |> Ecto.UUID.cast!(),
       "email" => "kaka@example.com",
       "name" => "Kaka",
-      "url" => "https://cafaye.com/verify?token=abc123"
+      "url" => "https://anywaye.com/verify?token=abc123"
     }
   })
 

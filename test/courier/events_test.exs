@@ -1,6 +1,6 @@
 defmodule Courier.EventsTest do
   @moduledoc """
-  The envelope is core's contract, not courier's: `cafaye/core`'s
+  The envelope is core's contract, not courier's: `anywaye/core`'s
   `schemas/event-envelope.schema.json` is where these rules live, and core's
   suite is what ultimately validates courier's output against it.
 
@@ -30,7 +30,7 @@ defmodule Courier.EventsTest do
   `courier.notification.suppressed` is the one that is not, because it has no
   `message_id` (nothing was rendered, so there is no notification to be about)
   and its subject is the recipient rather than the notification. That difference
-  is core's D8, in core's `cafaye/notes/decisions.md`, and a builder that got it wrong would
+  is core's D8, in core's `anywaye/notes/decisions.md`, and a builder that got it wrong would
   be a publisher of an event no consumer could join.
 
   ## A builder is a shape, not an emission
@@ -121,8 +121,8 @@ defmodule Courier.EventsTest do
   @builders [:delivered, :bounced, :complained, :suppressed]
 
   describe "types/0" do
-    test "the catalog is exactly the events in courier's cafaye.yml" do
-      # cafaye.yml `exposes.events` and core's docs/event-naming.md catalog are
+    test "the catalog is exactly the events in courier's anywaye.yml" do
+      # anywaye.yml `exposes.events` and core's docs/event-naming.md catalog are
       # asserted to agree by core's own suite. If `Courier.Events` gains a type,
       # one of those two needs the same row in the same commit.
       assert Events.types() == manifest_events()
@@ -184,7 +184,7 @@ defmodule Courier.EventsTest do
       refute one["id"] == two["id"]
     end
 
-    test "the source is courier, which is `name` in courier's cafaye.yml" do
+    test "the source is courier, which is `name` in courier's anywaye.yml" do
       assert Events.delivered(subject: @subject_id, data: %{})["source"] == "courier"
     end
 
@@ -272,7 +272,7 @@ defmodule Courier.EventsTest do
       refute one["id"] == two["id"]
     end
 
-    test "the source is courier, which is `name` in courier's cafaye.yml" do
+    test "the source is courier, which is `name` in courier's anywaye.yml" do
       assert Events.bounced(subject: @subject_id, data: %{})["source"] == "courier"
     end
 
@@ -355,7 +355,7 @@ defmodule Courier.EventsTest do
       refute one["id"] == two["id"]
     end
 
-    test "the source is courier, which is `name` in courier's cafaye.yml" do
+    test "the source is courier, which is `name` in courier's anywaye.yml" do
       assert Events.complained(subject: @subject_id, data: %{})["source"] == "courier"
     end
 
@@ -425,7 +425,7 @@ defmodule Courier.EventsTest do
       refute one["id"] == two["id"]
     end
 
-    test "the source is courier, which is `name` in courier's cafaye.yml" do
+    test "the source is courier, which is `name` in courier's anywaye.yml" do
       assert Events.suppressed(subject: @user_id, data: %{})["source"] == "courier"
     end
 
@@ -614,17 +614,17 @@ defmodule Courier.EventsTest do
   defp data_for(:suppressed), do: @suppressed_data
   defp data_for(_builder), do: @data
 
-  # cafaye.yml is the service's own statement of what it publishes, and
+  # anywaye.yml is the service's own statement of what it publishes, and
   # `Courier.Events` is the same list in Elixir. Parsing YAML is not worth a
   # dependency to check a list of five plain strings, so this reads the block
   # directly: the `events:` key at two spaces, its list items at four.
   defp manifest_events do
-    lines = File.read!(Path.join(File.cwd!(), "cafaye.yml")) |> String.split("\n")
+    lines = File.read!(Path.join(File.cwd!(), "anywaye.yml")) |> String.split("\n")
 
     case Enum.find_index(lines, &(&1 =~ ~r/^\s{2}events:/)) do
       nil ->
         flunk(
-          "cafaye.yml no longer declares `exposes.events`; `Courier.Events` cannot be checked against it"
+          "anywaye.yml no longer declares `exposes.events`; `Courier.Events` cannot be checked against it"
         )
 
       index ->

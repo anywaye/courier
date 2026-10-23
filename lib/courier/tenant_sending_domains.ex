@@ -103,7 +103,7 @@ defmodule Courier.TenantSendingDomains do
   # deliver — not that a particular inbox received one, which would need a
   # mailbox courier does not have. Provider acceptance is the bar: a token
   # that can send is a token that is scoped correctly.
-  @verification_recipient "sending-domain-verification@cafaye.com"
+  @verification_recipient "sending-domain-verification@anywaye.com"
 
   @doc """
   Registers a sending domain for `account_id`.
@@ -388,15 +388,15 @@ defmodule Courier.TenantSendingDomains do
   defp check_credential(domain) do
     email =
       Swoosh.Email.new()
-      |> Swoosh.Email.from({"Cafaye", "no-reply@" <> domain.domain})
-      |> Swoosh.Email.to({"Cafaye", @verification_recipient})
-      |> Swoosh.Email.subject("cafaye sending domain verification")
+      |> Swoosh.Email.from({"Anywaye", "no-reply@" <> domain.domain})
+      |> Swoosh.Email.to({"Anywaye", @verification_recipient})
+      |> Swoosh.Email.subject("anywaye sending domain verification")
       |> Swoosh.Email.text_body(
-        "cafaye is verifying the sending domain #{domain.domain}. " <>
+        "anywaye is verifying the sending domain #{domain.domain}. " <>
           "If you received this mail, the domain's provider credential was accepted."
       )
       |> Swoosh.Email.html_body(
-        "<p>cafaye is verifying the sending domain <strong>#{domain.domain}</strong>.</p>"
+        "<p>anywaye is verifying the sending domain <strong>#{domain.domain}</strong>.</p>"
       )
 
     case adapter_config(domain) do

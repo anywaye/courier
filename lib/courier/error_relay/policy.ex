@@ -68,7 +68,7 @@ defmodule Courier.ErrorRelay.Policy do
   Two independent controls, because the realistic way this leaks is one of them
   being removed by a well-meaning change and nobody noticing for a month. The
   vocabulary below is **byte-identical** to `blocked_values` in kit's
-  `redaction/cafaye_traces` processor. Two lists that can drift are one list too
+  `redaction/anywaye_traces` processor. Two lists that can drift are one list too
   many, so this is the collector's list and a change to one is a change to both.
 
   ## `error.type` is the closed vocabulary, which is what keeps this reversible
@@ -177,10 +177,10 @@ defmodule Courier.ErrorRelay.Policy do
   # `tags` — the closed set, so a tag cannot become a cardinality axis.
   #
   # `error.type` is core's class. `service.name` is the fleet partition.
-  # `cafaye.redacted` is the constant marker this policy stamps on every event
+  # `anywaye.redacted` is the constant marker this policy stamps on every event
   # it forwards. `deployment.environment` and `release` mirror the top-level
   # fields so a GlitchTip issue can be filtered on them as indexed tags.
-  @tag_keys ~w(error.type service.name deployment.environment release cafaye.redacted)
+  @tag_keys ~w(error.type service.name deployment.environment release anywaye.redacted)
 
   # Stack frame keys. `vars` is the one that matters and it is the reason this
   # table exists: in Go and Ruby the frame variables are the function's
@@ -201,7 +201,7 @@ defmodule Courier.ErrorRelay.Policy do
     ~r/[Bb]earer[ ]+[A-Za-z0-9._-]{16,}/
   ]
 
-  @marker "cafaye.redacted"
+  @marker "anywaye.redacted"
 
   @doc """
   Redact one decoded Sentry event.

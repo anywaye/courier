@@ -34,7 +34,7 @@ defmodule CourierWeb.Plugs.PrincipalConfigTest do
 
   @account "ab000000-0000-0000-0000-0000000000c1"
   @other_account "ffffffff-ffff-ffff-ffff-ffffffffffff"
-  @caller_token "cafaye_caller-token-for-the-suite"
+  @caller_token "anywaye_caller-token-for-the-suite"
 
   # Read as a module attribute rather than spelled at each use, so a reader
   # looking for the document this file holds to the router finds the name once.
@@ -156,7 +156,7 @@ defmodule CourierWeb.Plugs.PrincipalConfigTest do
 
       assert conn.status == 401
       assert problem_json?(conn)
-      assert body(conn)["type"] == "https://docs.cafaye.com/errors/unauthorized"
+      assert body(conn)["type"] == "https://docs.anywaye.com/errors/unauthorized"
       assert body(conn)["code"] == "unauthorized"
       assert body(conn)["title"] == "Unauthorized"
       assert body(conn)["status"] == 401
@@ -219,7 +219,7 @@ defmodule CourierWeb.Plugs.PrincipalConfigTest do
 
       assert conn.status == 503
       assert problem_json?(conn)
-      assert body(conn)["type"] == "https://docs.cafaye.com/errors/unavailable"
+      assert body(conn)["type"] == "https://docs.anywaye.com/errors/unavailable"
       assert body(conn)["code"] == "unavailable"
       assert body(conn)["title"] == "Service unavailable"
       assert body(conn)["status"] == 503

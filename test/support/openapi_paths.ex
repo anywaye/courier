@@ -830,7 +830,7 @@ defmodule Courier.TestSupport.OpenAPIPaths do
         To fix this, do one of the two things:
       #{fixes |> Enum.with_index(1) |> Enum.map_join("\n", fn {fix, n} -> "      #{n}. #{fix}" end)}
 
-        `cafaye.yml` declares `exposes.api: openapi.yaml` and PLAN.md MD6 has SDK
+        `anywaye.yml` declares `exposes.api: openapi.yaml` and PLAN.md MD6 has SDK
         generation reading that file, so every operation in it is a method on a
         generated client. This check is `test/courier_web/openapi_document_test.exs`;
         the reader, and a test per normalisation, is

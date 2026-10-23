@@ -292,17 +292,17 @@ defmodule Courier.NotificationPreferences do
   #
   # Connecting as **`courier_app`** changes that, and it is the finding this
   # function exists for. `courier_app` is a subject of the `select` policy, and the
-  # policy is `account_id = cafaye.current_account_id()`. So the read inside
+  # policy is `account_id = anywaye.current_account_id()`. So the read inside
   # `addressable/2` no longer sees the other account's row — it sees `nil`, which
   # `addressable/2` reads as "no rows stored", which is `:ok`. **The Elixir
   # comparison is structurally unreachable for this case**, and the write proceeds
   # to be refused by the database instead. Measured, as `courier_app`:
   #
-  #     begin; select cafaye.begin_account('<other>');
+  #     begin; select anywaye.begin_account('<other>');
   #     select account_id from notification_preferences where user_id = '<theirs>';
   #     -- 0 rows: the policy hides it
   #
-  #     begin; select cafaye.begin_account('<other>');
+  #     begin; select anywaye.begin_account('<other>');
   #     insert into notification_preferences (...) on conflict do update …;
   #     ERROR:  new row violates row-level security policy (USING expression)
   #             for table "notification_preferences"

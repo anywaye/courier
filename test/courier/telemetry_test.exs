@@ -46,7 +46,7 @@ defmodule Courier.TelemetryTest do
       assert Telemetry.endpoint() == "http://otel-collector:4318"
     end
 
-    test "the cafaye variable wins over the standard one, and the precedence is written down" do
+    test "the anywaye variable wins over the standard one, and the precedence is written down" do
       System.put_env("COURIER_OTEL_ENDPOINT", "https://otlp.example.com:4318")
       System.put_env("OTEL_EXPORTER_OTLP_ENDPOINT", "https://other.example.com:4318")
 

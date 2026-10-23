@@ -206,16 +206,16 @@ defmodule Courier.Suppression do
   defp normalize_email(_attrs), do: nil
 
   # RFC 5322 §3.6.4's angle brackets are HEADER syntax, not part of the identifier.
-  # `Courier.Deliver.tag/2` writes `<courier-<uuid>@cafaye.com>` on the wire, and
+  # `Courier.Deliver.tag/2` writes `<courier-<uuid>@anywaye.com>` on the wire, and
   # providers quote that value back in whichever form their own parser hands them:
   # Postmark's `MessageID` carries the brackets, SES's `originalHeaders` carries
   # them, and a raw SMTP bounce's `In-Reply-To` sometimes does not. Storing the two
   # spellings as two rows would make "did this bounce tie back to that send" a
   # question about the provider rather than about the send.
   #
-  # The `@cafaye.com` suffix is left in place, and that is deliberate: it is part of
+  # The `@anywaye.com` suffix is left in place, and that is deliberate: it is part of
   # the identifier, and stripping it would be a heuristic that collapses
-  # `courier-x@cafaye.com` and `courier-x@elsewhere.test` into one value. The
+  # `courier-x@anywaye.com` and `courier-x@elsewhere.test` into one value. The
   # bounce ties back through `outbox_events.message_id`, which courier stores
   # bracket-free, so the bracket is the only difference courier has to absorb.
   defp normalize_message_id(%{message_id: "<" <> rest = id}) do

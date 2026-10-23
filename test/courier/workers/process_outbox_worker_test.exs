@@ -49,7 +49,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
 
   describe "perform/1" do
     test "publishes an undelivered event" do
-      row = deliver!("https://cafaye.com/verify?token=abc123")
+      row = deliver!("https://anywaye.com/verify?token=abc123")
 
       assert {:ok, _result} = perform_job(ProcessOutboxWorker, %{})
 
@@ -59,7 +59,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     end
 
     test "publishes the envelope exactly as it was recorded" do
-      row = deliver!("https://cafaye.com/verify?token=abc123")
+      row = deliver!("https://anywaye.com/verify?token=abc123")
 
       {:ok, _result} = perform_job(ProcessOutboxWorker, %{})
 
@@ -68,7 +68,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     end
 
     test "marks the row published only after publishing it" do
-      row = deliver!("https://cafaye.com/verify?token=abc123")
+      row = deliver!("https://anywaye.com/verify?token=abc123")
 
       {:ok, _result} = perform_job(ProcessOutboxWorker, %{})
 
@@ -87,7 +87,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     end
 
     test "an already published row is not republished" do
-      row = deliver!("https://cafaye.com/verify?token=abc123")
+      row = deliver!("https://anywaye.com/verify?token=abc123")
       {:ok, _result} = perform_job(ProcessOutboxWorker, %{})
 
       # The first run's envelope has to leave the mailbox before the second run's
@@ -103,7 +103,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     end
 
     test "a second run does not move the published_at stamp" do
-      row = deliver!("https://cafaye.com/verify?token=abc123")
+      row = deliver!("https://anywaye.com/verify?token=abc123")
       {:ok, _result} = perform_job(ProcessOutboxWorker, %{})
       first_published_at = Repo.get!(OutboxEvent, row.id).published_at
 
@@ -113,7 +113,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     end
 
     test "publishes a whole batch in one run" do
-      for index <- 1..3, do: deliver!("https://cafaye.com/verify?token=#{index}")
+      for index <- 1..3, do: deliver!("https://anywaye.com/verify?token=#{index}")
 
       assert {:ok, %{published: 3}} = perform_job(ProcessOutboxWorker, %{})
 
@@ -124,7 +124,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     end
 
     test "publishes oldest first, so subscribers see sends in the order they happened" do
-      rows = for index <- 1..3, do: deliver!("https://cafaye.com/verify?token=#{index}")
+      rows = for index <- 1..3, do: deliver!("https://anywaye.com/verify?token=#{index}")
 
       # Backdate the rows so the relay is ordering on the recorded time rather
       # than on whatever the database hands back: the first row is three minutes
@@ -151,7 +151,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     end
 
     test "a row that has exhausted its attempts is not claimed again" do
-      row = deliver!("https://cafaye.com/verify?token=abc123")
+      row = deliver!("https://anywaye.com/verify?token=abc123")
 
       row
       |> Ecto.Changeset.change(attempt_count: max_attempts())
@@ -164,7 +164,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     end
 
     test "a row with attempts left is still claimed" do
-      row = deliver!("https://cafaye.com/verify?token=abc123")
+      row = deliver!("https://anywaye.com/verify?token=abc123")
 
       row
       |> Ecto.Changeset.change(attempt_count: max_attempts() - 1)

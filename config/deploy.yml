@@ -45,7 +45,7 @@ app_domain  = require.call("KIT_APP_DOMAIN")
 %>
 # `config/deploy.yml` — the Kamal configuration for <%= service %>.
 #
-# Copied from cafaye/kit, `templates/kamal/deploy.yml.erb`, at kit commit
+# Copied from anywaye/kit, `templates/kamal/deploy.yml.erb`, at kit commit
 # d201080, and changed in exactly two places. Every one of them is courier's
 # own fact and each is marked below with the reason, so a reader diffing this
 # against kit's template sees two differences rather than a fork:
@@ -81,7 +81,7 @@ service: <%= service %>
 # `image: ghcr.io/org/repo` with `server: ghcr.io` resolves to
 # `ghcr.io/ghcr.io/org/repo` and the deploy fails at the push, not here.
 # Measured on kamal 2.12.0: `kamal config` reports
-# `:repository: ghcr.io/ghcr.io/cafaye/courier` for exactly that spelling.
+# `:repository: ghcr.io/ghcr.io/anywaye/courier` for exactly that spelling.
 # The host appears in `registry.server` and nowhere else.
 image: <%= org %>/<%= repo %>
 

@@ -42,7 +42,7 @@ defmodule Courier.Consumers.MemberAcceptedTest do
   ## WHY THE FILE CARRIES `@moduletag account:`
 
   `notification_events` and `notifications` are RLS-protected with
-  `account_id = cafaye.current_account_id()`, and the account this handler
+  `account_id = anywaye.current_account_id()`, and the account this handler
   writes is the **payload's** — so the test's tenant identity must be the same
   uuid, or every write is refused `42501`. The tag is the file-level statement
   of that fact, and the payload's account id is the tag's value.

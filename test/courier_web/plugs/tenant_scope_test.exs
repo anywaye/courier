@@ -7,7 +7,7 @@ defmodule CourierWeb.TenantScopeTest do
   `CourierWeb.Plugs.TenantIdentity` opens its transaction around `fn -> conn end`
   — no database work — and commits before the `:idempotent` plug and the
   controller run. In production the commit discards the transaction-local
-  `cafaye.account_id`, so downstream runs with no identity: protected writes
+  `anywaye.account_id`, so downstream runs with no identity: protected writes
   raise `42501` and protected reads return zero rows. Every authenticated
   route's protected-table access is broken, not just mail.
 

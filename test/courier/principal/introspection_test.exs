@@ -29,13 +29,13 @@ defmodule Courier.Principal.IntrospectionTest do
 
   @account "ab000000-0000-0000-0000-0000000000c1"
   @other_account "ab000000-0000-0000-0000-0000000000c2"
-  @caller_token "cafaye_caller-token-for-the-suite"
+  @caller_token "anywaye_caller-token-for-the-suite"
 
   # The credential courier presents to ask about the caller's. A fixture and
   # never a default, on the same terms as `COURIER_SECRET_BOX_KEY` in
   # `config/test.exs`: `config/runtime.exs` requires a real one from the
   # environment and refuses to boot without it.
-  @service_token "cafaye_couriers-own-service-credential"
+  @service_token "anywaye_couriers-own-service-credential"
 
   defp conn(token, headers \\ []) do
     Enum.reduce(headers, Plug.Test.conn(:get, "/v1/webhook_endpoints"), fn {k, v}, acc ->

@@ -6,7 +6,7 @@ defmodule CourierWeb.Problem do
   second shape to drift into.
 
       %{
-        "type" => "https://docs.cafaye.com/errors/validation_failed",
+        "type" => "https://docs.anywaye.com/errors/validation_failed",
         "title" => "Validation failed",
         "status" => 422,
         "detail" => "...",
@@ -111,7 +111,7 @@ defmodule CourierWeb.Problem do
     {_status, title} = for_code(code)
 
     %{
-      "type" => "https://docs.cafaye.com/errors/#{code}",
+      "type" => "https://docs.anywaye.com/errors/#{code}",
       "title" => title,
       "status" => status,
       "detail" => detail,

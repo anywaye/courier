@@ -130,7 +130,7 @@ defmodule Courier.Mailers do
   Every notification type courier sends, in the order the platform names them.
 
   This list is also `Courier.NotificationPreferences`' catalog and the `events`
-  in `cafaye.yml`; a new entry here is a row in the manifest in the same commit.
+  in `anywaye.yml`; a new entry here is a row in the manifest in the same commit.
   """
   @spec types() :: [type()]
   def types, do: Courier.Notifiers.types()

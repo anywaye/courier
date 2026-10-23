@@ -5,10 +5,10 @@ defmodule Courier.ChartTest do
 
   ## What this test proves
 
-  The chart at `chart/` is the deploy artifact for the cafaye launch
+  The chart at `chart/` is the deploy artifact for the anywaye launch
   stack — the Argo `Application` in
   `kit/templates/substrate/manifests/applications/courier.yaml` names
-  `oci://ghcr.io/cafaye/charts` chart `courier` targetRevision `0.1.0`,
+  `oci://ghcr.io/anywaye/charts` chart `courier` targetRevision `0.1.0`,
   and this chart is what that artifact contains. The test asserts the
   chart's content, not that a file exists:
 
@@ -38,7 +38,7 @@ defmodule Courier.ChartTest do
   it, and the fork is the drift kit exists to prevent. So the test asserts
   the facts that make the loop work, not that a file exists:
 
-  * the caller calls `cafaye/kit/ci/publish.reusable.yml@master`
+  * the caller calls `anywaye/kit/ci/publish.reusable.yml@master`
     — there is exactly one composition and it is kit's;
   * it grants `packages: write` — a reusable workflow can request a
     permission but cannot grant itself one, and a caller that omits it gets
@@ -195,7 +195,7 @@ defmodule Courier.ChartTest do
     end
 
     test "calls kit's composed publish workflow — a caller that inlines the steps has forked the composition" do
-      assert uses(workflow()) == "cafaye/kit/ci/publish.reusable.yml@master"
+      assert uses(workflow()) == "anywaye/kit/ci/publish.reusable.yml@master"
     end
 
     test "grants packages: write — a reusable workflow can request a permission but cannot grant itself one" do
@@ -361,7 +361,7 @@ defmodule Courier.ChartTest do
   end
 
   describe "the image digest — the one that reaches the pod" do
-    # THE CONTRACT (cafaye/kit/ci/chart.reusable.yml, lines
+    # THE CONTRACT (anywaye/kit/ci/chart.reusable.yml, lines
     # 58-116 "THE IMAGE DIGEST — THE ONE THAT REACHES THE POD, AND THE ONE
     # THAT WAS MEASURED MISSING" and the `pin the image by digest` step
     # 277-365): the chart's `values.yaml` carries
@@ -398,15 +398,15 @@ defmodule Courier.ChartTest do
     test "renders repository@digest when a digest is committed" do
       {rendered, status} = helm_template()
       assert status == 0, "helm template failed: #{rendered}"
-      assert rendered =~ ~s(image: "ghcr.io/cafaye/courier@#{@committed_digest}")
-      refute rendered =~ ~s(image: "ghcr.io/cafaye/courier:0.1.0")
+      assert rendered =~ ~s(image: "ghcr.io/anywaye/courier@#{@committed_digest}")
+      refute rendered =~ ~s(image: "ghcr.io/anywaye/courier:0.1.0")
     end
 
     test "renders repository:tag when the digest is empty — the fresh-clone path before the first publish" do
       {rendered, status} = helm_template(["--set", "image.digest="])
       assert status == 0, "helm template with empty digest failed: #{rendered}"
-      assert rendered =~ ~s(image: "ghcr.io/cafaye/courier:0.1.0")
-      refute rendered =~ ~s(image: "ghcr.io/cafaye/courier@sha256:)
+      assert rendered =~ ~s(image: "ghcr.io/anywaye/courier:0.1.0")
+      refute rendered =~ ~s(image: "ghcr.io/anywaye/courier@sha256:)
     end
 
     test "a malformed digest is refused — it must not render repository@not-a-digest" do

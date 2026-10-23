@@ -32,7 +32,7 @@ defmodule Courier.Repo.Migrations.AddProviderMessageIdToOutboxEvents do
   join in `Courier.InboundReports` matches EITHER.
 
   `data` is deliberately NOT the place for this. `courier.email.delivered`'s
-  schema in `cafaye/core` is `additionalProperties: false` with four frozen
+  schema in `anywaye/core` is `additionalProperties: false` with four frozen
   fields, so a fifth key on the event would fail core's own schema on the bus.
   The provider's id is a fact for the JOIN, which reads rows, not for the
   payload.

@@ -50,7 +50,7 @@ defmodule Courier.OutboxEnqueueConfigTest do
                user_id: @user_id,
                email: "kaka@example.com",
                name: "Kaka",
-               url: "https://cafaye.com/verify?token=abc123"
+               url: "https://anywaye.com/verify?token=abc123"
              })
 
     assert Repo.all(OutboxEvent) == []
@@ -68,7 +68,7 @@ defmodule Courier.OutboxEnqueueConfigTest do
                user_id: @user_id,
                email: "kaka@example.com",
                name: "Kaka",
-               url: "https://cafaye.com/verify?token=abc123"
+               url: "https://anywaye.com/verify?token=abc123"
              })
 
     assert [job] = all_enqueued(worker: ProcessOutboxWorker)

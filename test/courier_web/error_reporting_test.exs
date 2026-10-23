@@ -235,7 +235,7 @@ defmodule CourierWeb.ErrorReportingTest do
       # deleting: the class, the file and the line are what somebody acts on.
       assert body =~ ~s("type":"RuntimeError"), "the exception class survived"
       assert body =~ ~s("error.type":"internal_error")
-      assert body =~ ~s("cafaye.redacted":"true")
+      assert body =~ ~s("anywaye.redacted":"true")
 
       # ... and the **stack frames**, which are the other half of "enough detail
       # to act". The first version of this file asserted on a filename and got it

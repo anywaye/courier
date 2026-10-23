@@ -1,9 +1,9 @@
 # account_scope.yml — every entry point courier mounts, and which of them can
 # reach another account's data.
 #
-# Checked by cafaye/core's contract harness:
+# Checked by anywaye/core's contract harness:
 #
-#     cd cafaye/core && python3 harness/account_scope_check.py ../wt-m39-courier-scope-01
+#     cd anywaye/core && python3 harness/account_scope_check.py ../wt-m39-courier-scope-01
 #
 # THE SIBLING FILE IS tenancy.yml, AND THE TWO ANSWER DIFFERENT QUESTIONS.
 # `tenancy.yml` declares the STATEMENTS that constrain on `account_id` and the

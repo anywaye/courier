@@ -9,7 +9,7 @@ defmodule Courier.DataCase do
   (`priv/repo/migrations/20261003090000_protect_account_scoped_tables.exs`).
   Every test that writes a row to `idempotency_keys`, `notification_preferences`
   or `webhook_endpoints` therefore needs an account identity set, because the
-  policy's `with check` is `account_id = cafaye.current_account_id()`.
+  policy's `with check` is `account_id = anywaye.current_account_id()`.
 
   It used not to need one, and the reason is the finding this harness change
   exists to record: the suite connected as `postgres`, a **superuser**, and a
@@ -25,7 +25,7 @@ defmodule Courier.DataCase do
   ## HOW THE IDENTITY IS SET, AND WHY IT IS NOT A TRANSACTION
 
   `Ecto.Adapters.SQL.Sandbox` already wraps every test in a **transaction**, so
-  `set_config('cafaye.account_id', …, is_local := true)` is held by that one and
+  `set_config('anywaye.account_id', …, is_local := true)` is held by that one and
   discarded by the rollback at the end of the test. `with_account/3` would open a
   nested transaction — a SAVEPOINT — and the identity would still be visible
   afterwards, because `RELEASE SAVEPOINT` does not discard a transaction-local

@@ -12,7 +12,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
   (`email`), and the processor's invoice id when the payment came with one.
 
   **Measured in billing, not re-derived here.** The whole of the wire shape is
-  the normalized invoice event — `customer_id`, `cafaye_customer_id`,
+  the normalized invoice event — `customer_id`, `anywaye_customer_id`,
   `subscription_id`, `invoice_id`, `payment_intent_id`, `paid`, `amount`,
   `attempt_count` — plus the one field `with_recipient` adds, `email`, which
   exists precisely because of the fleet's consumer design: courier has no
@@ -57,9 +57,9 @@ defmodule Courier.Consumers.PaymentSucceeded do
   ## WHO A RECEIPT IS ABOUT: THE CUSTOMER, NOT A USER
 
   `Courier.Deliver` attributes a send to a user, and the money event names no
-  USER — it names the cafaye CUSTOMER the money moved for. Billing has no
+  USER — it names the anywaye CUSTOMER the money moved for. Billing has no
   users: its `customers` row is account-owned, whose id is what the event
-  carries as `cafaye_customer_id`, and the platform's consumer rule forbids
+  carries as `anywaye_customer_id`, and the platform's consumer rule forbids
   looking people up anywhere (REPORT-courier-consumer-invite-01 §2.6), so
   neither the user nor their address can be derived from an account.
 
@@ -99,7 +99,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
           required(:amount_display) => String.t(),
           # nil for a Checkout-backed one-off, which no invoice names.
           required(:invoice_id) => String.t() | nil,
-          # The cafaye customer the money moved for, carried as the send's
+          # The anywaye customer the money moved for, carried as the send's
           # attribution. See the moduledoc.
           required(:payer) => String.t()
         }
@@ -168,7 +168,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
   @spec deliver(receipt()) :: {:ok, map()} | {:error, term()}
   def deliver(receipt) do
     # `user_id` is the key `Courier.Deliver` attributes a send to, and the
-    # value is the cafaye CUSTOMER — see the moduledoc for why the event names
+    # value is the anywaye CUSTOMER — see the moduledoc for why the event names
     # no user and what the three checks still are.
     Deliver.email("receipt", %{
       "email" => receipt.email,
@@ -217,14 +217,14 @@ defmodule Courier.Consumers.PaymentSucceeded do
     end
   end
 
-  # The cafaye customer the money moved for. Required: it is the identifier
+  # The anywaye customer the money moved for. Required: it is the identifier
   # `Courier.Deliver` attributes the send to, and a payment without one is a
   # payment this event does not say whose it was — the shape billing's
   # invoice-backed events always carry, and a payment-mode Checkout does not.
   defp fetch_payer(data) do
-    case Map.fetch(data, "cafaye_customer_id") do
+    case Map.fetch(data, "anywaye_customer_id") do
       {:ok, payer} when is_binary(payer) and payer != "" -> {:ok, payer}
-      _missing_or_wrong_shape -> {:error, {:incomplete_payload, "cafaye_customer_id"}}
+      _missing_or_wrong_shape -> {:error, {:incomplete_payload, "anywaye_customer_id"}}
     end
   end
 

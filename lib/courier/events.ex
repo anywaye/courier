@@ -3,7 +3,7 @@ defmodule Courier.Events do
   The event envelope courier emits, and the catalog of the types it may emit.
 
   The envelope is core's contract, not courier's:
-  `cafaye/core`'s `schemas/event-envelope.schema.json` is where the rules live,
+  `anywaye/core`'s `schemas/event-envelope.schema.json` is where the rules live,
   and `Courier.EventsTest` restates them here so drift shows up in courier's own
   suite instead of in core's.
 
@@ -14,7 +14,7 @@ defmodule Courier.Events do
   is describing something none of them read.
 
   The catalog is the short list. `types/0` must agree, entry for entry, with
-  `exposes.events` in this repository's `cafaye.yml` — the test says so — and
+  `exposes.events` in this repository's `anywaye.yml` — the test says so — and
   both are courier's row in `core/docs/event-naming.md`. Registering a new type
   is a checklist in core, not a quiet addition here.
 
@@ -90,7 +90,7 @@ defmodule Courier.Events do
   @reasons ~w(preference_off address_suppressed rate_limited)
 
   @doc """
-  Every event type courier is allowed to publish, in the order `cafaye.yml`
+  Every event type courier is allowed to publish, in the order `anywaye.yml`
   declares them.
   """
   @spec types() :: [String.t()]
@@ -237,7 +237,7 @@ defmodule Courier.Events do
   about this envelope the other three do not do.** Nothing was rendered, nothing
   was addressed and nothing left, so there is no message to name; and core's
   catalog calls this type's subject "the recipient", which core's D8
-  (`cafaye/notes/decisions.md`) settles as the **user id** rather than the address — an address
+  (`anywaye/notes/decisions.md`) settles as the **user id** rather than the address — an address
   is mutable and `subject` is the per-entity ordering key, so a correlation key
   that the recipient can change is a key that moves under a consumer.
 

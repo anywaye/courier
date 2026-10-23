@@ -12,7 +12,7 @@ defmodule Courier.Repo.Migrations.CreateNotifications do
   recipient it does not have — a row per (event, recipient) pair where the
   event's own facts are repeated N times and cannot be stated once. Two tables
   say what is true: the event happened, and here it is for these people. The
-  reference implementation (`cafaye/notes/reference/jumpstart-inventory.md` §1.1) stores it
+  reference implementation (`anywaye/notes/reference/jumpstart-inventory.md` §1.1) stores it
   the same way, and this migration is the port of the **shape**, not of the
   rendering.
 
@@ -23,7 +23,7 @@ defmodule Courier.Repo.Migrations.CreateNotifications do
   retrofitted cheaply, because every row-level-security policy in this repository
   is written against that column:
 
-      account_id = (select cafaye.current_account_id())
+      account_id = (select anywaye.current_account_id())
 
   A policy written against a column added later is a policy whose predicate is
   `NULL` for every existing row — which `protect_table` resolves as "not true",
@@ -117,7 +117,7 @@ defmodule Courier.Repo.Migrations.CreateNotifications do
 
   That choice has a second consequence worth writing down, because the sibling
   migration `20261005120000_grant_app_role_runtime_dml` exists to work around
-  the opposite one: kit's `cafaye.protect_table/2` at the `@substrate_sha` this
+  the opposite one: kit's `anywaye.protect_table/2` at the `@substrate_sha` this
   repository pins grants DML on the **table** and no `USAGE` on the **sequence**,
   so a protected table with a `bigserial` column is uninsertable by the login
   role (`42501`, `permission denied for sequence …`). `protect_table` grants the
@@ -224,7 +224,7 @@ defmodule Courier.Repo.Migrations.CreateNotifications do
              check: "read_at is null or seen_at is not null"
            )
 
-    # THE SUBSTRATE, NOT HAND-WRITTEN POLICIES. `cafaye.protect_table/2` is kit's,
+    # THE SUBSTRATE, NOT HAND-WRITTEN POLICIES. `anywaye.protect_table/2` is kit's,
     # copied verbatim by `20261003090000_protect_account_scoped_tables.exs`, and
     # this is the second file to call it — which is the point of having it. It
     # writes the `FORCE ROW LEVEL SECURITY` bit, the four per-command policies
@@ -234,8 +234,8 @@ defmodule Courier.Repo.Migrations.CreateNotifications do
     # **A NEW MIGRATION RATHER THAN TWO MORE CALLS IN THE PROTECTION MIGRATION**,
     # because that migration has run everywhere and editing an applied migration
     # makes the schema depend on which branch ran it.
-    execute("select cafaye.protect_table('notification_events', '#{@login_role}')")
-    execute("select cafaye.protect_table('notifications', '#{@login_role}')")
+    execute("select anywaye.protect_table('notification_events', '#{@login_role}')")
+    execute("select anywaye.protect_table('notifications', '#{@login_role}')")
   end
 
   def down do
@@ -246,10 +246,10 @@ defmodule Courier.Repo.Migrations.CreateNotifications do
       execute("alter table #{table} disable row level security")
 
       for command <- ~w(select insert update delete) do
-        execute("drop policy if exists #{table}_cafaye_#{command} on #{table}")
+        execute("drop policy if exists #{table}_anywaye_#{command} on #{table}")
       end
 
-      execute("drop index if exists #{table}_cafaye_account_id_idx")
+      execute("drop index if exists #{table}_anywaye_account_id_idx")
     end
 
     # The child first: `notifications` holds the foreign key.

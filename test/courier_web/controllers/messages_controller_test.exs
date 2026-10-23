@@ -115,7 +115,7 @@ defmodule CourierWeb.MessagesControllerTest do
 
       assert envelope["code"] == "unauthorized"
       assert envelope["status"] == 401
-      assert envelope["type"] == "https://docs.cafaye.com/errors/unauthorized"
+      assert envelope["type"] == "https://docs.anywaye.com/errors/unauthorized"
       assert is_binary(envelope["trace_id"])
       assert envelope["trace_id"] == get_resp_header(conn, "x-trace-id") |> List.first()
     end
@@ -324,14 +324,14 @@ defmodule CourierWeb.MessagesControllerTest do
 
       assert [%Swoosh.Email{} = email] = sent()
       assert email.to == [{"Kaka", recipient}]
-      assert email.from == {"Cafaye", "no-reply@cafaye.com"}
+      assert email.from == {"Anywaye", "no-reply@anywaye.com"}
     end
 
     test "the message carries the returned id, so a bounce quoting it can be tied back" do
       conn = post_authed(body())
 
       assert [%Swoosh.Email{headers: headers}] = sent()
-      assert headers["message-id"] == "<#{data(conn)["message_id"]}@cafaye.com>"
+      assert headers["message-id"] == "<#{data(conn)["message_id"]}@anywaye.com>"
     end
 
     test "the event id names courier's own outbox row, for this message" do
@@ -344,14 +344,14 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "the rendered body carries the link courier was given" do
-      url = "https://cafaye.com/reset?token=abc123"
+      url = "https://anywaye.com/reset?token=abc123"
 
       conn = post_authed(body(%{"type" => "password_reset", "url" => url, "name" => nil}))
 
       assert conn.status == 200
 
       assert [%Swoosh.Email{} = email] = sent()
-      assert email.subject == "Reset your Cafaye password"
+      assert email.subject == "Reset your Anywaye password"
       assert email.text_body =~ url
       assert email.html_body =~ url
     end
@@ -361,7 +361,7 @@ defmodule CourierWeb.MessagesControllerTest do
         post_authed(
           body(%{
             "type" => "team_invitation",
-            "url" => "https://cafaye.com/join/abc",
+            "url" => "https://anywaye.com/join/abc",
             "account_name" => "Acme"
           })
         )
@@ -387,7 +387,7 @@ defmodule CourierWeb.MessagesControllerTest do
     # second one is the one the flow depends on.
 
     test "the current-address notice sends, and carries the confirmation link" do
-      url = "https://cafaye.com/email-changes/confirm?token=ch4nge"
+      url = "https://anywaye.com/email-changes/confirm?token=ch4nge"
 
       conn =
         post_authed(
@@ -402,7 +402,7 @@ defmodule CourierWeb.MessagesControllerTest do
       assert conn.status == 200
 
       assert [%Swoosh.Email{} = email] = sent()
-      assert email.subject == "Confirm an email address change on your Cafaye account"
+      assert email.subject == "Confirm an email address change on your Anywaye account"
       assert email.text_body =~ url
       assert email.html_body =~ url
       assert data(conn)["notification_type"] == "email_change_current"
@@ -422,7 +422,7 @@ defmodule CourierWeb.MessagesControllerTest do
       assert conn.status == 200
 
       assert [%Swoosh.Email{} = email] = sent()
-      assert email.subject == "Confirm your new Cafaye email address"
+      assert email.subject == "Confirm your new Anywaye email address"
       assert email.text_body =~ "kaka@example.com"
       assert email.html_body =~ "kaka@example.com"
       assert data(conn)["notification_type"] == "email_change_new"
@@ -598,7 +598,7 @@ defmodule CourierWeb.MessagesControllerTest do
       decline("welcome")
 
       conn =
-        post_authed(body(%{"type" => "password_reset", "url" => "https://cafaye.com/r"}))
+        post_authed(body(%{"type" => "password_reset", "url" => "https://anywaye.com/r"}))
 
       assert conn.status == 200
       assert length(sent()) == 1

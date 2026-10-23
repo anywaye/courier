@@ -208,7 +208,7 @@ defmodule Courier.BounceCorrelationTest do
             deliver_report(
               FakeResend.bounce(
                 recipients: [recipient],
-                message_id: "<#{result.message_id}@cafaye.com>"
+                message_id: "<#{result.message_id}@anywaye.com>"
               )
             )
 

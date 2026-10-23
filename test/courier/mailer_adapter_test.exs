@@ -605,8 +605,8 @@ defmodule Courier.MailerAdapterTest do
   end
 
   describe "SMTP TLS options are the reason the hosted stack could sign up a user" do
-    # 2026-10-15: every new cafaye.com signup was a dead account. Identity
-    # asked courier to deliver "Confirm your cafaye email address" on
+    # 2026-10-15: every new anywaye.com signup was a dead account. Identity
+    # asked courier to deliver "Confirm your anywaye email address" on
     # `smtp.resend.com:587` (STARTTLS, `tls: :always`, `ssl: false`,
     # `port: 587`), and courier answered
     # `{:retries_exceeded, {:temporary_failure, ~c"54.157.71.137", :tls_failed}}`.

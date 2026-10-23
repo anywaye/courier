@@ -225,14 +225,14 @@ defmodule Courier.UnsubscribesTest do
                Deliver.password_reset(%{
                  user_id: @user_id,
                  email: @email,
-                 url: "https://cafaye.test/reset"
+                 url: "https://anywaye.test/reset"
                })
 
       assert {:ok, _sent} =
                Deliver.team_invitation(%{
                  user_id: @user_id,
                  email: @email,
-                 url: "https://cafaye.test/join",
+                 url: "https://anywaye.test/join",
                  account_name: "Acme",
                  invited_by: "Kaka"
                })
@@ -412,10 +412,10 @@ defmodule Courier.UnsubscribesTest do
     end
 
     test "carries no port when the scheme's default would do" do
-      # `https://cafaye.com:443` in a `List-Unsubscribe` header is a valid URL that
+      # `https://anywaye.com:443` in a `List-Unsubscribe` header is a valid URL that
       # no two mail clients spell the same way.
-      assert put_url(host: "cafaye.com", scheme: "https", port: 443) == "https://cafaye.com"
-      assert put_url(host: "cafaye.com", scheme: "https", port: 8443) == "https://cafaye.com:8443"
+      assert put_url(host: "anywaye.com", scheme: "https", port: 443) == "https://anywaye.com"
+      assert put_url(host: "anywaye.com", scheme: "https", port: 8443) == "https://anywaye.com:8443"
 
       assert put_url(host: "courier.test", scheme: "http", port: 4000) ==
                "http://courier.test:4000"
@@ -573,7 +573,7 @@ defmodule Courier.UnsubscribesTest do
   # them the same way. Values are fixtures in a test process; nothing here reaches
   # a deployment.
   @boot_variables %{
-    "COURIER_IDENTITY_TOKEN" => "cafaye_fixture-not-a-real-credential",
+    "COURIER_IDENTITY_TOKEN" => "anywaye_fixture-not-a-real-credential",
     "COURIER_SECRET_BOX_KEY" => "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=",
     "COURIER_INBOUND_RESEND_SECRET" => "whsec_dGVzdC1vbmx5LWZpeHR1cmU=",
     "COURIER_ERROR_RELAY_TOKEN" => "test-only-not-a-secret",

@@ -25,7 +25,7 @@ defmodule Courier.Consumers.Subscriber do
 
   ## WHY THE PREFIX AND NOT THE SUBSCRIBED TYPES
 
-  `cafaye.yml`'s `consumes:` names four `identity.*` types and the registry
+  `anywaye.yml`'s `consumes:` names four `identity.*` types and the registry
   has four handlers, but the subscription is to `identity.>` — the prefix,
   with the NATS wildcard. The alternative, one SUB per subscribed type, is
   the same guarantee today and a silent failure tomorrow: identity's fifth
@@ -35,7 +35,7 @@ defmodule Courier.Consumers.Subscriber do
   reports it as `skipped` (not this consumer's business, left claimable for
   the `consumes:` entry added later), and the manifest and the registry are
   the only two places a subscription is decided. Core's rule 6 is still
-  enforced — the registry is a closed set held to `cafaye.yml` in both
+  enforced — the registry is a closed set held to `anywaye.yml` in both
   directions — but the floor of the bus is one prefix, not four exact
   subjects.
 

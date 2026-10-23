@@ -29,14 +29,14 @@ defmodule Courier.NatsPublisherBusTest do
 
   ## What is not proved here
 
-  That a real broker creates the `cafaye` stream, or that `courier.>` matches.
+  That a real broker creates the `anywaye` stream, or that `courier.>` matches.
   kit owns that (`templates/compose/docker-compose.yml:540` and
   `templates/substrate/install.sh:1365`), and the subject this test asserts is
   the one this server answers for. What IS proved is that courier publishes on
   the event's own type, prefixed with its own name, and marks the row from the
   ack. The stream half was measured in brk-2R against a real
   `nats:2.10.24-alpine` broker — the stream created by kit's verbatim
-  `nats stream add cafaye --subjects "identity.>,billing.>,courier.>,muse.>,
+  `nats stream add anywaye --subjects "identity.>,billing.>,courier.>,muse.>,
   darkroom.>" ...` accepted a real publish on `courier.email.delivered` and
   stored the envelope at seq 1 — recorded in
   `REPORT-courier-brk2-outbox-publisher`'s stream section, reproducible with
@@ -61,7 +61,7 @@ defmodule Courier.NatsPublisherBusTest do
       user_id: @user_id,
       email: "kaka@example.com",
       name: "Kaka",
-      url: "https://cafaye.com/verify?token=abc123"
+      url: "https://anywaye.com/verify?token=abc123"
     }
   end
 

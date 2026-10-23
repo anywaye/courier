@@ -550,7 +550,7 @@ defmodule Courier.NotificationsTest do
       # Three lists, three questions: what courier tells a person inside the
       # product, what it sends as mail, and what it puts on the bus for other
       # services. Folding this one into either of the others would make every
-      # in-app event a bus event, and `cafaye.yml`'s `exposes.events` is a
+      # in-app event a bus event, and `anywaye.yml`'s `exposes.events` is a
       # contract with core's frozen payload schemas.
       assert Notifications.types() != Courier.Mailers.types()
       assert Notifications.types() != Courier.Events.types()

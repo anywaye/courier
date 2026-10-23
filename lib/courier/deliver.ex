@@ -323,7 +323,7 @@ defmodule Courier.Deliver do
   # The from-address is where the sender is chosen: `Courier.Mailers` builds
   # the message with the deployment-configured `from`, and the domain part of
   # that address is the key the credential lookup uses. Everything courier
-  # sends today is from `no-reply@cafaye.com` — the deployment's own
+  # sends today is from `no-reply@anywaye.com` — the deployment's own
   # configured domain — so every current send takes the deployment branch and
   # the global adapter path's behaviour is unchanged for the mail that exists.
   # A tenant's domain selects the tenant's credential, and a from-address that
@@ -367,7 +367,7 @@ defmodule Courier.Deliver do
   # hidden: a FUTURE bulk type's token row, minted by `decorate_for/3`
   # before the provider is dialled, would COMMIT on a provider refusal
   # instead of rolling back with the send. No bulk type exists today, and
-  # adding one is a change in `cafaye/core` (the event enum) plus one row in
+  # adding one is a change in `anywaye/core` (the event enum) plus one row in
   # `Courier.Mailers.kinds/0` — whoever makes that change must revisit this
   # function, and this paragraph is how they will know.
   defp send_and_record(type, user_id, email, sender) do
@@ -505,6 +505,6 @@ defmodule Courier.Deliver do
   # A real Message-ID header carrying the id courier returns and records, so a
   # bounce or a complaint that quotes it can be tied back to the row.
   defp tag(email, message_id) do
-    Swoosh.Email.header(email, "message-id", "<#{message_id}@cafaye.com>")
+    Swoosh.Email.header(email, "message-id", "<#{message_id}@anywaye.com>")
   end
 end

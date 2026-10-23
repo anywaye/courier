@@ -61,13 +61,13 @@ defmodule Courier.SmtpDeliveryTest do
 
       # The envelope courier built: `config :courier, :mailing`'s from address
       # and the address the platform handed in.
-      assert message.from == "no-reply@cafaye.com"
+      assert message.from == "no-reply@anywaye.com"
       assert message.to == ["roundtrip@example.com"]
 
       # The subject is courier's, from the `:mailing` configuration, rendered
       # through the template — so this is also the assertion that the subject
       # templates still resolve.
-      assert message.data =~ "Subject: Welcome to Cafaye"
+      assert message.data =~ "Subject: Welcome to Anywaye"
 
       # The body is the rendered template, not an empty multipart. A message
       # that "arrives" with a subject line and no body is still useless, and

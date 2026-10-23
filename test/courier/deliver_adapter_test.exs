@@ -24,7 +24,7 @@ defmodule Courier.DeliverAdapterTest do
     user_id: @user_id,
     email: "kaka@example.com",
     name: "Kaka",
-    url: "https://cafaye.com/verify?token=abc123"
+    url: "https://anywaye.com/verify?token=abc123"
   }
 
   setup do

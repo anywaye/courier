@@ -61,7 +61,7 @@ defmodule Courier.OutboxEnqueueTest do
 
   describe "the send path" do
     test "leaves a job in the queue, and the job's args name the row" do
-      assert {:ok, %{event_id: event_id}} = deliver!("https://cafaye.com/verify?token=abc123")
+      assert {:ok, %{event_id: event_id}} = deliver!("https://anywaye.com/verify?token=abc123")
 
       assert [job] = all_enqueued(worker: ProcessOutboxWorker)
 
@@ -76,8 +76,8 @@ defmodule Courier.OutboxEnqueueTest do
       # [:worker]` would queue one job and strand the second send until the next
       # sweep, which is the failure this file exists to rule out wearing the
       # costume of an optimization.
-      assert {:ok, %{event_id: first}} = deliver!("https://cafaye.com/verify?token=abc123")
-      assert {:ok, %{event_id: second}} = deliver!("https://cafaye.com/verify?token=def456")
+      assert {:ok, %{event_id: first}} = deliver!("https://anywaye.com/verify?token=abc123")
+      assert {:ok, %{event_id: second}} = deliver!("https://anywaye.com/verify?token=def456")
 
       assert [job_one, job_two] = all_enqueued(worker: ProcessOutboxWorker)
 
@@ -98,7 +98,7 @@ defmodule Courier.OutboxEnqueueTest do
     end
 
     test "running the job the queue holds publishes the row it names" do
-      assert {:ok, %{event_id: event_id}} = deliver!("https://cafaye.com/verify?token=abc123")
+      assert {:ok, %{event_id: event_id}} = deliver!("https://anywaye.com/verify?token=abc123")
 
       assert [job] = all_enqueued(worker: ProcessOutboxWorker)
       assert {:ok, %{published: 1}} = perform_queued(job)
@@ -109,7 +109,7 @@ defmodule Courier.OutboxEnqueueTest do
     end
 
     test "the row is not published before the job runs" do
-      assert {:ok, %{event_id: event_id}} = deliver!("https://cafaye.com/verify?token=abc123")
+      assert {:ok, %{event_id: event_id}} = deliver!("https://anywaye.com/verify?token=abc123")
 
       assert Repo.get!(OutboxEvent, event_id).published_at == nil
       refute_received {:nats_published, _envelope}
@@ -120,7 +120,7 @@ defmodule Courier.OutboxEnqueueTest do
       # that already saw it ignores the duplicate", and that promise is a claim
       # about the LOOP: at-least-once means a second pass is ordinary operation,
       # and the second pass must publish nothing.
-      assert {:ok, %{event_id: event_id}} = deliver!("https://cafaye.com/verify?token=abc123")
+      assert {:ok, %{event_id: event_id}} = deliver!("https://anywaye.com/verify?token=abc123")
 
       assert [job] = all_enqueued(worker: ProcessOutboxWorker)
       assert {:ok, %{published: 1}} = perform_queued(job)
@@ -137,7 +137,7 @@ defmodule Courier.OutboxEnqueueTest do
 
   describe "the same event kicked twice" do
     test "neither later kick enqueues anything" do
-      assert {:ok, %{event_id: event_id}} = deliver!("https://cafaye.com/verify?token=abc123")
+      assert {:ok, %{event_id: event_id}} = deliver!("https://anywaye.com/verify?token=abc123")
 
       # The write already queued one, so both of these are the answer to "there is
       # already a relay waiting for this event". It is not an error: a kick that
@@ -154,7 +154,7 @@ defmodule Courier.OutboxEnqueueTest do
       # PENDING job for this event", so a published event can be re-announced.
       # A key that outlived its job would make the sweep the only way back, which
       # is the coupling this attribute exists to avoid.
-      assert {:ok, %{event_id: event_id}} = deliver!("https://cafaye.com/verify?token=abc123")
+      assert {:ok, %{event_id: event_id}} = deliver!("https://anywaye.com/verify?token=abc123")
 
       assert [job] = all_enqueued(worker: ProcessOutboxWorker)
       assert {:ok, %{published: 1}} = perform_queued(job)

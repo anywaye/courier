@@ -9,7 +9,7 @@ defmodule CourierWeb.HealthController do
   serving errors.
 
   Both sit at the root, outside `/api` (see `CourierWeb.Router`): probes run
-  before routing, auth, or any other cafaye service is in play.
+  before routing, auth, or any other anywaye service is in play.
   """
 
   use CourierWeb, :controller

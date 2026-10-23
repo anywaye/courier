@@ -66,14 +66,14 @@ defmodule Courier.Repo.Migrations.CreateTenantSendingDomains do
 
   ## The row-level security
 
-  `select cafaye.protect_table('tenant_sending_domains', 'courier_app')` —
+  `select anywaye.protect_table('tenant_sending_domains', 'courier_app')` —
   kit's substrate, verbatim, the same call
   `20261003090000_protect_account_scoped_tables.exs` makes for the three
   tables it protects. This is not optional and not negotiable: a credentials
   table one account can read is a security incident, and the substrate is
   already there. `protect_table` enables and FORCEs row level security and
   installs the four policies (`select`/`insert`/`update`/`delete`) scoped to
-  `cafaye.current_account_id()`, so a query that loses its account predicate
+  `anywaye.current_account_id()`, so a query that loses its account predicate
   still cannot read another tenant's credentials.
   """
 
@@ -114,7 +114,7 @@ defmodule Courier.Repo.Migrations.CreateTenantSendingDomains do
     # The send path's lookup is by domain; the management reads are by account.
     create index(:tenant_sending_domains, [:account_id])
 
-    execute("select cafaye.protect_table('tenant_sending_domains', 'courier_app')")
+    execute("select anywaye.protect_table('tenant_sending_domains', 'courier_app')")
   end
 
   def down do

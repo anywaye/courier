@@ -1,1 +1,1 @@
-{"type":"email_change_new","kind":"transactional","required":["email","previous_email"],"subject":"Confirm your new Cafaye email address"}
+{"type":"email_change_new","kind":"transactional","required":["email","previous_email"],"subject":"Confirm your new Anywaye email address"}

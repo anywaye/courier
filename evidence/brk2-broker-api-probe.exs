@@ -17,8 +17,8 @@ _ = Courier.Nats.start_link([])
 payload = Base.encode64(Jason.encode!(%{"probe" => true}))
 
 probes = [
-  {"API publish, stream cafaye (does not exist)",
-   "$JS.API.STREAM.PUBLISH.cafaye",
+  {"API publish, stream anywaye (does not exist)",
+   "$JS.API.STREAM.PUBLISH.anywaye",
    Jason.encode!(%{"subject" => "courier.email.delivered", "payload" => payload})},
   {"API publish, stream narrowtest (exists, courier.> not covered)",
    "$JS.API.STREAM.PUBLISH.narrowtest",

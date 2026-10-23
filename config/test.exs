@@ -199,7 +199,7 @@ config :courier, :identity_url, "http://identity.test:8080"
 # It is in the repository because the suite has to be able to assert that courier
 # presents THIS value and never the caller's — which is a claim nothing can check
 # without a value to check.
-config :courier, :identity_token, "cafaye_couriers-own-service-credential"
+config :courier, :identity_token, "anywaye_couriers-own-service-credential"
 
 # OpenTelemetry in test, and it is ON.
 #

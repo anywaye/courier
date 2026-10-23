@@ -1,8 +1,8 @@
 # courier
 
-**Current direction (2026-10-19):** Ship is the product. The cafaye stack is internal infrastructure; we are not selling or supporting it as a standalone product as of this date. We continue to develop and improve it, treating the founder as the primary customer and keeping "build once, run everywhere" true, with the expectation that it may be offered again later.
+**Current direction (2026-10-19):** Ship is the product. The anywaye stack is internal infrastructure; we are not selling or supporting it as a standalone product as of this date. We continue to develop and improve it, treating the founder as the primary customer and keeping "build once, run everywhere" true, with the expectation that it may be offered again later.
 
-cafaye **courier** — transactional email, notification preferences, and every
+anywaye **courier** — transactional email, notification preferences, and every
 outbound webhook. Phoenix 1.8 API-only service, Elixir 1.20 / OTP 29, Postgres.
 
 This repository is a working, deployable service with probes, a release image,
@@ -77,7 +77,7 @@ contract: every secret the first names must be in the second's `env.secret`
 list, and `test/courier/backup_config_test.exs` fails if the mount or the
 overlap is ever broken. The full procedure — and the drill, which is the step
 that proves the rest — is in
-[kit's backup and restore runbook](https://github.com/cafaye/docs/blob/master/src/content/docs/runbooks/backup-and-restore.md).
+[kit's backup and restore runbook](https://github.com/anywaye/docs/blob/master/src/content/docs/runbooks/backup-and-restore.md).
 
 **What is in the backup: one Postgres database, dumped with `pg_dump`, written
 to restic in a Cloudflare R2 bucket you choose.** courier owns exactly one
@@ -129,7 +129,7 @@ more than it does is worse than none.
   ciphertext, and courier cannot read its own rows until that key is supplied
   unchanged.** The rows come back; the ability to sign with them does not. Keep
   `COURIER_SECRET_BOX_KEY` and `RESTIC_PASSWORD` outside the restic repository —
-  [secret rotation](https://github.com/cafaye/docs/blob/master/src/content/docs/runbooks/secret-rotation.md)
+  [secret rotation](https://github.com/anywaye/docs/blob/master/src/content/docs/runbooks/secret-rotation.md)
   is where they belong. Losing `COURIER_SECRET_BOX_KEY` means every stored secret
   has to be re-issued to its customer, because the plaintext cannot be recovered
   from the ciphertext.
@@ -175,12 +175,12 @@ nobody needs it.
 
 ## CI
 
-`.github/workflows/ci.yml` calls `cafaye/kit`'s reusable workflow for the shared
+`.github/workflows/ci.yml` calls `anywaye/kit`'s reusable workflow for the shared
 half and adds the two jobs kit cannot own:
 
 | Job       | What it is                                                                                                    | Why it is not in kit's workflow                                                                   |
 | --------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `ci`      | `uses: cafaye/kit/.github/workflows/ci.reusable.yml@master`, `language: elixir`, toolchain pinned from `mise.toml` | — that is kit's job, and it is the only copy                                                                 |
+| `ci`      | `uses: anywaye/kit/.github/workflows/ci.reusable.yml@master`, `language: elixir`, toolchain pinned from `mise.toml` | — that is kit's job, and it is the only copy                                                                 |
 | `gate`    | `bin/prime` against a `postgres:17-alpine` service, each test tier named and counted, a `git diff --exit-code` guard on `mix.lock`, and a coverage floor | A caller cannot pass `services:` to a reusable workflow, and the floors are courier's numbers |
 | `release` | `mix release` on the pinned toolchain, and the boot contract for `COURIER_SECRET_BOX_KEY`                          | kit builds no image, and only courier knows its release needs a key it must refuse to default        |
 
@@ -204,10 +204,10 @@ A push to `master` publishes two artifacts, both through kit's reusable
 workflows and one caller, `.github/workflows/publish.yml` — kit's caller
 template (`kit/templates/publish/publish.yml`), copied verbatim:
 
-- **the image** at `ghcr.io/cafaye/courier:sha-<full 40 chars>` (plus
+- **the image** at `ghcr.io/anywaye/courier:sha-<full 40 chars>` (plus
   `<branch>`, plus `latest` on the default branch) — what `config/deploy.yml`
   deploys;
-- **the chart** at `oci://ghcr.io/cafaye/charts/courier:<chart version>` — what
+- **the chart** at `oci://ghcr.io/anywaye/charts/courier:<chart version>` — what
   the substrate's Argo `Application` pulls.
 
 The caller grants `packages: write` — a reusable workflow can request a
@@ -215,7 +215,7 @@ permission but cannot grant itself one, and omitting it is a 401 at the push
 that reads like a wrong password — and passes `push: true`: the reusable
 workflows default to `push: false`, so a caller that omits the input publishes
 nothing and says nothing. The composition lives in kit; the caller is one
-`uses:` of `cafaye/kit/.github/workflows/publish.reusable.yml@master`, and a
+`uses:` of `anywaye/kit/.github/workflows/publish.reusable.yml@master`, and a
 caller that inlines the steps has forked it.
 
 **The chart's `version` is the tag.** `chart/Chart.yaml`'s `version` is the
@@ -289,7 +289,7 @@ test that plug resolves the caller through `Courier.Principal.Introspection`:
 courier reads the caller's token from `Authorization: Bearer` and asks identity
 `POST /v1/introspections` what it may do and for which account.
 
-The token is **opaque**. It is `cafaye_` plus random bytes and identity's row
+The token is **opaque**. It is `anywaye_` plus random bytes and identity's row
 holds a SHA-256 of it, so there is no claim document inside it and no published
 key set to verify one against — asking identity is the only way to learn an
 `account_id`. That makes authentication a network hop on every `/v1` request, and
@@ -351,13 +351,13 @@ Dockerfile                                      two-stage release build, slim fi
 docker-compose.yml                              an OVERRIDE on kit's stack: courier's
                                                service, its database and role on
                                                the shared cluster, the crash layer
-cafaye.yml                                      the manifest (draft, see below)
+anywaye.yml                                      the manifest (draft, see below)
 ```
 
 ## The manifest
 
-`cafaye.yml` declares courier to the rest of the platform. It validates against
-`cafaye/core`'s `schemas/cafaye.manifest.schema.json`; core owns that format, so
+`anywaye.yml` declares courier to the rest of the platform. It validates against
+`anywaye/core`'s `schemas/anywaye.manifest.schema.json`; core owns that format, so
 this file is regenerated by `cafe init` rather than hand-maintained once core
 freezes the version. The events courier publishes and the OpenAPI document for
 its API both exist now — `exposes.api` is `openapi.yaml`, which describes every
@@ -565,7 +565,7 @@ NATS_URL=nats://nats:4222     # or tls://HOST:PORT; unset is a supported state
   refusal leaves the row claimable with the broker's own reason in `last_error`.
 - **The stack must define a stream that covers the subjects.** A publish to a
   subject no stream claims is refused by the broker — which is the correct
-  answer (loud, and the row stays claimable), and it is why kit's `cafaye` stream
+  answer (loud, and the row stays claimable), and it is why kit's `anywaye` stream
   carries `identity.>,billing.>,courier.>,muse.>,darkroom.>`
   (`kit/templates/compose/docker-compose.yml:540`,
   `kit/templates/substrate/install.sh:1365`). Measured against a real broker
@@ -669,7 +669,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/jso
     "type": "welcome",
     "kind": "transactional",
     "required": ["email", "name"],
-    "subject": "Welcome to Cafaye, %{name}",
+    "subject": "Welcome to Anywaye, %{name}",
     "html_template": "<p>Hi <%= @greeting %></p><p><a href=\\"<%= @url %>\\">Confirm</a></p>",
     "text_template": "Hi <%= @greeting %>\\n\\nConfirm: <%= @url %>"
   }'
@@ -754,7 +754,7 @@ Conventions live in [AGENTS.md](AGENTS.md).
 
 courier is under the **Business Source License 1.1** — the full text is
 [LICENSE](LICENSE), and it replaced a closed "all rights reserved" grant that
-allowed nothing beyond viewing (OPS-D2). Its parameters are Licensor Cafaye,
+allowed nothing beyond viewing (OPS-D2). Its parameters are Licensor Anywaye,
 Licensed Work courier, Additional Use Grant None, Change Date 2030-10-10 and
 Change License Apache-2.0.
 
@@ -762,12 +762,12 @@ Read the licence rather than this paragraph for what you may do. Its Terms
 grant copying, modification, derivative works, redistribution and
 **non-production** use; the Additional Use Grant is `None`, so production use
 is not granted by this file and the licence says you must then buy a
-commercial licence from Cafaye or refrain from using it. On the Change Date
+commercial licence from Anywaye or refrain from using it. On the Change Date
 each version keeps running under Apache-2.0. BSL is not an open-source
 licence, and the licence's own Notice says that out loud.
 
 The fleet's decision describes the intent as "free to run, free to self-host,
-never to offer a competing service" (OPS-D2, `cafaye/notes/ops.md:181`). The
+never to offer a competing service" (OPS-D2, `anywaye/notes/ops.md:181`). The
 parameters chosen do not carry the first half of that sentence, and the
 discrepancy is recorded rather than smoothed over in
 `REPORT-ops-lic-services-a-courier`.

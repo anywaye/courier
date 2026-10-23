@@ -29,7 +29,7 @@ defmodule CourierWeb.Plugs.IngestToken do
   architecture was chosen for, and it holds only because the auth header is the
   SDK's.
 
-  `x-cafaye-error-token` is also accepted, as a second presentation of the *same*
+  `x-anywaye-error-token` is also accepted, as a second presentation of the *same*
   secret, so an operator can `curl` the relay without hand-assembling a Sentry
   auth header. It is not a second secret and adds no surface; when both headers
   are present they must agree.
@@ -37,7 +37,7 @@ defmodule CourierWeb.Plugs.IngestToken do
   ## Every ambiguity is a refusal, not a resolution
 
   A repeated `X-Sentry-Auth`, a repeated `sentry_key` inside one header, a header
-  with no `Sentry ` scheme prefix, a repeated `x-cafaye-error-token`, and two
+  with no `Sentry ` scheme prefix, a repeated `x-anywaye-error-token`, and two
   headers carrying different values are **all refused**. Each has a
   "last-one-wins" reading that would accept `wrong-then-right`, and on a shared
   secret that is a header-injection surface. Where a value could be resolved two
@@ -137,7 +137,7 @@ defmodule CourierWeb.Plugs.IngestToken do
   # exactly as the SDK sends it. That is the whole reason the relay can be fed by
   # three unmodified SDKs with no bespoke HTTP client on any of them.
   #
-  # `x-cafaye-error-token` is still read, and deliberately: an operator debugging a
+  # `x-anywaye-error-token` is still read, and deliberately: an operator debugging a
   # deployment with `curl` should not have to hand-assemble a Sentry auth header to
   # find out whether the relay is up. It is a **second** accepted presentation of
   # one secret rather than a second secret, so it adds no surface — and when both
@@ -146,12 +146,12 @@ defmodule CourierWeb.Plugs.IngestToken do
   defp presented(conn) do
     with {:ok, header} <- one_header(conn, "x-sentry-auth"),
          {:ok, key} <- sentry_key(header) do
-      case one_header(conn, "x-cafaye-error-token") do
+      case one_header(conn, "x-anywaye-error-token") do
         {:ok, explicit} -> if secure?(explicit, key), do: {:ok, key}, else: :error
         :error -> {:ok, key}
       end
     else
-      :error -> one_header(conn, "x-cafaye-error-token")
+      :error -> one_header(conn, "x-anywaye-error-token")
     end
   end
 

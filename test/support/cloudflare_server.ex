@@ -204,11 +204,11 @@ defmodule Courier.TestSupport.CloudflareServer do
       #
       # 1. The REST API's named-address object is `{"address", "name"}` — a
       #    payload carrying `"email"` is refused with 400
-      #    invalid_request_schema (measured live on cafaye.com).
+      #    invalid_request_schema (measured live on anywaye.com).
       # 2. Cloudflare Email Sending OWNS the Message-ID: it assigns one and
       #    returns it as `result.message_id`, and a caller-supplied
       #    `message-id` header — in EITHER case — is refused with 400 / 10202
-      #    (measured live on cafaye.com, 2026-10-16). A test that asserted only
+      #    (measured live on anywaye.com, 2026-10-16). A test that asserted only
       #    that the adapter dropped the header would be re-stating the
       #    adapter's own constant; this makes the round trip fail if the
       #    header is forwarded again.

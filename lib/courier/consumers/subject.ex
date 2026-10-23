@@ -14,7 +14,7 @@ defmodule Courier.Consumers.Subject do
   whatever the subscriber's callback was handed, and a type read from a job's
   args or a config map is an atom in half the paths and a string in the other
   half. `to_string/1` on the way in means the registry — which is keyed by the
-  strings in `cafaye.yml` — has exactly one key shape, and a type arriving as an
+  strings in `anywaye.yml` — has exactly one key shape, and a type arriving as an
   atom is not silently unhandled.
   """
 

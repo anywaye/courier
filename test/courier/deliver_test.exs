@@ -44,7 +44,7 @@ defmodule Courier.DeliverTest do
         user_id: @user_id,
         email: "kaka@example.com",
         name: "Kaka",
-        url: "https://cafaye.com/verify?token=abc123"
+        url: "https://anywaye.com/verify?token=abc123"
       },
       overrides
     )
@@ -68,7 +68,7 @@ defmodule Courier.DeliverTest do
     test "sends the mail" do
       assert {:ok, _result} = Deliver.welcome(payload())
 
-      assert_email_sent(subject: "Welcome to Cafaye", to: [{"Kaka", "kaka@example.com"}])
+      assert_email_sent(subject: "Welcome to Anywaye", to: [{"Kaka", "kaka@example.com"}])
     end
 
     test "returns the notification's message id and the id of the event recording it" do
@@ -85,7 +85,7 @@ defmodule Courier.DeliverTest do
       # Swoosh's Test adapter hands the message over as `{:email, email}`, and
       # `assert_email_sent/0` returns that message as it received it.
       assert {:email, sent} = assert_email_sent()
-      assert sent.headers["message-id"] == "<#{result.message_id}@cafaye.com>"
+      assert sent.headers["message-id"] == "<#{result.message_id}@anywaye.com>"
     end
 
     test "the event subject is the notification the event is about" do
@@ -144,7 +144,7 @@ defmodule Courier.DeliverTest do
       assert {:ok, welcome} = Deliver.welcome(payload())
 
       assert {:ok, reset} =
-               Deliver.password_reset(payload(%{url: "https://cafaye.com/reset?t=1"}))
+               Deliver.password_reset(payload(%{url: "https://anywaye.com/reset?t=1"}))
 
       assert {:ok, invitation} =
                Deliver.team_invitation(payload(%{account_name: "Moon", invited_by: "Ruto"}))
@@ -154,13 +154,13 @@ defmodule Courier.DeliverTest do
 
       assert {:ok, change_current} =
                Deliver.email_change_current(
-                 payload(%{url: "https://cafaye.com/email-changes/c?t=1"})
+                 payload(%{url: "https://anywaye.com/email-changes/c?t=1"})
                )
 
       assert {:ok, change_new} =
                Deliver.email_change_new(payload(%{previous_email: "kaka@example.com"}))
 
-      # The receipt is the money type: `user_id` is the cafaye customer the
+      # The receipt is the money type: `user_id` is the anywaye customer the
       # event names, the amount arrives rendered, and the invoice id is the one
       # optional field in the catalog.
       assert {:ok, receipt} =
@@ -190,10 +190,10 @@ defmodule Courier.DeliverTest do
     end
 
     test "a password reset and a team invitation are different messages" do
-      {:ok, _} = Deliver.password_reset(payload(%{url: "https://cafaye.com/reset?t=1"}))
+      {:ok, _} = Deliver.password_reset(payload(%{url: "https://anywaye.com/reset?t=1"}))
       {:ok, _} = Deliver.team_invitation(payload(%{account_name: "Moon", invited_by: "Ruto"}))
 
-      assert_email_sent(subject: "Reset your Cafaye password")
+      assert_email_sent(subject: "Reset your Anywaye password")
       assert_email_sent(subject: "Ruto invited you to join Moon")
     end
   end
@@ -228,10 +228,10 @@ defmodule Courier.DeliverTest do
     test "another type still goes out" do
       assert {:ok, _result} =
                Deliver.password_reset(
-                 payload(%{email: @email, url: "https://cafaye.com/reset?t=1"})
+                 payload(%{email: @email, url: "https://anywaye.com/reset?t=1"})
                )
 
-      assert_email_sent(subject: "Reset your Cafaye password")
+      assert_email_sent(subject: "Reset your Anywaye password")
       assert [%{type: "courier.email.delivered"}] = outbox()
     end
 
@@ -270,10 +270,10 @@ defmodule Courier.DeliverTest do
       # read by the address-level check and would stop a password reset as well.
       assert {:ok, _result} =
                Deliver.password_reset(
-                 payload(%{email: @email, url: "https://cafaye.com/reset?t=1"})
+                 payload(%{email: @email, url: "https://anywaye.com/reset?t=1"})
                )
 
-      assert_email_sent(subject: "Reset your Cafaye password")
+      assert_email_sent(subject: "Reset your Anywaye password")
       assert [%{type: "courier.email.delivered"}] = sends()
     end
 
@@ -293,7 +293,7 @@ defmodule Courier.DeliverTest do
                Deliver.team_invitation(
                  payload(%{
                    email: @email,
-                   url: "https://cafaye.com/join",
+                   url: "https://anywaye.com/join",
                    account_name: "Acme",
                    invited_by: "Kaka"
                  })

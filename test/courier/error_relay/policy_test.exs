@@ -28,7 +28,7 @@ defmodule Courier.ErrorRelay.PolicyTest do
   read by a human on purpose. That is exactly the threat model core's redaction
   policy was written for, which is why the collector already deletes
   `exception.message` and `exception.stacktrace` off span events — see
-  `transform/cafaye_span_events` in kit's collector config, whose comment calls
+  `transform/anywaye_span_events` in kit's collector config, whose comment calls
   `exception.message` "a path straight to a prompt". So **this policy removes
   the exception message and the frame variables.** What survives is the class,
   the file, the line, the function, the release, the environment, and the
@@ -48,7 +48,7 @@ defmodule Courier.ErrorRelay.PolicyTest do
   @canary "CANARY-4f19b2c7-do-not-store-me"
 
   # Every one of these is a credential shape the collector already masks, kept
-  # byte-identical to `blocked_values` in kit's `redaction/cafaye_traces`
+  # byte-identical to `blocked_values` in kit's `redaction/anywaye_traces`
   # processor. Two implementations of the same vocabulary is one too many, so
   # this list is the collector's list and a change to one is a change to both.
   @jwt "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"
@@ -257,13 +257,13 @@ defmodule Courier.ErrorRelay.PolicyTest do
       # removed would be a tag whose value changes with every allowlist edit,
       # which is a cardinality axis nobody queries and a history that breaks on
       # a config change — the same argument the collector's
-      # `transform/cafaye_metrics_labels` makes about
+      # `transform/anywaye_metrics_labels` makes about
       # `redaction.redacted.count`. So the counts go to a log line and the event
       # carries one fixed token, which is what lets a reader of a GlitchTip issue
       # know the event is not something a service wrote straight to the store.
       redacted = redact(event())
 
-      assert "true" == redacted["tags"]["cafaye.redacted"]
+      assert "true" == redacted["tags"]["anywaye.redacted"]
     end
   end
 
@@ -305,7 +305,7 @@ defmodule Courier.ErrorRelay.PolicyTest do
         rendered = Jason.encode!(redacted)
 
         refute rendered =~ secret, "#{secret} survived the blocked_values pass"
-        assert rendered =~ "cafaye.redacted"
+        assert rendered =~ "anywaye.redacted"
       end
     end
 

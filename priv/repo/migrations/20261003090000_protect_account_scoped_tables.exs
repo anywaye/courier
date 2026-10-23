@@ -19,7 +19,7 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
 
   ## WHY THE SUBSTRATE AND NOT HAND-WRITTEN POLICIES
 
-  `select cafaye.protect_table(...)`, from kit's
+  `select anywaye.protect_table(...)`, from kit's
   `templates/database/tenancy/substrate.sql`, copied verbatim. `identity` did
   the same thing in `migrations/00016_account_isolation.sql`, and a second
   dialect of row-level security in one fleet is a dialect the next reader does
@@ -58,7 +58,7 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
   The column is **nullable on purpose** — `20260930075429` documents that
   `Courier.Deliver` records `email.delivered` for a *user* and courier does not
   know which account that user is in. `protect_table` writes
-  `with check (account_id = (select cafaye.current_account_id()))`, and
+  `with check (account_id = (select anywaye.current_account_id()))`, and
   `account_id = NULL` is never true. Protecting this table therefore **refuses
   every such insert with `42501`**, and the relay would additionally read zero
   rows: `DispatchWebhooksWorker` scans `webhooks_dispatched_at IS NULL` across
@@ -68,7 +68,7 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
   background process with no request identity, and the substrate has no answer
   for that: a per-account policy on a table read cross-account by design either
   hides the work or needs a `SECURITY DEFINER` escape hatch, and inventing that
-  here is the second dialect this migration exists to avoid. `cafaye`'s
+  here is the second dialect this migration exists to avoid. `anywaye`'s
   `unprotected_tables()` sweep will name `outbox_events` on every run, and that
   is the correct answer from it: courier holds account data in a
   request-less place.
@@ -90,7 +90,7 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
 
   ## WHAT THIS MIGRATION DOES NOT DO, AND THAT IS THE POINT
 
-  It does not call `cafaye.begin_account/1`. It installs the boundary; courier
+  It does not call `anywaye.begin_account/1`. It installs the boundary; courier
   does not yet turn it on per request. **Until it does, courier's own reads of
   these three tables go through as the role that owns them**, which is why
   nothing in the Elixir suite changed behaviour here — see
@@ -113,7 +113,7 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
     # account's response body. The unique index is already
     # `(account_id, endpoint, idempotency_key)`, and `protect_table` adds the
     # `account_id`-leading index the policy filters on.
-    execute("select cafaye.protect_table('idempotency_keys', 'courier_app')")
+    execute("select anywaye.protect_table('idempotency_keys', 'courier_app')")
 
     # ONE ANSWER PER PERSON, and the column says who may be entitled to it.
     # `Courier.NotificationPreferences.enabled?/3` takes no account on purpose
@@ -123,12 +123,12 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
     # the table makes the policy require an identity, and the identity-less read
     # reads zero rows. Safe — but it means this table is protected and NOT yet
     # switched on, which is the state this migration leaves it in.
-    execute("select cafaye.protect_table('notification_preferences', 'courier_app')")
+    execute("select anywaye.protect_table('notification_preferences', 'courier_app')")
 
     # A SEALED SIGNING SECRET. `Courier.SecretBox` puts ciphertext in
     # `secret`, and the plaintext exists in one 201 and in the signing process.
     # Another account's endpoint row is another account's webhook destination.
-    execute("select cafaye.protect_table('webhook_endpoints', 'courier_app')")
+    execute("select anywaye.protect_table('webhook_endpoints', 'courier_app')")
   end
 
   def down do
@@ -142,15 +142,15 @@ defmodule Courier.Repo.Migrations.ProtectAccountScopedTables do
 
     for table <- ~w(idempotency_keys notification_preferences webhook_endpoints) do
       for command <- ~w(select insert update delete) do
-        execute("drop policy if exists #{table}_cafaye_#{command} on #{table}")
+        execute("drop policy if exists #{table}_anywaye_#{command} on #{table}")
       end
     end
 
     for table <- ~w(idempotency_keys notification_preferences webhook_endpoints) do
-      execute("drop index if exists #{table}_cafaye_account_id_idx")
+      execute("drop index if exists #{table}_anywaye_account_id_idx")
     end
 
-    execute("drop schema if exists cafaye cascade")
+    execute("drop schema if exists anywaye cascade")
   end
 
   # The login role, provisioned if the cluster has not.

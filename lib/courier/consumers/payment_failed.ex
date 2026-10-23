@@ -15,7 +15,7 @@ defmodule Courier.Consumers.PaymentFailed do
   about.
 
   The payload is the same normalized invoice event as the receipt's, read
-  there and not re-derived here: `customer_id`, `cafaye_customer_id`,
+  there and not re-derived here: `customer_id`, `anywaye_customer_id`,
   `subscription_id`, `invoice_id`, `payment_intent_id`, `paid: false`,
   `amount: {"amount_minor", "currency"}`, `attempt_count`,
   `next_payment_attempt`, plus the recipient fact `with_recipient` merges in,
@@ -41,7 +41,7 @@ defmodule Courier.Consumers.PaymentFailed do
 
   `handle/1` is given the `consumed_events` row — byte for byte the payload
   courier stored, including on a redelivery. And the send is attributed to the
-  cafaye CUSTOMER rather than a user, for the reason the receipt's moduledoc
+  anywaye CUSTOMER rather than a user, for the reason the receipt's moduledoc
   gives in full: the money event names a customer, courier looks nothing up,
   and the three checks in `Courier.Deliver` that are about the address still
   run unchanged.
@@ -55,7 +55,7 @@ defmodule Courier.Consumers.PaymentFailed do
           required(:amount_display) => String.t(),
           # nil for a Checkout-backed one-off, which no invoice names.
           required(:invoice_id) => String.t() | nil,
-          # The cafaye customer the failed payment was for, carried as the
+          # The anywaye customer the failed payment was for, carried as the
           # send's attribution. See the moduledoc.
           required(:payer) => String.t()
         }
@@ -156,13 +156,13 @@ defmodule Courier.Consumers.PaymentFailed do
     end
   end
 
-  # The cafaye customer the failed payment was for. Required: it is the
+  # The anywaye customer the failed payment was for. Required: it is the
   # identifier `Courier.Deliver` attributes the send to, exactly as on the
   # receipt.
   defp fetch_payer(data) do
-    case Map.fetch(data, "cafaye_customer_id") do
+    case Map.fetch(data, "anywaye_customer_id") do
       {:ok, payer} when is_binary(payer) and payer != "" -> {:ok, payer}
-      _missing_or_wrong_shape -> {:error, {:incomplete_payload, "cafaye_customer_id"}}
+      _missing_or_wrong_shape -> {:error, {:incomplete_payload, "anywaye_customer_id"}}
     end
   end
 

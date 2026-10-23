@@ -5,7 +5,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
   ## Why it is not on `CourierWeb.Router`
 
   Because it is not a customer API operation and putting it there would have cost
-  something this repository will not pay. Everything on `/v1` takes a cafaye
+  something this repository will not pay. Everything on `/v1` takes a anywaye
   principal resolved from a bearer token; this surface takes a **shared ingest
   secret**, because a Sentry SDK holds a DSN and there is no identity service in
   that path to mint a JWT. A generated client from `openapi.yaml` must not have
@@ -134,8 +134,8 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
         |> Plug.Test.conn("/api/1/envelope/", valid_envelope())
         |> Plug.Conn.put_req_header("content-type", "application/x-sentry-envelope")
         |> Plug.Conn.prepend_req_headers([
-          {"x-cafaye-error-token", "not-the-token"},
-          {"x-cafaye-error-token", @token}
+          {"x-anywaye-error-token", "not-the-token"},
+          {"x-anywaye-error-token", @token}
         ])
         |> assign(:error_relay, relay)
         |> dispatch_post()
@@ -186,7 +186,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
         :post
         |> Plug.Test.conn("/api/1/envelope/", valid_envelope())
         |> Plug.Conn.put_req_header("content-type", "application/x-sentry-envelope")
-        |> Plug.Conn.put_req_header("x-cafaye-error-token", @token)
+        |> Plug.Conn.put_req_header("x-anywaye-error-token", @token)
         |> Plug.Conn.put_req_header(
           "x-sentry-auth",
           "Sentry sentry_version=7, sentry_key=#{@token}"
@@ -206,7 +206,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
         :post
         |> Plug.Test.conn("/api/1/envelope/", valid_envelope())
         |> Plug.Conn.put_req_header("content-type", "application/x-sentry-envelope")
-        |> Plug.Conn.put_req_header("x-cafaye-error-token", "not-the-token")
+        |> Plug.Conn.put_req_header("x-anywaye-error-token", "not-the-token")
         |> Plug.Conn.put_req_header(
           "x-sentry-auth",
           "Sentry sentry_version=7, sentry_key=#{@token}"
@@ -233,7 +233,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
         |> Plug.Conn.put_req_header("content-type", "application/x-sentry-envelope")
         |> Plug.Conn.put_req_header(
           "x-sentry-auth",
-          "Sentry sentry_version=7, sentry_client=cafaye-error-relay/1, sentry_key=#{@token}"
+          "Sentry sentry_version=7, sentry_client=anywaye-error-relay/1, sentry_key=#{@token}"
         )
         |> assign(:error_relay, relay)
         |> dispatch_post()
@@ -352,7 +352,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
       assert url == "http://glitchtip:8000/api/1/envelope/"
 
       assert {"X-Sentry-Auth",
-              "Sentry sentry_version=7, sentry_client=cafaye-error-relay/1, sentry_key=publickey"} in headers
+              "Sentry sentry_version=7, sentry_client=anywaye-error-relay/1, sentry_key=publickey"} in headers
 
       # And the port is the scheme's default when the DSN does not name one, which
       # is `URI.port/1`'s behaviour rather than `nil` — so the two cases are
@@ -513,7 +513,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
       conn =
         :post
         |> Plug.Test.conn("/api/1/envelope/", oversized)
-        |> then(&Plug.Conn.put_req_header(&1, "x-cafaye-error-token", @token))
+        |> then(&Plug.Conn.put_req_header(&1, "x-anywaye-error-token", @token))
         |> then(&Plug.Conn.put_req_header(&1, "content-type", "application/x-sentry-envelope"))
         |> assign(:error_relay, relay)
         |> then(&CourierWeb.ErrorEndpoint.call(&1, []))
@@ -535,7 +535,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
       conn =
         :post
         |> Plug.Test.conn("/api/1/envelope/", String.duplicate("y", 5_000))
-        |> then(&Plug.Conn.put_req_header(&1, "x-cafaye-error-token", @token))
+        |> then(&Plug.Conn.put_req_header(&1, "x-anywaye-error-token", @token))
         |> then(&Plug.Conn.put_req_header(&1, "content-type", "application/x-sentry-envelope"))
         |> then(&Plug.Conn.delete_req_header(&1, "content-length"))
         |> assign(:error_relay, relay)
@@ -796,7 +796,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
   defp post_envelope(body, opts) do
     :post
     |> Plug.Test.conn("/api/1/envelope/", body)
-    # `x-cafaye-error-token` rather than the SDK's `X-Sentry-Auth`, so this helper
+    # `x-anywaye-error-token` rather than the SDK's `X-Sentry-Auth`, so this helper
     # is the explicit-header presentation. The SDK presentation is exercised
     # separately, built from the header format in `deps/sentry/lib/sentry/transport.ex`,
     # because a helper that used the SDK header would have let the plug read a
@@ -804,7 +804,7 @@ defmodule CourierWeb.ErrorRelayEndpointTest do
     |> then(fn conn ->
       case Keyword.get(opts, :token, @token) do
         nil -> conn
-        token -> Plug.Conn.put_req_header(conn, "x-cafaye-error-token", token)
+        token -> Plug.Conn.put_req_header(conn, "x-anywaye-error-token", token)
       end
     end)
     |> then(&Plug.Conn.put_req_header(&1, "content-type", "application/x-sentry-envelope"))

@@ -154,12 +154,12 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
       # READING the stored row's `account_id` and comparing it in Elixir. As the
       # database OWNER that read sees every account's rows and the comparison runs.
       # As **`courier_app`** the read is a subject of the `select` policy
-      # (`account_id = cafaye.current_account_id()`), so the other account's row is
+      # (`account_id = anywaye.current_account_id()`), so the other account's row is
       # not returned at all: `owner/1` reads `nil`, `addressable/2` reads that as
       # "nothing stored", and the answer is the same as for a user courier has
       # never heard of. Measured as `courier_app`:
       #
-      #     begin; select cafaye.begin_account('<other>');
+      #     begin; select anywaye.begin_account('<other>');
       #     select account_id from notification_preferences where user_id = '<theirs>';
       #     -- 0 rows
       #
@@ -520,7 +520,7 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
       conn = put_preferences(owner_conn(), @user_id, %{"preferences" => []})
 
       assert %{"type" => type, "code" => "validation_failed"} = problem(conn)
-      assert type == "https://docs.cafaye.com/errors/validation_failed"
+      assert type == "https://docs.anywaye.com/errors/validation_failed"
     end
 
     test "carries a title, a status, and a detail" do

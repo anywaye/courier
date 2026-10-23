@@ -27,7 +27,7 @@ defmodule Courier.Workers.DispatchWebhooksWorkerIdentityTest do
   ## WHAT IS ASSERTED INSTEAD
 
   **The identity on the connection, at the moment the read ran.** That is
-  observable in-suite even as a superuser, because `cafaye.current_account_id()`
+  observable in-suite even as a superuser, because `anywaye.current_account_id()`
   does not care whether the role would have been filtered: it reports what a
   policy *would* compare against, which is the thing that has to be right.
   Every `webhook_endpoints` statement courier issues during `perform/1` is
@@ -188,7 +188,7 @@ defmodule Courier.Workers.DispatchWebhooksWorkerIdentityTest do
       # :count)`. `webhook_deliveries` carries no `account_id`, so the account's
       # own rows are reached through `endpoint_id` — and a whole-table count is a
       # claim about every other test in the repository as much as about this code,
-      # which is the test-level shape of the weakness `cafaye/notes/debt.md` D18 tracks.
+      # which is the test-level shape of the weakness `anywaye/notes/debt.md` D18 tracks.
       assert [delivery] = Repo.all(where(WebhookDelivery, endpoint_id: ^endpoint.id))
       assert delivery.event_id == row.id
     end

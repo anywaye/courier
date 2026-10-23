@@ -45,7 +45,7 @@ defmodule Courier.Principal.Introspection.Document do
 
   ## `scopes` and `scope` are both read, because the fleet has not chosen
 
-  MD7 in the manager's `cafaye/notes/decisions.md` is open: core's conventions require
+  MD7 in the manager's `anywaye/notes/decisions.md` is open: core's conventions require
   `scopes`, gateway's verifier reads `scope`, and identity emits **both, byte for
   byte** so that whichever name wins is a one-line removal and no credential has
   to be reissued. courier therefore reads the union and assumes neither is the

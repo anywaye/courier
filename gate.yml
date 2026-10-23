@@ -1,7 +1,7 @@
 # gate.yml — how courier is gated, declared rather than guessed.
 #
-# WHY THIS FILE EXISTS. The cafaye standard for declaring a gate lives in
-# `cafaye/core`: `schemas/gate.schema.json` is the format, `harness/gate_check.py`
+# WHY THIS FILE EXISTS. The anywaye standard for declaring a gate lives in
+# `anywaye/core`: `schemas/gate.schema.json` is the format, `harness/gate_check.py`
 # is the checker, and `docs/gate.md` is the reasoning (including the two
 # alternatives that were measured and rejected). courier is adopting it, not
 # inventing it. The short version of why: across fifteen repositories "run the
@@ -62,7 +62,7 @@ gate:
     # The one line that cannot appear unless ExUnit ran to the end of the suite.
     # It is a proof rather than a convention because `gate.proof-missing` is a
     # FAILURE: a gate that exits zero having run nothing is a red, not a green.
-    # This is the defect the format exists to catch — cafaye-rb's database tier
+    # This is the defect the format exists to catch — anywaye-rb's database tier
     # never executed once and the run printed `ok`.
     - id: suite
       # Measured from eight real runs. The shape is anchored at both ends on
@@ -261,7 +261,7 @@ gate:
       #     `Courier.DataCase`, because every claim in it is a claim about a ROW.
       #   * `test/courier/notifications_boundary_test.exs` — 16 tests, also a
       #     `Courier.DataCase`: its subject is `pg_class` and
-      #     `cafaye.unprotected_tables()`, which is a claim about a real database
+      #     `anywaye.unprotected_tables()`, which is a claim about a real database
       #     and cannot be made by a test that never reaches one.
       #
       # So the no-database tier is **unchanged at 645 across the same 28 files** —
@@ -586,7 +586,7 @@ gate:
   # produced **45 failures and no `Result:` line at all**, because that
   # cluster's `courier_test` carries another worker's half-applied state:
   # `notification_events`, `notifications` and `consumed_events` landed in
-  # the `cafaye` schema instead of `public`, so `backup_tables_test.exs`
+  # the `anywaye` schema instead of `public`, so `backup_tables_test.exs`
   # and `notifications_boundary_test.exs` failed on tables the migrations
   # did create. **None of it is this packet's code**, and a floor moved on
   # that measurement would be the contaminated-run defect this file's own

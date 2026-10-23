@@ -148,7 +148,7 @@ defmodule Courier.ReleaseMigrateConfigTest do
       # `%{}` and the route answers 500 with the cost, rather than refusing
       # to start. `Courier.InboundConfig` documents the cost sentence that now
       # lives on a boot log line and in README.
-      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_IDENTITY_TOKEN", "anywaye_fixture-not-a-real-credential")
       System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
       System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
       System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
@@ -169,7 +169,7 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "an empty inbound secret is the same as unset" do
-      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_IDENTITY_TOKEN", "anywaye_fixture-not-a-real-credential")
       System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
       System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
       System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
@@ -190,7 +190,7 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "a set inbound secret configures the resend provider" do
-      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_IDENTITY_TOKEN", "anywaye_fixture-not-a-real-credential")
       System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
       System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
       System.put_env("COURIER_MAIL_ADAPTER", "smtp")
@@ -207,7 +207,7 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "boot without inbound composes the cost notice, naming no secret value" do
-      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_IDENTITY_TOKEN", "anywaye_fixture-not-a-real-credential")
       System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
       System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
       System.put_env("COURIER_MAIL_ADAPTER", "cloudflare")
@@ -251,7 +251,7 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "boot with inbound composes the verifying notice and no cost" do
-      System.put_env("COURIER_IDENTITY_TOKEN", "cafaye_fixture-not-a-real-credential")
+      System.put_env("COURIER_IDENTITY_TOKEN", "anywaye_fixture-not-a-real-credential")
       System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
       System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
       System.put_env("COURIER_MAIL_ADAPTER", "smtp")

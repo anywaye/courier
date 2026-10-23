@@ -55,7 +55,7 @@ defmodule Courier.NotificationsBoundaryTest do
 
   ## THE CONTROL, AND IT IS A REAL TABLE RATHER THAN A FIXTURE
 
-  `cafaye.unprotected_tables()` returning nothing is satisfied by a sweep that
+  `anywaye.unprotected_tables()` returning nothing is satisfied by a sweep that
   reports nothing, so this file's sweep assertion is worth nothing on its own.
   The control is **`outbox_events`**: a real courier table with an `account_id`
   column and no policies, deliberately — `Courier.Deliver` records
@@ -130,10 +130,10 @@ defmodule Courier.NotificationsBoundaryTest do
       for table <- @tables do
         assert MapSet.new(policy_commands(table)) ==
                  MapSet.new([
-                   {"#{table}_cafaye_select", "r"},
-                   {"#{table}_cafaye_insert", "a"},
-                   {"#{table}_cafaye_update", "w"},
-                   {"#{table}_cafaye_delete", "d"}
+                   {"#{table}_anywaye_select", "r"},
+                   {"#{table}_anywaye_insert", "a"},
+                   {"#{table}_anywaye_update", "w"},
+                   {"#{table}_anywaye_delete", "d"}
                  ]),
                "#{table} does not carry exactly the four per-command policies: " <>
                  inspect(policy_commands(table))
@@ -174,7 +174,7 @@ defmodule Courier.NotificationsBoundaryTest do
       # compared `["notification_events", "notifications"]` with
       # `["notifications", "notification_events"]` and reported:
       #
-      #     cafaye.unprotected_tables() named one of the two tables this packet
+      #     anywaye.unprotected_tables() named one of the two tables this packet
       #     added:
       #       ["notifications", "notification_events"]
       #
@@ -184,7 +184,7 @@ defmodule Courier.NotificationsBoundaryTest do
       # stops believing.
       assert Enum.sort(@tables -- named_by_sweep()) == Enum.sort(@tables),
              """
-             cafaye.unprotected_tables() named one of the two tables this packet
+             anywaye.unprotected_tables() named one of the two tables this packet
              added:
 
                #{inspect(@tables -- named_by_sweep())}
@@ -203,7 +203,7 @@ defmodule Courier.NotificationsBoundaryTest do
       # and clean up.
       assert "outbox_events" in named_by_sweep(),
              """
-             cafaye.unprotected_tables() named nothing at all, so the assertion
+             anywaye.unprotected_tables() named nothing at all, so the assertion
              that it does not name `notifications` is satisfied by a sweep that
              reports nothing.
 
@@ -215,7 +215,7 @@ defmodule Courier.NotificationsBoundaryTest do
 
   describe "three denials and one allowance, as the login role" do
     test "no identity reads NO ROWS — and reads none rather than erroring" do
-      # Zero rows, not an error. `cafaye.begin_account(NULL)` CLEARS rather than
+      # Zero rows, not an error. `anywaye.begin_account(NULL)` CLEARS rather than
       # failing, and a policy that raised on an absent identity would tell a
       # caller its request was unauthenticated — which a caller can be made to
       # believe about somebody else's request.
@@ -256,7 +256,7 @@ defmodule Courier.NotificationsBoundaryTest do
 
     test "ANOTHER TENANT'S identity cannot WRITE a row into their account" do
       # The write-side twin of the read denial: `with check` is
-      # `account_id = (select cafaye.current_account_id())`, so a row created in
+      # `account_id = (select anywaye.current_account_id())`, so a row created in
       # somebody else's account is **refused** rather than hidden.
       #
       # **THE ANSWER IS A RAISE, NOT AN `{:error, _}`, AND THAT IS THE POINT.**
@@ -398,7 +398,7 @@ defmodule Courier.NotificationsBoundaryTest do
     end
 
     test "and the sweep's definition of protected agrees with those two reads" do
-      # `cafaye.unprotected_tables()` judges a table on three facts — RLS
+      # `anywaye.unprotected_tables()` judges a table on three facts — RLS
       # enabled, FORCEd, and carrying at least one policy — and the second is the
       # one no lint anywhere checks. This asserts the sweep agrees with the two
       # catalog reads above, so a substrate change that made the sweep silent
@@ -491,7 +491,7 @@ defmodule Courier.NotificationsBoundaryTest do
 
   defp named_by_sweep do
     %{rows: rows} =
-      Repo.query!("select table_name from cafaye.unprotected_tables() order by table_name")
+      Repo.query!("select table_name from anywaye.unprotected_tables() order by table_name")
 
     Enum.map(rows, fn [name] -> name end)
   end

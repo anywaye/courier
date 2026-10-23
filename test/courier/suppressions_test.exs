@@ -382,8 +382,8 @@ defmodule Courier.SuppressionsTest do
       # `Courier.Deliver.tag/2` puts a real Message-ID on every send precisely so
       # this can be filled in. A bounce with no message id is normal — providers
       # do not always quote it — so it is nullable rather than required.
-      assert {:ok, :new, %Suppression{message_id: "courier-abc@cafaye.com"}} =
-               Suppressions.record(event(address(), message_id: "<courier-abc@cafaye.com>"))
+      assert {:ok, :new, %Suppression{message_id: "courier-abc@anywaye.com"}} =
+               Suppressions.record(event(address(), message_id: "<courier-abc@anywaye.com>"))
     end
 
     test "the same message id quoted with and without brackets is one identifier" do
@@ -393,13 +393,13 @@ defmodule Courier.SuppressionsTest do
       email = address()
 
       assert {:ok, :new, bracketed} =
-               Suppressions.record(event(email, message_id: "<courier-xyz@cafaye.com>"))
+               Suppressions.record(event(email, message_id: "<courier-xyz@anywaye.com>"))
 
       assert {:ok, :new, bare} =
-               Suppressions.record(event(email, message_id: "courier-xyz@cafaye.com"))
+               Suppressions.record(event(email, message_id: "courier-xyz@anywaye.com"))
 
       assert bracketed.message_id == bare.message_id
-      assert bare.message_id == "courier-xyz@cafaye.com"
+      assert bare.message_id == "courier-xyz@anywaye.com"
     end
 
     test "a bounce with no message id is stored without one" do

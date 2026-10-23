@@ -4,7 +4,7 @@ defmodule Courier.TenancyTest do
 
   ## WHAT THIS FILE PROVES
 
-  That `cafaye.current_account_id()` holds the caller's account **while the
+  That `anywaye.current_account_id()` holds the caller's account **while the
   transaction runs** — read back through the substrate's own accessor, so the
   value asserted on is the value a policy would compare against.
 
@@ -40,7 +40,7 @@ defmodule Courier.TenancyTest do
 
           before: pg_stat_activity.state = "active", in_xact = t
           after:  pg_stat_activity.state = "active", in_xact = t
-          cafaye.current_account_id()  ->  A          <-- survives COMMIT
+          anywaye.current_account_id()  ->  A          <-- survives COMMIT
 
       So the assertion fails for a reason that has nothing to do with courier,
       and an assertion that is always red teaches a reader to ignore the file.
@@ -105,7 +105,7 @@ defmodule Courier.TenancyTest do
     end
 
     test "nil CLEARS one already set, on the same transaction" do
-      # `cafaye.begin_account(NULL)` CLEARS rather than failing, and it clears
+      # `anywaye.begin_account(NULL)` CLEARS rather than failing, and it clears
       # *within* the transaction — which is what makes the negative control "zero
       # rows, not an error": a request whose account is unknown does not go on
       # reading as whoever it was a moment ago.

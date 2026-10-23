@@ -89,7 +89,7 @@ defmodule Courier.Webhooks.SenderTest do
       # that re-encoded the body between signing and sending would produce a
       # signature no consumer can verify, and the failure would look like the
       # consumer's bug.
-      payload = ~s({"type":"ping","data":{"url":"https://cafaye.com/x?a=1.2"}})
+      payload = ~s({"type":"ping","data":{"url":"https://anywaye.com/x?a=1.2"}})
 
       {_result, request} = send_request(%{payload: payload})
 

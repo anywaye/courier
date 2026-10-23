@@ -107,7 +107,7 @@ defmodule Courier.Unsubscribes do
   ## Why the event is `courier.notification.suppressed` and not a new type
 
   `Courier.Events` has carried a builder for `courier.notification.suppressed`
-  since courier-01, and `cafaye.yml` has declared the type, with no caller — the
+  since courier-01, and `anywaye.yml` has declared the type, with no caller — the
   moduledoc says so and says the sentence to argue with is `Courier.Deliver`'s
   "no mail, no event, no record of a send that did not happen". It is not
   contradicted here: **this is not a send that was refused, it is a standing
@@ -262,8 +262,8 @@ defmodule Courier.Unsubscribes do
     |> url_from()
   end
 
-  # `url: [scheme: "https", host: "cafaye.com", port: 443]`. The port is dropped
-  # when it is the scheme's default, because `https://cafaye.com:443` in a
+  # `url: [scheme: "https", host: "anywaye.com", port: 443]`. The port is dropped
+  # when it is the scheme's default, because `https://anywaye.com:443` in a
   # `List-Unsubscribe` header is a valid URL that no two mail clients spell the
   # same way. A missing scheme or host is **not** defaulted to anything: the
   # result is whatever the configuration says, and a deployment whose public host

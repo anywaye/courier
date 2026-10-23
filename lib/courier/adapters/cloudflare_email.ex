@@ -92,13 +92,13 @@ defmodule Courier.Adapters.CloudflareEmail do
   # Cloudflare Email Sending refuses a caller-supplied `Message-ID` — in EITHER
   # case — with `400` and exactly
   # `{"success":false,"errors":[{"code":10202,"message":"email.sending.error.email.invalid"}],"result":null}`
-  # (measured live on cafaye.com, 2026-10-16). It assigns a Message-ID itself and
+  # (measured live on anywaye.com, 2026-10-16). It assigns a Message-ID itself and
   # returns it as `result.message_id` on every 2xx — that is what `accepted/2`
   # now reports as the receipt id, and it is the id the provider's own bounce and
   # delivery reports quote.
   #
   # `Courier.Deliver`'s `tag/2` attaches `message-id`
-  # (`<courier-<uuid>@cafaye.com>`) to EVERY message it sends, so forwarding this
+  # (`<courier-<uuid>@anywaye.com>`) to EVERY message it sends, so forwarding this
   # one header was the difference between a delivery and a refusal of the whole
   # message. It must never be forwarded again.
   #

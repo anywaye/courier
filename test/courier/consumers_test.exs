@@ -170,7 +170,7 @@ defmodule Courier.ConsumersTest do
   end
 
   describe "subscribed/0" do
-    test "is the fleet's five, and cafaye.yml declares the same list" do
+    test "is the fleet's five, and anywaye.yml declares the same list" do
       # A consumer nobody can read is a consumer nobody deployed. `cafe dev`,
       # `pantry` and core's contract harness read the manifest, so the two lists
       # are checked against each other rather than trusted to agree.
@@ -199,7 +199,7 @@ defmodule Courier.ConsumersTest do
                "identity.user.created"
              ]
 
-      manifest = File.read!(Path.join(File.cwd!(), "cafaye.yml"))
+      manifest = File.read!(Path.join(File.cwd!(), "anywaye.yml"))
 
       assert manifest =~
                ~r/^consumes:\s*$\n\s*-\s*identity\.member\.invited\s*$\n\s*-\s*identity\.member\.accepted\s*$\n\s*-\s*identity\.session\.revoked\s*$\n\s*-\s*identity\.user\.created\s*$\n\s*-\s*billing\.payment\.succeeded\s*$\n\s*-\s*billing\.payment\.failed\s*$/m

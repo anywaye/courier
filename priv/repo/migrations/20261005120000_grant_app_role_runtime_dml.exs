@@ -52,7 +52,7 @@ defmodule Courier.Repo.Migrations.GrantAppRoleRuntimeDml do
 
   `notification_preferences_id_seq` was here because of a **defect in the copy
   of kit's substrate this repository carried when this migration was written**:
-  `cafaye.protect_table/2` at `15cee0e1` granted table DML and no sequence
+  `anywaye.protect_table/2` at `15cee0e1` granted table DML and no sequence
   privilege, so a protected table with a `bigserial` column was uninsertable by
   the login role:
 

@@ -25,7 +25,7 @@ defmodule Courier.IdempotencyTest do
 
   # THE ACCOUNT THIS FILE WRITES AS. `idempotency_keys` is one of the three
   # protected tables, so an INSERT with no identity set is refused `42501` — the
-  # policy's `with check` is `account_id = cafaye.current_account_id()`. It was
+  # policy's `with check` is `account_id = anywaye.current_account_id()`. It was
   # not refused while the suite connected as `postgres`, because a superuser
   # bypasses RLS whatever FORCE says; see `Courier.DataCase`.
   @moduletag account: @account

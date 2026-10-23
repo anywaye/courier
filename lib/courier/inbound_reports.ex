@@ -371,7 +371,7 @@ defmodule Courier.InboundReports do
   # from another system, one a provider invented — is `:unknown`.
   #
   # **Why the provider's column is here at all.** courier tags every message
-  # with `<courier-<uuid>@cafaye.com>` and the Cloudflare provider owns the
+  # with `<courier-<uuid>@anywaye.com>` and the Cloudflare provider owns the
   # `Message-ID` — it refuses a caller-supplied one and reports its own
   # `result.message_id`. So the id its reports quote is `provider_message_id`,
   # and matching only on `subject` is what produced the "courier holds no sent
@@ -430,7 +430,7 @@ defmodule Courier.InboundReports do
     is_binary(data["user_id"]) and is_binary(data["notification_type"])
   end
 
-  # `<courier-…@cafaye.com>` → `courier-…`. A provider's qualifier is the domain
+  # `<courier-…@anywaye.com>` → `courier-…`. A provider's qualifier is the domain
   # courier sent from and carries no information about the send, while the local
   # part IS courier's id. The whole value is logged, not a shape derived from it.
   defp strip_qualifier("<>"), do: ""

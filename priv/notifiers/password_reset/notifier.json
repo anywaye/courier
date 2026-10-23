@@ -1,1 +1,1 @@
-{"type":"password_reset","kind":"transactional","required":["email","url"],"subject":"Reset your Cafaye password"}
+{"type":"password_reset","kind":"transactional","required":["email","url"],"subject":"Reset your Anywaye password"}

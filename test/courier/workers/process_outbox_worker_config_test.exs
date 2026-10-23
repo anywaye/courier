@@ -43,7 +43,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerConfigTest do
         user_id: @user_id,
         email: "kaka@example.com",
         name: "Kaka",
-        url: "https://cafaye.com/verify?token=#{index}"
+        url: "https://anywaye.com/verify?token=#{index}"
       })
 
     Repo.get!(OutboxEvent, result.event_id)
@@ -132,7 +132,7 @@ defmodule Courier.Workers.ProcessOutboxWorkerConfigTest do
           user_id: @user_id,
           email: "kaka@example.com",
           name: "Kaka",
-          url: "https://cafaye.com/reset?token=abc123"
+          url: "https://anywaye.com/reset?token=abc123"
         })
 
       reset =

@@ -76,7 +76,7 @@ defmodule Courier.DeliverSendingDomainTest do
     Application.put_env(
       :courier,
       :mailing,
-      Keyword.put(mailing, :from, {"Cafaye", "no-reply@" <> domain})
+      Keyword.put(mailing, :from, {"Anywaye", "no-reply@" <> domain})
     )
   end
 
@@ -124,7 +124,7 @@ defmodule Courier.DeliverSendingDomainTest do
       # the credential is scoped to.
       assert decode!(request.body)["from"] == %{
                "address" => "no-reply@#{@domain}",
-               "name" => "Cafaye"
+               "name" => "Anywaye"
              }
     end
 
@@ -180,7 +180,7 @@ defmodule Courier.DeliverSendingDomainTest do
       # global adapter path is unchanged.
       assert {:ok, _result} = Deliver.welcome(payload())
 
-      assert_email_sent(subject: "Welcome to Cafaye", to: [{"Kaka", "recipient@example.com"}])
+      assert_email_sent(subject: "Welcome to Anywaye", to: [{"Kaka", "recipient@example.com"}])
     end
   end
 
@@ -216,10 +216,10 @@ defmodule Courier.DeliverSendingDomainTest do
         )
 
       assert List.flatten(policies) == [
-               "tenant_sending_domains_cafaye_delete",
-               "tenant_sending_domains_cafaye_insert",
-               "tenant_sending_domains_cafaye_select",
-               "tenant_sending_domains_cafaye_update"
+               "tenant_sending_domains_anywaye_delete",
+               "tenant_sending_domains_anywaye_insert",
+               "tenant_sending_domains_anywaye_select",
+               "tenant_sending_domains_anywaye_update"
              ]
     end
   end

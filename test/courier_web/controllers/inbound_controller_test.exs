@@ -69,7 +69,7 @@ defmodule CourierWeb.InboundControllerTest do
   # stores the identifier with the brackets stripped and the qualifier KEPT, while
   # `outbox_events.subject` holds courier's bare id — so the route's join has to
   # try both spellings. See `CourierWeb.InboundReports`.
-  defp quoted(message_id), do: "<#{message_id}@cafaye.com>"
+  defp quoted(message_id), do: "<#{message_id}@anywaye.com>"
 
   # --- helpers -----------------------------------------------------------------
 
@@ -296,7 +296,7 @@ defmodule CourierWeb.InboundControllerTest do
              }
 
       assert [%Suppression{state: :undeliverable, provider: "resend"} = row] = rows(recipient)
-      assert row.message_id == "#{message_id}@cafaye.com"
+      assert row.message_id == "#{message_id}@anywaye.com"
 
       # The event, and its payload is core's schema field for field: the four
       # fields `courier.email.delivered` carries, with `email` naming the address

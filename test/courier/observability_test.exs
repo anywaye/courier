@@ -260,7 +260,7 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "an identifier is not spellable in a segment" do
-      # Not because this module knows about cafaye id formats — it does not — but
+      # Not because this module knows about anywaye id formats — it does not — but
       # because the fleet's grammar caps every segment at fifteen characters. That
       # is why the route and the identity are ATTRIBUTES and the name carries only
       # the operation.

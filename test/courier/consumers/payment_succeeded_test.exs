@@ -30,7 +30,7 @@ defmodule Courier.Consumers.PaymentSucceededTest do
 
   billing's `Webhooks::StripeEvents.payment_emission`, measured there and not
   re-derived here: the normalized invoice event — `customer_id`,
-  `cafaye_customer_id`, `subscription_id`, `invoice_id`, `payment_intent_id`,
+  `anywaye_customer_id`, `subscription_id`, `invoice_id`, `payment_intent_id`,
   `paid`, `amount: {"amount_minor", "currency"}`, `attempt_count` — plus the
   recipient fact `with_recipient` merges in, `email`. The handler reads three
   of those fields and no others.
@@ -60,7 +60,7 @@ defmodule Courier.Consumers.PaymentSucceededTest do
     "processor" => "stripe",
     "processor_event_id" => "evt_1UQxoTCmN780pAiWht9dbsPL",
     "customer_id" => "cus_VRrXegFhTSKs5T",
-    "cafaye_customer_id" => "df15dff4-b274-460d-84e5-1ee8ba4532e7",
+    "anywaye_customer_id" => "df15dff4-b274-460d-84e5-1ee8ba4532e7",
     "subscription_id" => "sub_1UQxoRCmN780pAiWnnZnHH5Q",
     "invoice_id" => "in_1UQxoPCmN780pAiW8Kp4oks8",
     "payment_intent_id" => "pi_3UQxoPCmN780pAiW1wrSRQIO",
@@ -126,7 +126,7 @@ defmodule Courier.Consumers.PaymentSucceededTest do
         # Swoosh normalizes a single `{name, address}` recipient into a one-item
         # list, so the assertion is against the list.
         assert email.to == [{"", "buyer@example.com"}]
-        assert email.subject == "We received your Cafaye payment"
+        assert email.subject == "We received your Anywaye payment"
         assert email.html_body =~ "19.00 USD"
         assert email.text_body =~ "19.00 USD"
         assert email.html_body =~ "in_1UQxoPCmN780pAiW8Kp4oks8"
@@ -191,7 +191,7 @@ defmodule Courier.Consumers.PaymentSucceededTest do
 
   describe "what is refused, and sends nothing" do
     test "a payload with no address is refused by name" do
-      # A customer created in the processor's dashboard, or a cafaye customer
+      # A customer created in the processor's dashboard, or a anywaye customer
       # whose email was never set: billing keeps the field absent, and a
       # receipt nobody can be sent is not a receipt.
       assert {:error, {:incomplete_payload, "email"}} =
@@ -200,11 +200,11 @@ defmodule Courier.Consumers.PaymentSucceededTest do
       assert_no_email_sent()
     end
 
-    test "a payload naming no cafaye customer is refused by name" do
+    test "a payload naming no anywaye customer is refused by name" do
       # The send is attributed to the customer the money moved for; without it
       # the event says a payment happened and does not say whose.
-      assert {:error, {:incomplete_payload, "cafaye_customer_id"}} =
-               PaymentSucceeded.handle(row(%{data: Map.delete(@payload, "cafaye_customer_id")}))
+      assert {:error, {:incomplete_payload, "anywaye_customer_id"}} =
+               PaymentSucceeded.handle(row(%{data: Map.delete(@payload, "anywaye_customer_id")}))
 
       assert_no_email_sent()
     end

@@ -32,12 +32,12 @@ defmodule Courier.MailersConfigTest do
   end
 
   test "the sender comes from configuration and the subject from the type" do
-    mailing_config(from: {"Mailer Test", "mailer-test@cafaye.com"})
+    mailing_config(from: {"Mailer Test", "mailer-test@anywaye.com"})
 
     assert {:ok, email} = Mailers.build(:welcome, @payload)
 
-    assert email.subject == "Welcome to Cafaye"
-    assert email.from == {"Mailer Test", "mailer-test@cafaye.com"}
+    assert email.subject == "Welcome to Anywaye"
+    assert email.from == {"Mailer Test", "mailer-test@anywaye.com"}
   end
 
   test "a subject template naming a key the payload lacks is a configuration error" do
@@ -45,7 +45,7 @@ defmodule Courier.MailersConfigTest do
 
     assert {:error, :subject_misconfigured} = Mailers.build(:welcome, @payload)
 
-    Courier.NotificationTypes.update("welcome", %{subject: "Welcome to Cafaye"})
+    Courier.NotificationTypes.update("welcome", %{subject: "Welcome to Anywaye"})
   end
 
   test "a type with no subject is not reachable through the API" do

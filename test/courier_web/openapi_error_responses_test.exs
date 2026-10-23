@@ -266,7 +266,7 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
         |> Jason.decode!()
 
       assert body["code"] == "internal"
-      assert body["type"] == "https://docs.cafaye.com/errors/internal"
+      assert body["type"] == "https://docs.anywaye.com/errors/internal"
       assert body["status"] == 500
       assert is_binary(body["trace_id"])
 
@@ -996,12 +996,12 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # `type: https://docs.cafaye.com/errors/<something>` at the example's own level. A
+  # `type: https://docs.anywaye.com/errors/<something>` at the example's own level. A
   # `type:` that is not one of these is a schema's, not an error's.
   defp problem_type?(line) do
     trimmed = String.trim(line)
 
-    String.starts_with?(trimmed, "type: https://docs.cafaye.com/errors/") and
+    String.starts_with?(trimmed, "type: https://docs.anywaye.com/errors/") and
       not String.starts_with?(line, "              ")
   end
 

@@ -42,8 +42,8 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
 
   @origin "http://identity.test:8080"
   @url @origin <> "/v1/introspections"
-  @service_token "cafaye_couriers-own-service-credential"
-  @caller_token "cafaye_caller-token-for-the-suite"
+  @service_token "anywaye_couriers-own-service-credential"
+  @caller_token "anywaye_caller-token-for-the-suite"
 
   # The three headers the resolver sends. WHICH headers is asserted against the
   # double in `introspection_test.exs`; what is asserted here is that they arrive.

@@ -183,7 +183,7 @@ backup:
 # says so where an operator restoring will read it.
 #
 # ---------------------------------------------------------------------------
-# Copied from cafaye/kit, `templates/kamal/kamal-backup.yml.erb`, at kit commit
+# Copied from anywaye/kit, `templates/kamal/kamal-backup.yml.erb`, at kit commit
 # d201080 (the kit-20 merge that replaced kit's own backup toolchain with
 # kamal-backup). Rendered with KIT_SERVICE=courier, as that template requires.
 #

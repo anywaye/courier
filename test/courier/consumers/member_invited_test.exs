@@ -241,7 +241,7 @@ defmodule Courier.Consumers.MemberInvitedTest do
       # first, in courier's own vocabulary, because courier is the thing that
       # knows it.
       {:ok, invitation} = MemberInvited.parse(row())
-      invitation = Map.put(invitation, :url, "https://cafaye.example/invitations/tok")
+      invitation = Map.put(invitation, :url, "https://anywaye.example/invitations/tok")
 
       assert {:error, {:invalid_payload, changeset}} = MemberInvited.deliver(invitation)
 
@@ -281,7 +281,7 @@ defmodule Courier.Consumers.MemberInvitedTest do
     # counterfactual arms can reach the provider at all.
     defp renderable(invitation) do
       Map.merge(invitation, %{
-        url: "https://cafaye.example/invitations/tok",
+        url: "https://anywaye.example/invitations/tok",
         account_name: "Acme",
         invited_by: "Ada"
       })
@@ -295,7 +295,7 @@ defmodule Courier.Consumers.MemberInvitedTest do
       # being wrapped for its own error handling. A payload whose email is nil
       # reaches `Courier.Deliver` and is refused by `Courier.Mailers`.
       {:ok, invitation} = MemberInvited.parse(row())
-      invitation = Map.put(invitation, :url, "https://cafaye.example/invitations/tok")
+      invitation = Map.put(invitation, :url, "https://anywaye.example/invitations/tok")
 
       assert {:error, {:invalid_payload, _changeset}} =
                MemberInvited.deliver(%{invitation | email: nil})

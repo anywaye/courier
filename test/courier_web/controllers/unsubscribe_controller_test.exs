@@ -262,7 +262,7 @@ defmodule CourierWeb.UnsubscribeControllerTest do
       assert response.status == 404
       assert problem_json?(response)
       assert body(response)["code"] == "not_found"
-      assert body(response)["type"] == "https://docs.cafaye.com/errors/not_found"
+      assert body(response)["type"] == "https://docs.anywaye.com/errors/not_found"
 
       assert body(response)["trace_id"] ==
                response |> Plug.Conn.get_resp_header("x-trace-id") |> List.first()
@@ -364,10 +364,10 @@ defmodule CourierWeb.UnsubscribeControllerTest do
       assert post(conn, path).status == 200
 
       for {type, extra} <- [
-            {"password_reset", %{"url" => "https://cafaye.test/reset"}},
+            {"password_reset", %{"url" => "https://anywaye.test/reset"}},
             {"team_invitation",
              %{
-               "url" => "https://cafaye.test/join",
+               "url" => "https://anywaye.test/join",
                "account_name" => "Acme",
                "invited_by" => "Kaka"
              }}

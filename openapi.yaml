@@ -1,4 +1,4 @@
-# courier's HTTP surface, per cafaye/core/docs/openapi-conventions.md.
+# courier's HTTP surface, per anywaye/core/docs/openapi-conventions.md.
 #
 # This file now describes every route courier's router serves except two, and the
 # two are named here: `/healthz` and `/readyz` are infrastructure probes that run
@@ -67,7 +67,7 @@
 # > two exceptions above.
 # >
 # > **Two of core's own rules therefore report on these three operations, and that
-# > is measured rather than assumed.** `cafaye-contract lint` fails
+# > is measured rather than assumed.** `anywaye-contract lint` fails
 # > `openapi.paths-are-versioned` for all three paths and
 # > `openapi.idempotency-key` for the two `POST`s — the same two rules, on the
 # > same two grounds, before and after this packet added a third operation
@@ -344,7 +344,7 @@ info:
   # field or response shape changed at all**. A client generated from 2.3.0 keeps
   # working against it, which is what makes it minor.
   version: 2.4.0
-  title: Cafaye courier
+  title: Anywaye courier
   description: |
     Transactional email, notification preferences, in-app notifications, and
     outbound webhooks.
@@ -355,13 +355,13 @@ info:
     about courier's scheme.
   contact:
     name: courier
-    email: courier@cafaye.com
+    email: courier@anywaye.com
   license:
-    name: Business Source License 1.1 (BUSL-1.1). See LICENSE in the cafaye/courier repository.
+    name: Business Source License 1.1 (BUSL-1.1). See LICENSE in the anywaye/courier repository.
     identifier: BUSL-1.1
 
 servers:
-  - url: https://api.cafaye.com
+  - url: https://api.anywaye.com
     description: production
   - url: http://localhost:4000
     description: local
@@ -531,7 +531,7 @@ paths:
                   created_at: '2026-11-22T23:41:12.126Z'
                   data:
                     email_id: 56761188-7520-42d8-8898-ff6fc54ce618
-                    message_id: <courier-6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061@cafaye.com>
+                    message_id: <courier-6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061@anywaye.com>
                     to: [bounced@example.com]
                     from: Acme <onboarding@resend.dev>
                     subject: Sending this example
@@ -547,7 +547,7 @@ paths:
                   created_at: '2026-11-22T23:41:12.126Z'
                   data:
                     email_id: 56761188-7520-42d8-8898-ff6fc54ce618
-                    message_id: <courier-6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061@cafaye.com>
+                    message_id: <courier-6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061@anywaye.com>
                     to: [complained@example.com]
                     from: Acme <onboarding@resend.dev>
                     subject: Sending this example
@@ -558,7 +558,7 @@ paths:
                   created_at: '2026-11-22T23:41:12.126Z'
                   data:
                     email_id: 56761188-7520-42d8-8898-ff6fc54ce618
-                    message_id: <courier-6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061@cafaye.com>
+                    message_id: <courier-6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061@anywaye.com>
                     to: [delayed@example.com]
       responses:
         '200':
@@ -864,14 +864,14 @@ paths:
                   type: password_reset
                   user_id: 6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061
                   to: kaka@example.com
-                  url: https://cafaye.com/reset?token=6f5d4c3b
+                  url: https://anywaye.com/reset?token=6f5d4c3b
               email_change_current:
                 summary: The warning to the current address, which carries the confirmation link
                 value:
                   type: email_change_current
                   user_id: 6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061
                   to: kaka@example.com
-                  url: https://cafaye.com/email-changes/confirm?token=6f5d4c3b
+                  url: https://anywaye.com/email-changes/confirm?token=6f5d4c3b
               email_change_new:
                 summary: The notice to the new address, which names the address it is moving from
                 value:
@@ -1400,7 +1400,7 @@ paths:
                     addresses — by literal address *and* by what the host
                     resolves to.
                   examples:
-                    - https://hooks.example.com/cafaye
+                    - https://hooks.example.com/anywaye
                 description:
                   type: string
                   maxLength: 500
@@ -1472,7 +1472,7 @@ paths:
                 reused:
                   summary: Same key, different body
                   value:
-                    type: https://docs.cafaye.com/errors/idempotency_key_reused
+                    type: https://docs.anywaye.com/errors/idempotency_key_reused
                     title: Idempotency key reused
                     status: 409
                     detail: That Idempotency-Key was already used for a different request body.
@@ -1481,7 +1481,7 @@ paths:
                 in_flight:
                   summary: Same key, first request still running
                   value:
-                    type: https://docs.cafaye.com/errors/conflict
+                    type: https://docs.anywaye.com/errors/conflict
                     title: Conflict
                     status: 409
                     detail: That Idempotency-Key is still being processed.
@@ -1648,7 +1648,7 @@ paths:
                 reused:
                   summary: Same key, different body
                   value:
-                    type: https://docs.cafaye.com/errors/idempotency_key_reused
+                    type: https://docs.anywaye.com/errors/idempotency_key_reused
                     title: Idempotency key reused
                     status: 409
                     detail: That Idempotency-Key was already used for a different request body.
@@ -1657,7 +1657,7 @@ paths:
                 in_flight:
                   summary: Same key, first request still running
                   value:
-                    type: https://docs.cafaye.com/errors/conflict
+                    type: https://docs.anywaye.com/errors/conflict
                     title: Conflict
                     status: 409
                     detail: That Idempotency-Key is still being processed.
@@ -1904,7 +1904,7 @@ components:
       description: |
         An **opaque** token issued by identity, presented as
         `Authorization: Bearer <token>`. There is no claim document inside it and
-        no published key set to verify one against: identity's token is `cafaye_`
+        no published key set to verify one against: identity's token is `anywaye_`
         plus random bytes and the row holds a SHA-256 of it. So courier does not
         verify it locally — courier **asks identity**,
         `POST /v1/introspections`, and reads the answer.
@@ -2647,7 +2647,7 @@ components:
         type:
           type: string
           format: uri
-          description: '`https://docs.cafaye.com/errors/<code>`. The machine-readable contract.'
+          description: '`https://docs.anywaye.com/errors/<code>`. The machine-readable contract.'
         title: { type: string }
         status: { type: integer }
         detail:
@@ -2738,7 +2738,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/bad_request
+            type: https://docs.anywaye.com/errors/bad_request
             title: Bad request
             status: 400
             detail: The request body was not valid JSON.
@@ -2758,7 +2758,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/not_acceptable
+            type: https://docs.anywaye.com/errors/not_acceptable
             title: Not acceptable
             status: 406
             detail: courier answers application/json.
@@ -2777,7 +2777,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/unauthorized
+            type: https://docs.anywaye.com/errors/unauthorized
             title: Unauthorized
             status: 401
             detail: This request needs an authenticated caller.
@@ -2818,7 +2818,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/unauthorized
+            type: https://docs.anywaye.com/errors/unauthorized
             title: Unauthorized
             status: 401
             detail: >-
@@ -2863,7 +2863,7 @@ components:
             unclassifiable_event:
               summary: An event type courier has not read
               value:
-                type: https://docs.cafaye.com/errors/validation_failed
+                type: https://docs.anywaye.com/errors/validation_failed
                 title: Validation failed
                 status: 422
                 detail: >-
@@ -2878,7 +2878,7 @@ components:
             unknown_bounce_type:
               summary: A bounce type outside the documented vocabulary
               value:
-                type: https://docs.cafaye.com/errors/validation_failed
+                type: https://docs.anywaye.com/errors/validation_failed
                 title: Validation failed
                 status: 422
                 detail: >-
@@ -2892,7 +2892,7 @@ components:
             bad_recipient:
               summary: An address that is not one courier could send to
               value:
-                type: https://docs.cafaye.com/errors/validation_failed
+                type: https://docs.anywaye.com/errors/validation_failed
                 title: Validation failed
                 status: 422
                 detail: >-
@@ -2922,7 +2922,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/unavailable
+            type: https://docs.anywaye.com/errors/unavailable
             title: Service unavailable
             status: 503
             detail: >-
@@ -2952,7 +2952,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/unavailable
+            type: https://docs.anywaye.com/errors/unavailable
             title: Service unavailable
             status: 503
             detail: >-
@@ -2977,7 +2977,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/not_found
+            type: https://docs.anywaye.com/errors/not_found
             title: Not found
             status: 404
             detail: No webhook endpoint with that id.
@@ -3001,7 +3001,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/not_found
+            type: https://docs.anywaye.com/errors/not_found
             title: Not found
             status: 404
             detail: No notification preferences with that user id.
@@ -3028,7 +3028,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/not_found
+            type: https://docs.anywaye.com/errors/not_found
             title: Not found
             status: 404
             detail: No notification with that id.
@@ -3048,7 +3048,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/idempotency_key_reused
+            type: https://docs.anywaye.com/errors/idempotency_key_reused
             title: Idempotency key reused
             status: 409
             detail: That Idempotency-Key was already used for a different request body.
@@ -3072,7 +3072,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/conflict
+            type: https://docs.anywaye.com/errors/conflict
             title: Conflict
             status: 409
             detail: That Idempotency-Key is still being processed.
@@ -3092,7 +3092,7 @@ components:
             reused:
               summary: Same key, different body
               value:
-                type: https://docs.cafaye.com/errors/idempotency_key_reused
+                type: https://docs.anywaye.com/errors/idempotency_key_reused
                 title: Idempotency key reused
                 status: 409
                 detail: That Idempotency-Key was already used for a different request body.
@@ -3101,7 +3101,7 @@ components:
             in_flight:
               summary: Same key, first request still running
               value:
-                type: https://docs.cafaye.com/errors/conflict
+                type: https://docs.anywaye.com/errors/conflict
                 title: Conflict
                 status: 409
                 detail: That Idempotency-Key is still being processed.
@@ -3121,7 +3121,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/internal
+            type: https://docs.anywaye.com/errors/internal
             title: Internal server error
             status: 500
             detail: The request could not be completed.
@@ -3170,7 +3170,7 @@ components:
             undeliverable:
               summary: The mailbox hard-bounced a previous message
               value:
-                type: https://docs.cafaye.com/errors/conflict
+                type: https://docs.anywaye.com/errors/conflict
                 title: Conflict
                 status: 409
                 detail: >-
@@ -3181,7 +3181,7 @@ components:
             complained:
               summary: The recipient reported a previous message as spam
               value:
-                type: https://docs.cafaye.com/errors/conflict
+                type: https://docs.anywaye.com/errors/conflict
                 title: Conflict
                 status: 409
                 detail: >-
@@ -3192,7 +3192,7 @@ components:
             unverified_sending_domain:
               summary: The from-domain is registered but not verified
               value:
-                type: https://docs.cafaye.com/errors/conflict
+                type: https://docs.anywaye.com/errors/conflict
                 title: Conflict
                 status: 409
                 detail: >-
@@ -3206,7 +3206,7 @@ components:
             revoked_sending_domain:
               summary: The from-domain was revoked
               value:
-                type: https://docs.cafaye.com/errors/conflict
+                type: https://docs.anywaye.com/errors/conflict
                 title: Conflict
                 status: 409
                 detail: >-
@@ -3281,7 +3281,7 @@ components:
             identityUnavailable:
               summary: courier could not ask identity who is calling
               value:
-                type: https://docs.cafaye.com/errors/unavailable
+                type: https://docs.anywaye.com/errors/unavailable
                 title: Service unavailable
                 status: 503
                 detail: >-
@@ -3292,7 +3292,7 @@ components:
             providerUnavailable:
               summary: sendMessage only — the mail provider refused
               value:
-                type: https://docs.cafaye.com/errors/unavailable
+                type: https://docs.anywaye.com/errors/unavailable
                 title: Service unavailable
                 status: 503
                 detail: >-
@@ -3337,7 +3337,7 @@ components:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
           example:
-            type: https://docs.cafaye.com/errors/validation_failed
+            type: https://docs.anywaye.com/errors/validation_failed
             title: Validation failed
             status: 422
             detail: That url is one courier will not send webhooks to.

@@ -9,4 +9,4 @@ name: courier
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-description: cafaye courier — transactional email, notification preferences, and every outbound webhook.
+description: anywaye courier — transactional email, notification preferences, and every outbound webhook.

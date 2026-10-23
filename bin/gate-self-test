@@ -14,11 +14,11 @@
 #   independent rather than one lucky assertion standing in for all of them.
 #
 #   The declaration it is testing is `gate.yml`, written against
-#   cafaye/core's `schemas/gate.schema.json` and checked by its
+#   anywaye/core's `schemas/gate.schema.json` and checked by its
 #   `harness/bin/gate-check`. The checker is not vendored here on purpose: it
 #   is stdlib-only Python that has to agree with core's schema, and a copy in
 #   this repository is a copy that can drift. Point at a core checkout with
-#   CAFAYE_CORE, or leave a sibling `../core` next to this repository.
+#   ANYWAYE_CORE, or leave a sibling `../core` next to this repository.
 #
 # THE CONTROL RUNS FIRST, AND IT IS NOT OPTIONAL
 #
@@ -46,7 +46,7 @@
 #   bin/prime exists and is executable, `mise run prime` resolves to it, CI
 #   invokes it, the schema is satisfied. The repository is ungated anyway,
 #   because the gate exits 0 without running a test — and `Result: 534/535
-#   passed` is the exact shape cafaye-rb printed for a database tier that never
+#   passed` is the exact shape anywaye-rb printed for a database tier that never
 #   executed once. Only asking the gate to say what it did catches it. It is
 #   modelled on breakage 8 of core's own harness/tests/gate_self_test.sh.
 #
@@ -89,9 +89,9 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/.." && pwd)"
 
-core="${CAFAYE_CORE:-}"
+core="${ANYWAYE_CORE:-}"
 if [ -z "$core" ]; then
-  for candidate in "$repo/../core" "$repo/../../cafaye/core" "$HOME/Code/any/cafaye/core"; do
+  for candidate in "$repo/../core" "$repo/../../anywaye/core" "$HOME/Code/any/anywaye/core"; do
     if [ -x "$candidate/harness/bin/gate-check" ]; then
       core="$(cd "$candidate" && pwd)"
       break
@@ -99,8 +99,8 @@ if [ -z "$core" ]; then
   done
 fi
 if [ -z "$core" ] || [ ! -x "$core/harness/bin/gate-check" ]; then
-  echo "gate-self-test: no cafaye/core checkout found, so the declaration cannot be checked." >&2
-  echo "  Set CAFAYE_CORE to a core checkout (it must have harness/bin/gate-check)," >&2
+  echo "gate-self-test: no anywaye/core checkout found, so the declaration cannot be checked." >&2
+  echo "  Set ANYWAYE_CORE to a core checkout (it must have harness/bin/gate-check)," >&2
   echo "  or leave a sibling directory named 'core' next to this repository." >&2
   echo "  This is exit 2 and never 0: a check that could not run has not checked." >&2
   exit 2
@@ -323,7 +323,7 @@ expect_red "ci never runs the gate" "ci-disagrees"
 # 6. THE SHARP ONE. Every field of the declaration is true and the repository
 #    is ungated: the command resolves, the entrypoint is executable, the mise
 #    task resolves to it, CI invokes it, the schema is satisfied — and the gate
-#    exits 0 having run nothing, printing the shape cafaye-rb printed for a
+#    exits 0 having run nothing, printing the shape anywaye-rb printed for a
 #    database tier that never executed.
 d="$work/b6"; make_copy "$d"
 stub_gate "$d" "Result: 534/535 passed"

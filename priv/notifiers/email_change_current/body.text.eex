@@ -1,5 +1,5 @@
 <%= @greeting %>
 
-Somebody signed in to the cafaye account on <%= @email %> and asked to change the address it uses.
+Somebody signed in to the anywaye account on <%= @email %> and asked to change the address it uses.
 
 If that was you, confirm it with this link: <%= @url %>

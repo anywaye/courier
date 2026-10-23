@@ -23,7 +23,7 @@
 #   * the host-side suite needs a postgres on localhost:5432 as postgres/postgres,
 #     which is what this script starts.
 #
-# 17-alpine, matching what every other cafaye service runs. It is the ONLY
+# 17-alpine, matching what every other anywaye service runs. It is the ONLY
 # postgres image this repository pulls.
 #
 # IDEMPOTENT, and checked by asking the container rather than by `docker ps`

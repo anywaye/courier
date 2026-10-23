@@ -1,8 +1,8 @@
-# cafaye.yml — the cafaye project manifest for courier.
+# anywaye.yml — the anywaye project manifest for courier.
 #
-# The schema is owned by cafaye/core, and core is pre-1.0, so this file is a
+# The schema is owned by anywaye/core, and core is pre-1.0, so this file is a
 # DRAFT written against core's current manifest conventions
-# (core/docs/manifest-conventions.md, core/schemas/cafaye.manifest.schema.json).
+# (core/docs/manifest-conventions.md, core/schemas/anywaye.manifest.schema.json).
 # When core freezes the manifest spec, `caf init` regenerates and validates this
 # file and it stops being hand-maintained. Do not add fields core does not
 # define.
@@ -189,7 +189,7 @@
 #     rather than dropped on the floor.
 
 name: courier
-description: cafaye courier — transactional email, notification preferences, and every outbound webhook.
+description: anywaye courier — transactional email, notification preferences, and every outbound webhook.
 
 language: elixir
 core: ^0.2.0
@@ -259,7 +259,7 @@ consumes:
     - billing.payment.succeeded
     - billing.payment.failed
 
-# Other cafaye services. Empty: courier depends on postgres, not on a sibling
+# Other anywaye services. Empty: courier depends on postgres, not on a sibling
 # service, and the services that will depend on it depend the other way round.
 dependencies: []
 
@@ -280,10 +280,10 @@ env:
     description: "Scoped API token for introspection."
 
 repository:
-  url: git@github.com:cafaye/courier.git
+  url: git@github.com:anywaye/courier.git
   defaultBranch: master
   visibility: private
 
 owner:
   team: courier
-  contact: courier@cafaye.com
+  contact: courier@anywaye.com

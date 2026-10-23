@@ -104,7 +104,7 @@ defmodule CourierWeb.Router do
   # **And they need no account, which is measured rather than assumed.** Readiness
   # runs `SELECT 1` (`Courier.Health`), which is not one of the three protected
   # tables, and liveness runs no query at all. Both answers are therefore
-  # unaffected by `cafaye.account_id` being unset — which matters more than it
+  # unaffected by `anywaye.account_id` being unset — which matters more than it
   # sounds: a readiness probe that needed a tenant identity would report courier
   # not ready whenever the identity was wrong, so an orchestration fault would be
   # reported as an outage and an outage would be restarted.
@@ -249,7 +249,7 @@ defmodule CourierWeb.Router do
   # (`Courier.Deliver` records `email.delivered` for a *user* courier cannot place
   # in an account, so `with check (account_id = current_account_id())` would refuse
   # every such insert with `42501` and the relay would read zero rows). So there
-  # is no account on this path for `cafaye.begin_account/1` to be given, and
+  # is no account on this path for `anywaye.begin_account/1` to be given, and
   # giving one would be inventing a tenancy claim for a provider.
   #
   # `:api` and nothing else: the `:accepts` plug is the 406 every operation in
@@ -294,7 +294,7 @@ defmodule CourierWeb.Router do
   #     the measured alternative: the wrong account claims the user, and the
   #     account that actually owns them gets a 404 from a settings endpoint that
   #     worked yesterday.
-  #   * So there is no account for `cafaye.begin_account/1` to be given here.
+  #   * So there is no account for `anywaye.begin_account/1` to be given here.
   #     **Inventing one would be the failure, not the fix.** The token carries no
   #     account; deriving one means the unsubscribe names an account, which is a
   #     tenancy claim made on behalf of a person by whoever mailed them.

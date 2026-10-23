@@ -7,7 +7,7 @@ defmodule CourierWeb.ErrorJSONTest do
   deliberately.
 
   The shape this file used to assert — `%{errors: %{detail: "Not Found"}}`, the
-  Phoenix default the generated application shipped with — is not a cafaye error
+  Phoenix default the generated application shipped with — is not a anywaye error
   body. The endpoints and the clients in this platform are written against
   `application/problem+json` with a stable `code` and a `trace_id`, so
   courier-02 replaced it. `CourierWeb.NotificationPreferencesControllerTest`
@@ -24,7 +24,7 @@ defmodule CourierWeb.ErrorJSONTest do
 
   test "renders 404 as not_found" do
     assert ErrorJSON.render("404.json", %{}) == %{
-             "type" => "https://docs.cafaye.com/errors/not_found",
+             "type" => "https://docs.anywaye.com/errors/not_found",
              "title" => "Not found",
              "status" => 404,
              "detail" => "There is no route for that request.",
@@ -38,7 +38,7 @@ defmodule CourierWeb.ErrorJSONTest do
     # Terse on purpose: this body is readable by anyone who can reach courier,
     # and it is public. The reason is in the logs, where it belongs.
     assert ErrorJSON.render("500.json", %{}) == %{
-             "type" => "https://docs.cafaye.com/errors/internal",
+             "type" => "https://docs.anywaye.com/errors/internal",
              "title" => "Internal server error",
              "status" => 500,
              "detail" => "The request could not be completed.",

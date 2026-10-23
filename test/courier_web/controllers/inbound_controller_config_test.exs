@@ -92,7 +92,7 @@ defmodule CourierWeb.InboundControllerConfigTest do
           envelope = problem(conn)
 
           assert envelope["code"] == "internal"
-          assert envelope["type"] == "https://docs.cafaye.com/errors/internal"
+          assert envelope["type"] == "https://docs.anywaye.com/errors/internal"
           assert envelope["detail"] =~ "COURIER_INBOUND_RESEND_SECRET"
           assert is_binary(envelope["trace_id"]) and envelope["trace_id"] != ""
 

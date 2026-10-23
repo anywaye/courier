@@ -28,7 +28,7 @@ defmodule Courier.Telemetry do
       "a deployer gets traces without assembling them".
 
   `OTEL_EXPORTER_OTLP_ENDPOINT` is honoured as a fallback so the release also
-  works with generic OTel tooling, and the cafaye name wins when both are set.
+  works with generic OTel tooling, and the anywaye name wins when both are set.
   That precedence is written down here rather than discovered later, because a
   contract with an undocumented precedence order is a bug report.
 
@@ -218,7 +218,7 @@ defmodule Courier.Telemetry do
   alone, and neither variable set.
 
   The one case it does not cover is both variables set to DIFFERENT values, where
-  courier's documented precedence says the cafaye name wins and the exporter's
+  courier's documented precedence says the anywaye name wins and the exporter's
   environment read wins. That is a contradiction between two upstream contracts
   and it is reported rather than papered over — see the packet report. The
   alternative was for courier to mutate its own process environment at boot,

@@ -58,7 +58,7 @@ defmodule CourierWeb.ErrorRouter do
   service's errors from another's is the `error.type` vocabulary and the service
   tag on the event, both of which the relay sets from the envelope itself.
 
-  ## It is not a cafaye probe
+  ## It is not a anywaye probe
 
   `core`'s probe contract pins `/healthz` and `/readyz` on the service's own
   endpoint, and this is neither: it is the health of one optional component, on

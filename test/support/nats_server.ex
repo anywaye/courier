@@ -25,7 +25,7 @@ defmodule Courier.TestSupport.NatsServer do
   really sends:
 
       {"type":"io.nats.jetstream.api.v1.publish_ack_response",
-       "stream":"cafaye","seq":1,"duplicate":false}
+       "stream":"anywaye","seq":1,"duplicate":false}
 
   A refusal is answered with the same envelope shape carrying `error`, so the
   `Broker refuses the publish` test is driving the publisher against the bytes a
@@ -47,7 +47,7 @@ defmodule Courier.TestSupport.NatsServer do
   require Logger
 
   @ack_body ~s({"type":"io.nats.jetstream.api.v1.publish_ack_response",) <>
-              ~s("stream":"cafaye","seq":1,"duplicate":false})
+              ~s("stream":"anywaye","seq":1,"duplicate":false})
 
   @doc """
   Starts the broker on a kernel-assigned loopback port.

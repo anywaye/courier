@@ -70,7 +70,7 @@ defmodule Courier.Webhooks.SignatureTest do
       # courier parsed and re-encoded the payload before signing, this signature
       # would not be the one a consumer computes over the bytes it received.
       signing_secret = secret()
-      body = ~s({"data":{"url":"https://cafaye.com/x?a=1.2"}})
+      body = ~s({"data":{"url":"https://anywaye.com/x?a=1.2"}})
 
       assert Signature.sign(signing_secret, @spec_id, @spec_timestamp, body) ==
                "v1," <> reference_signature(signing_secret, @spec_id, @spec_timestamp, body)
@@ -186,7 +186,7 @@ defmodule Courier.Webhooks.SignatureTest do
       # consumer that guesses wrong verifies nothing, which is the whole reason
       # PLAN.md §7 adopted the spec instead of a bespoke scheme.
       refute "svix-id" in headers
-      refute "x-cafaye-signature" in headers
+      refute "x-anywaye-signature" in headers
     end
   end
 

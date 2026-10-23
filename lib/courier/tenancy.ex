@@ -26,7 +26,7 @@ defmodule Courier.Tenancy do
 
   ## THE ONE RULE, AND IT IS TWO HALVES
 
-      cafaye.begin_account/1  is  set_config('cafaye.account_id', …, is_local := true)
+      anywaye.begin_account/1  is  set_config('anywaye.account_id', …, is_local := true)
 
   `is_local := true` is transaction-local, and both halves of that are load-bearing:
 
@@ -124,7 +124,7 @@ defmodule Courier.Tenancy do
 
   ## NO IDENTITY IS ALSO AN ANSWER
 
-  `begin_account(repo, nil)` calls `cafaye.begin_account(NULL)`, which the
+  `begin_account(repo, nil)` calls `anywaye.begin_account(NULL)`, which the
   substrate defines as **clearing** rather than failing. So a request with no
   account reads **zero rows** — not every row, not an error. That is the substrate's
   deliberate design and it is the right one: a policy that raised on an absent
@@ -151,11 +151,11 @@ defmodule Courier.Tenancy do
   #        got "6d3c5d11-c440-46fa-9543-4c8a589810c3"
   #
   # which is the shape of a bug in a caller that is passing a perfectly good uuid.
-  @begin_account "select cafaye.begin_account($1::uuid)"
-  @current_account "select cafaye.current_account_id()"
+  @begin_account "select anywaye.begin_account($1::uuid)"
+  @current_account "select anywaye.current_account_id()"
 
   @doc """
-  Runs `fun` in a transaction whose `cafaye.account_id` is `account_id`.
+  Runs `fun` in a transaction whose `anywaye.account_id` is `account_id`.
 
   `nil` is a legitimate argument and clears the identity, which reads as zero
   rows rather than as an error. See the moduledoc.
@@ -181,14 +181,14 @@ defmodule Courier.Tenancy do
   public so that the proofs and the tests can assert what the database actually
   holds rather than asserting that a function was called.
 
-  Raises if the substrate is not installed — `cafaye` not existing means
+  Raises if the substrate is not installed — `anywaye` not existing means
   `protect_account_scoped_tables` has not run, and a boundary that is silently
   absent is worse than one that is loudly missing.
   """
   @spec begin_account(module(), account_id()) :: term()
   def begin_account(repo, account_id) when is_nil(account_id) do
     # `nil` is dumped to `nil` by `Ecto.UUID.dump/1`, so this one line carries
-    # both shapes. `cafaye.begin_account(NULL)` CLEARS the identity rather than
+    # both shapes. `anywaye.begin_account(NULL)` CLEARS the identity rather than
     # failing — see the moduledoc, and the substrate's own comment on why.
     Ecto.Adapters.SQL.query!(repo, @begin_account, [dump(account_id)])
   end
@@ -212,7 +212,7 @@ defmodule Courier.Tenancy do
     %{rows: [[account_id]]} = Ecto.Adapters.SQL.query!(repo, @current_account, [])
 
     # `Ecto.UUID.load/1`, and this is the twin of the `dump` above rather than a
-    # convenience. `cafaye.current_account_id()` is declared `returns uuid`, so
+    # convenience. `anywaye.current_account_id()` is declared `returns uuid`, so
     # Postgrex hands back the `uuid` OID's **raw 16 bytes** — measured, not
     # remembered:
     #

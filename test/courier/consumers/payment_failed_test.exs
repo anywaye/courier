@@ -51,7 +51,7 @@ defmodule Courier.Consumers.PaymentFailedTest do
     "processor" => "stripe",
     "processor_event_id" => "evt_1URCjRCmN780pAiWe4VyAfOy",
     "customer_id" => "cus_VS6x3l4EsHvbxt",
-    "cafaye_customer_id" => "865e9942-4b65-432b-8bf4-5d34b9dae5b8",
+    "anywaye_customer_id" => "865e9942-4b65-432b-8bf4-5d34b9dae5b8",
     "subscription_id" => "sub_1URCjPCmN780pAiWor6nCnGD",
     "invoice_id" => "in_1URCjNCmN780pAiWMWoH0Bxd",
     "payment_intent_id" => "pi_3URCjNCmN780pAiW1wrSRQIO",
@@ -117,7 +117,7 @@ defmodule Courier.Consumers.PaymentFailedTest do
         # Swoosh normalizes a single `{name, address}` recipient into a one-item
         # list, so the assertion is against the list.
         assert email.to == [{"", "buyer@example.com"}]
-        assert email.subject == "Your Cafaye payment did not go through"
+        assert email.subject == "Your Anywaye payment did not go through"
         assert email.html_body =~ "49.00 USD"
         assert email.text_body =~ "49.00 USD"
         assert email.html_body =~ "in_1URCjNCmN780pAiWMWoH0Bxd"
@@ -206,9 +206,9 @@ defmodule Courier.Consumers.PaymentFailedTest do
       assert_no_email_sent()
     end
 
-    test "a payload naming no cafaye customer is refused by name" do
-      assert {:error, {:incomplete_payload, "cafaye_customer_id"}} =
-               PaymentFailed.handle(row(%{data: Map.delete(@payload, "cafaye_customer_id")}))
+    test "a payload naming no anywaye customer is refused by name" do
+      assert {:error, {:incomplete_payload, "anywaye_customer_id"}} =
+               PaymentFailed.handle(row(%{data: Map.delete(@payload, "anywaye_customer_id")}))
 
       assert_no_email_sent()
     end

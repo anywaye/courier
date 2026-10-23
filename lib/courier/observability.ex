@@ -56,7 +56,7 @@ defmodule Courier.Observability do
   """
   def service_name, do: @service_name
 
-  # The complete set of attribute names a cafaye span may carry.
+  # The complete set of attribute names a anywaye span may carry.
   #
   # A projection of `core/schemas/telemetry/traces.schema.json`, and the
   # transcriptions are checked against each other: kit's gate compares the
@@ -134,7 +134,7 @@ defmodule Courier.Observability do
 
   The grammar caps every segment at fifteen characters, which is what makes an
   interpolated id impossible to spell even by accident: it says nothing about
-  cafaye id formats, it just says no segment is longer than fifteen characters.
+  anywaye id formats, it just says no segment is longer than fifteen characters.
   """
   def span_name(operation, target \\ nil, qualifier \\ nil) do
     [operation, target, qualifier]

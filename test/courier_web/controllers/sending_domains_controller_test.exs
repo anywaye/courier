@@ -126,7 +126,7 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     Application.put_env(
       :courier,
       :mailing,
-      Keyword.put(mailing, :from, {"Cafaye", "no-reply@" <> domain})
+      Keyword.put(mailing, :from, {"Anywaye", "no-reply@" <> domain})
     )
   end
 
