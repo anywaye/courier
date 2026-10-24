@@ -176,6 +176,10 @@ env:
   COURIER_FORCE_SSL: "false"
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability:4318"
   OTEL_SERVICE_NAME: "courier"
+  COURIER_ERROR_REPORTING_DSN: "http://c5342cbf-5a88-464e-9576-cc8b40d0730b@glitchtip.default:8095/1"
+  COURIER_ERROR_SINK_DSN: "http://c5342cbf-5a88-464e-9576-cc8b40d0730b@glitchtip.default:8095/1"
+  COURIER_RELEASE: "0.1.0"
+  DEPLOYMENT_ENVIRONMENT: "production"
 
 # What the container is allowed to ask for and keep. Requests are what
 # the scheduler places the pod on the basis of; limits are what it is
