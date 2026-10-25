@@ -54,7 +54,7 @@ image:
   # is REFUSED by the template rather than rendered — see
   # templates/deployment.yaml, and kit's step, which refuses it at the
   # write.
-  digest: "sha256:fcdc20752f78d9d49047f4f2ec4948ea1cabcb94df1e7ea81704e594207714d0"
+  digest: "sha256:ffe585d7099496e77979da601b8e6a3926e17e94f5972ba69b15cb0874950425"
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
@@ -176,8 +176,8 @@ env:
   COURIER_FORCE_SSL: "false"
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability:4318"
   OTEL_SERVICE_NAME: "courier"
-  COURIER_ERROR_REPORTING_DSN: "http://c5342cbf-5a88-464e-9576-cc8b40d0730b@glitchtip.default:8095/1"
-  COURIER_ERROR_SINK_DSN: "http://c5342cbf-5a88-464e-9576-cc8b40d0730b@glitchtip.default:8095/1"
+  COURIER_ERROR_REPORTING_DSN: "http://da15bbe5-6b70-4b2f-92a5-ce8a8365fecf@glitchtip.default:8095/2"
+  COURIER_ERROR_SINK_DSN: "http://da15bbe5-6b70-4b2f-92a5-ce8a8365fecf@glitchtip.default:8095/2"
   COURIER_RELEASE: "0.1.0"
   DEPLOYMENT_ENVIRONMENT: "production"
 
