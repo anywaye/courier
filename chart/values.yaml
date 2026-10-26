@@ -176,8 +176,8 @@ env:
   COURIER_FORCE_SSL: "false"
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://alloy.observability:4318"
   OTEL_SERVICE_NAME: "courier"
-  COURIER_ERROR_REPORTING_DSN: "http://da15bbe5-6b70-4b2f-92a5-ce8a8365fecf@glitchtip.default.svc.cluster.local:8095/2"
-  COURIER_ERROR_SINK_DSN: "http://da15bbe5-6b70-4b2f-92a5-ce8a8365fecf@glitchtip.default.svc.cluster.local:8095/2"
+  COURIER_ERROR_REPORTING_DSN: "http://c5342cbf-5a88-464e-9576-cc8b40d0730b@glitchtip.default.svc.cluster.local:8095/1"
+  COURIER_ERROR_SINK_DSN: "http://c5342cbf-5a88-464e-9576-cc8b40d0730b@glitchtip.default.svc.cluster.local:8095/1"
   COURIER_RELEASE: "0.1.0"
   DEPLOYMENT_ENVIRONMENT: "production"
 
