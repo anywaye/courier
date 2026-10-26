@@ -13,7 +13,7 @@ LiveView, no assets, no dashboard, no gettext. It owns transactional email,
 notification preferences, and every outbound webhook. The contracts and the
 manifest schema are owned by `anywaye/core`; `anywaye.yml` here is a draft
 validated against `core/schemas/anywaye.manifest.schema.json` and is regenerated
-by `cafe init` when core freezes the format. Nothing is copied from
+by `any init` when core freezes the format. Nothing is copied from
 `reference/jumpstart-pro` — it is a behavioral spec for later packets, and
 PLAN.md §2 forbids copying from it.
 
@@ -1668,7 +1668,7 @@ custom classes must fully style the input
 
 <!-- usage-rules-end -->
 ## Secrets
-- No `.env` files with values. Use `cafe secret set/get/list` (dev) and `cafe dev` (injects). See `docs/secrets.md`.
+- No `.env` files with values. Use `any secret set/get/list` (dev) and `any dev` (injects). See `docs/secrets.md`.
 
 ## Packet identifiers
 
