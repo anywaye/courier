@@ -111,6 +111,8 @@ defmodule Courier.MixProject do
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
+      {:prometheus_ex, "~> 3.0"},
+      {:prometheus_plugs, "~> 1.1"},
       # Transactional email. `swoosh` is courier's mail composition and delivery
       # pipeline; `gen_smtp` is the socket `Swoosh.Adapters.SMTP` actually speaks
       # through, and swoosh declares it OPTIONAL, so naming swoosh alone compiles a

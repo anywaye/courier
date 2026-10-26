@@ -42,6 +42,8 @@ defmodule Courier.Application do
     # operator reads. See Courier.Telemetry for the contract this reports on.
     Courier.Telemetry.log_startup()
 
+    CourierWeb.MetricsExporter.setup()
+
     # The operator-facing notices `config/runtime.exs` COMPOSED — the resolved
     # mail adapter and, when it is missing, the cost of an unconfigured inbound
     # surface. They cannot be logged there for the same reason as the two lines

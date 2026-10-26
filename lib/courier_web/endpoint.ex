@@ -79,6 +79,7 @@ defmodule CourierWeb.Endpoint do
   # CourierWeb.Plugs.Telemetry for the measurement behind that choice.
   plug CourierWeb.Plugs.Telemetry
 
+  plug CourierWeb.MetricsExporter
   plug CourierWeb.Plugs.ProblemContentType
   plug CourierWeb.Router
 end
