@@ -25,6 +25,10 @@ spec:
         app.kubernetes.io/name: courier
         app.kubernetes.io/instance: courier
         app.kubernetes.io/managed-by: caf
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: "/metrics"
     spec:
       imagePullSecrets:
         - name: {{ .Values.imagePullSecrets }}
