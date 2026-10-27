@@ -471,7 +471,7 @@ defmodule Courier.ErrorRelay.Policy do
 
   defp reduce_value(value) when is_map(value) do
     value
-    |> take(~w(type module stacktrace))
+    |> take(~w(type value module stacktrace))
     |> Map.update("stacktrace", nil, &reduce_stacktrace/1)
     |> then(fn reduced ->
       case reduced["stacktrace"] do
