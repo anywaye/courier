@@ -204,12 +204,15 @@ defmodule Courier.ErrorRelay.PolicyTest do
       refute Map.has_key?(redacted, "user")
     end
 
-    test "the exception message is gone, and the reason is in the moduledoc" do
+    test "the exception message survives, masked of credential-shaped values" do
       redacted = redact(event())
 
       value = redacted["exception"]["values"] |> List.first() |> Map.get("value")
 
-      assert is_nil(value)
+      refute is_nil(value)
+      refute value =~ @canary
+      refute value =~ @jwt
+      assert value =~ "anywaye.redacted"
     end
 
     test "frame variables are gone — in Go and Ruby these are the arguments" do
