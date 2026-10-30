@@ -26,7 +26,6 @@ defmodule CourierWeb.NotificationPreferencesController do
   as the *request* named it — `preferences[0].notification_type` — because the
   body is what the caller can fix.
 
-  ## Authorization
 
   Both actions read the account from `conn.assigns.current_account`, which
   `CourierWeb.Plugs.Principal` put there, and pass it to
@@ -91,16 +90,6 @@ defmodule CourierWeb.NotificationPreferencesController do
     Problem.send(conn, 422, :validation_failed, detail(changeset), failed(changeset))
   end
 
-  # The whole action runs inside one transaction carrying the caller's account,
-  # so the row-level-security policies on `notification_preferences` have an
-  # identity to key on. A plug cannot hold such a transaction open across the
-  # controller — see `Courier.Tenancy` — so each action opens its own, with the
-  # account `CourierWeb.Plugs.Principal` stashed.
-  #
-  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable
-  # by construction: the context rolls back only inside its own inner
-  # transaction. Handled as a 503 rather than matched away, on the same rule as
-  # `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller retries.
   defp scoped(conn, fun) do
     case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
       {:ok, conn} -> conn
@@ -118,10 +107,6 @@ defmodule CourierWeb.NotificationPreferencesController do
     |> halt()
   end
 
-  # The user's preferences exist and belong to another account, which is the same
-  # answer a webhook endpoint in another account gets and for the same reason: a
-  # 403 would tell a caller that this user id has preferences at all, which is
-  # the only fact the 404 exists to withhold.
   defp not_found(conn) do
     Problem.send(conn, 404, :not_found, "No notification preferences with that user id.")
   end
@@ -135,11 +120,6 @@ defmodule CourierWeb.NotificationPreferencesController do
     }
   end
 
-  # The three fields the API promises. `user_id` is in the path and answered at
-  # the top of the body, and `id` is courier's row id, which the caller has no
-  # use for. `account_id` is courier's tenancy key rather than the caller's to
-  # read, so it is not in the body — a caller that already holds the account
-  # knows it.
   defp preference(preference) do
     %{
       notification_type: preference.notification_type,
@@ -161,9 +141,6 @@ defmodule CourierWeb.NotificationPreferencesController do
     ])
   end
 
-  # A changeset error is keyed by the field it is about and carries the index of
-  # the entry it is in, which is how `preferences[0].notification_type` comes out
-  # of a context that only knows about preference entries.
   defp failed(changeset) do
     Enum.map(changeset.errors, fn {field, {_message, opts}} ->
       %{"field" => field_path(field, opts), "code" => Keyword.get(opts, :code, "invalid_format")}

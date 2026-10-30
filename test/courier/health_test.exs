@@ -19,8 +19,6 @@ defmodule Courier.HealthTest do
   end
 
   test "ready?/1 never raises — a repo that is not running comes back as an error tuple" do
-    # Stands in for every way the database can be unreachable: the repo not
-    # started, the pool gone, a refused connection, an authentication failure.
     assert {:error, _reason} = Health.ready?(NotARunningRepo)
   end
 end

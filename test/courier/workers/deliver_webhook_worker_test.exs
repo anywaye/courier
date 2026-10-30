@@ -27,9 +27,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account_id
 
   setup do
@@ -58,10 +55,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
     %{endpoint: endpoint, secret: secret}
   end
 
-  # One event per test, created in `setup/0` and reused. `event/0` inserting a
-  # fresh row on every call would give a test that asks for two deliveries two
-  # *events*, and the count it then asserts on would be deliveries to the wrong
-  # rows — which is the kind of test that passes for the wrong reason.
   defp event, do: Process.get(:courier_event)
 
   defp delivery!(endpoint) do
@@ -209,9 +202,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
 
       recorded = Repo.get!(WebhookDelivery, delivery.id)
       assert recorded.next_attempt_at
-      # A Retry-After longer than the backoff is what the consumer asked for, and
-      # a `Retry-After` is a floor rather than a suggestion: retrying earlier
-      # than a receiver asked is the behaviour the header exists to prevent.
       assert DateTime.diff(recorded.next_attempt_at, DateTime.utc_now()) >= 890
     end
 
@@ -238,26 +228,15 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
     end
 
     test "the circuit opens before the budget does, at the shipped numbers" do
-      # The budget and the circuit are two different bounds, and at the shipped
-      # numbers the circuit opens first (5 of 8), so this cannot be shown here
-      # without the two tangled. `Courier.Workers.DeliverWebhookWorkerBudgetTest`
-      # raises the threshold and spends the whole budget with the endpoint intact.
       %{endpoint: endpoint} = endpoint!()
       delivery!(endpoint)
 
       Enum.each(1..config()[:max_attempts], fn _n -> attempt(%{response_status: 500}) end)
 
-      # The circuit opened first, so the delivery is still inside its retry
-      # window — the same assertion from the other side: at the shipped numbers
-      # the endpoint is what stops delivery, not the per-delivery budget.
       assert Repo.get!(WebhookEndpoint, endpoint.id).status == :disabled
     end
 
     test "the second attempt is not due before the first backoff has elapsed" do
-      # The recorded schedule, never a sleep: a worker run now must not pick up a
-      # delivery whose window is still in the future. `attempt_as_scheduled/1` is
-      # the one call in this file that leaves the clock alone, because moving it
-      # forward is the very thing this test is about.
       %{endpoint: endpoint} = endpoint!()
       delivery = delivery!(endpoint)
 
@@ -282,10 +261,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
     end
 
     test "the same webhook_id is used on every attempt" do
-      # The spec §Webhook metadata: the id "remains the same no matter how many
-      # times a webhook that has failed is retried". A consumer deduplicating on
-      # it treats the retry as the delivery it already has, and a new id on the
-      # retry would make the retry look like a second event.
       %{endpoint: endpoint} = endpoint!()
       delivery = delivery!(endpoint)
 
@@ -340,7 +315,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
       end
 
       Sender.reset()
-      # A fresh delivery for a fresh event, so this is not the budget stopping it.
       other =
         Repo.insert!(
           %OutboxEvent{}
@@ -365,8 +339,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
       %{endpoint: endpoint} = endpoint!()
       delivery = delivery!(endpoint)
 
-      # Just short of the threshold, so the circuit has opened one failure away
-      # and this success is what closes it.
       Enum.each(1..(config()[:circuit_threshold] - 1), fn _n ->
         attempt(%{response_status: 500})
       end)
@@ -381,9 +353,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
     end
 
     test "a 410 Gone disables the endpoint immediately" do
-      # §Delivery success and failure: a receiver answering 410 is "no longer
-      # interested in receiving webhooks from this source" and the sender "should
-      # disable the webhook endpoint, and stop sending it messages".
       %{endpoint: endpoint} = endpoint!()
       delivery!(endpoint)
 
@@ -411,7 +380,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
         attempt(%{response_status: 404})
       end
 
-      # Each 404 is a non-retryable failure, so the circuit never counts them.
       assert Repo.get!(WebhookEndpoint, endpoint.id).status == :enabled
     end
   end
@@ -438,24 +406,12 @@ defmodule Courier.Workers.DeliverWebhookWorkerTest do
     end
   end
 
-  # One delivery attempt, with the double told what to answer. The worker builds
-  # its own request and has nowhere to put a test's status code, so the answer is
-  # given to the double rather than passed as a job argument.
-  #
-  # Every delivery whose window has not arrived is moved forward first. That is not
-  # a shortcut around the schedule — it is the schedule being observed: the backoff
-  # is a *recorded* `next_attempt_at`, and a test that wants to see the third
-  # attempt has to pretend the first two windows elapsed. The window itself is
-  # asserted in `Courier.WebhookDeliveriesTest` and in "the second attempt is not
-  # due before the first backoff has elapsed" below, where the clock is left alone.
   defp attempt(response \\ %{}) do
     make_due()
     answer_with(response)
     perform_job(DeliverWebhookWorker, %{})
   end
 
-  # One attempt *without* touching the clock, for the tests whose subject is that
-  # a delivery is not picked up early.
   defp attempt_as_scheduled(response) do
     answer_with(response)
     perform_job(DeliverWebhookWorker, %{})

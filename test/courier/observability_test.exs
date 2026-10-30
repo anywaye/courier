@@ -16,11 +16,6 @@ defmodule Courier.ObservabilityTest do
   contain are written down.
   """
 
-  # NOT async, and the reason is the harness rather than the tests: the exported
-  # spans live in ONE process-wide ETS table behind ONE `Courier.SpanCollector`, and
-  # `spans_for/1` clears it, drives one span, flushes, and reads it back. Two async
-  # tests doing that interleave and each reads the other's span — which produces
-  # failures that look like redaction failures and are not one.
   use ExUnit.Case, async: false
 
   describe "the allowlist carries no name that could hold content" do
@@ -40,7 +35,7 @@ defmodule Courier.ObservabilityTest do
 
       assert offenders == [],
              """
-             the span-attribute allowlist carries names that could hold content: #{inspect(offenders)}
+             the span-attribute allowlist carries names that could hold content:
 
              Every name on this list is the security control. courier renders mail on
              other services' behalf, signs webhooks with a secret, and holds a
@@ -51,10 +46,6 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "every name is one core's own trace schema allows" do
-      # Transcribed from core/schemas/telemetry/traces.schema.json,
-      # `$defs.tracesAttributes.properties`. The `llm.*` half of the fleet-wide
-      # redaction allowlist is deliberately absent: it is muse's, and courier calls
-      # no model.
       core_allows = ~w(
         http.request.method http.response.status_code http.route db.system
         db.operation messaging.system messaging.operation otel.status_code
@@ -75,10 +66,6 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "no name is an identifier core's metrics schema prohibits on a measurement" do
-      # Byte-identical to the `not` in core/schemas/telemetry/metrics.schema.json.
-      # The collector's `spanmetrics` connector derives the fleet's metrics from
-      # these spans, so a name on this list is a candidate metric label, and an
-      # unbounded one is a stream per value.
       prohibited = ~w(
         tenant_id user_id account_id request_id trace_id span_id session_id
         message_id notification_id email error.message error.stacktrace
@@ -91,7 +78,7 @@ defmodule Courier.ObservabilityTest do
       assert offenders == [],
              """
              the span-attribute allowlist carries identifiers core's metrics schema
-             prohibits on a measurement: #{inspect(offenders)}
+             prohibits on a measurement:
              """
     end
   end
@@ -117,9 +104,6 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "an allowed name with an impossible value is dropped" do
-      # A name allowlist is a promise about NAMES. It says nothing about whether a
-      # value under an allowed name is shippable, and a value is where both the
-      # cardinality and the content live.
       span =
         spans_for(fn span ->
           Courier.Observability.record(span, %{
@@ -136,8 +120,6 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "a value that is not a scalar is dropped" do
-      # A payload is a map. A list of recipients is a list. An object with an
-      # inspect is anything at all.
       span =
         spans_for(fn span ->
           Courier.Observability.record(span, %{
@@ -177,11 +159,6 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "a class outside the vocabulary collapses to _OTHER and says so" do
-      # The escape hatch that is not an escape hatch. `_OTHER` exists so
-      # instrumentation is never FORCED to invent a class; this proves the forcing
-      # does not happen by accident either. A collapse that happened silently is
-      # how `_OTHER` becomes a permanent value nobody reads — and an alert on
-      # `_OTHER` is an alert that courier has not classified its own errors.
       log =
         ExUnit.CaptureLog.capture_log(fn ->
           span =
@@ -199,9 +176,6 @@ defmodule Courier.ObservabilityTest do
 
   describe "record_failure/4" do
     test "sets both halves of core's biconditional and not the message" do
-      # status `error` obliges an error class, and an error class obliges a failed
-      # status. That pair is what makes the ABSENCE of `error.type` the load-bearing
-      # "this was not an error" marker on a duration histogram.
       span =
         spans_for(fn span ->
           Courier.Observability.record_failure(
@@ -219,10 +193,6 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "never puts the message on the span" do
-      # `otel_span.record_error/3` is deliberately not called: it writes
-      # `exception.message` and `exception.stacktrace`, which are unbounded, are on
-      # nobody's allowlist, and in a service that renders mail are a recipient's
-      # address by another route.
       span =
         spans_for(fn span ->
           Courier.Observability.record_failure(
@@ -238,9 +208,6 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "a non-error status mirrors OK" do
-      # `:ok` is not a claim that the request failed, so this is the one status that
-      # carries NO class. The biconditional in core's schema runs the other way too:
-      # a class obliges a failed status, and a failed status obliges a class.
       span =
         spans_for(fn span ->
           Courier.Observability.record_failure(span, :ok, "dependency_unavailable", nil)
@@ -260,10 +227,6 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "an identifier is not spellable in a segment" do
-      # Not because this module knows about anywaye id formats — it does not — but
-      # because the fleet's grammar caps every segment at fifteen characters. That
-      # is why the route and the identity are ATTRIBUTES and the name carries only
-      # the operation.
       name = Courier.Observability.span_name("web", "request", "usr_01J9Z8QK5M4N7P2R3T6V8W9X0A")
 
       assert name == "courier.web.request.usr_01J9Z8QK5M4N7P2R3T6V8W9X0A"
@@ -279,9 +242,6 @@ defmodule Courier.ObservabilityTest do
             "/healthz",
             "/v1/webhook_endpoints",
             "/v1/webhook_endpoints/:id",
-            # core's own schema allows `{param}` as well as `:param`, and a route
-            # that legally contains braces must not be refused by a validator that
-            # was written without them in mind.
             "/v1/accounts/{accountID}",
             "/v1/notification_preferences/user_01J9Z8QK5M4N7P2R3T6V8W9X0A"
           ] do
@@ -291,17 +251,11 @@ defmodule Courier.ObservabilityTest do
 
     test "refuses the shapes a caller most easily gets content through" do
       for value <- [
-            # An email. There is no `@` in the character set.
             "/v1/accounts/someone@example.com",
-            # A query string. No `?`, no `=`.
             "/v1/accounts?email=someone@example.com",
-            # A space, which is what `interpolate` produces.
             "/v1/accounts/some one",
-            # Not slash-led.
             "v1/accounts",
-            # A percent-encoded anything.
             "/v1/accounts/%2e%2e%2f",
-            # Over the length bound.
             "/" <> String.duplicate("a", 201)
           ] do
         refute Courier.Observability.route_template?(value), "accepted an illegal route: #{value}"
@@ -315,37 +269,15 @@ defmodule Courier.ObservabilityTest do
     end
 
     test "a concrete path still matches, and that is the documented limit" do
-      # WHAT THIS FUNCTION CANNOT DO, written as a test so nobody later reads it as
-      # the guarantee it is not. No pattern over a path can tell a filled-in
-      # template from a literal one without the router's route table.
-      #
-      # The property is therefore STRUCTURAL: `CourierWeb.Plugs.Telemetry` asks
-      # Phoenix for the matched route, which the router built from its own table
-      # where a path parameter is the literal `:id`. A concrete path is not
-      # available to that call site. `CourierWeb.Plugs.TelemetryTest` asserts it on
-      # a real parameterised route, which is the only request shape on which the
-      # two differ.
       assert Courier.Observability.route_template?(
                "/v1/webhook_endpoints/wh_01J9Z8QK5M4N7P2R3T6V8W9X0A"
              )
     end
   end
 
-  # --- helpers ---------------------------------------------------------------
 
-  # A REAL exported span: the SDK opens it, courier's own span processor collects
-  # it, and the exporter writes it where this test can read it. The whole export
-  # path, because a redaction claim is about what LEFT the process — and because
-  # the parts of that path that are easy to get wrong fail by exporting nothing at
-  # all, which makes a "no canary" assertion pass. See `Courier.TestSpanExporter`.
 
   defp spans_for(fun) do
-    # `clear/1` is safe HERE and only here, and the reason is ExUnit's scheduling
-    # rather than a convention: this module is `async: false`, and ExUnit runs every
-    # `async: false` module after the `async: true` ones, one at a time, with no
-    # overlap. So clearing the shared table here cannot delete another test's
-    # evidence. The canary test, which is also `async: false` and DOES share the
-    # table, therefore identifies its spans by name instead.
     Courier.TestSpanExporter.clear()
 
     ctx = CourierWeb.Plugs.Telemetry.extract_context([])
@@ -357,10 +289,6 @@ defmodule Courier.ObservabilityTest do
     :otel_span.end_span(span)
     Courier.SpanCollector.flush()
 
-    # BY NAME, not by position. The rest of the suite is `async: true` and every
-    # request through the endpoint exports into the same table, so "the spans
-    # exported since I started" is every span the scheduler produced in between.
-    # `courier.test` is opened by exactly one call site in this file.
     case Courier.TestSpans.finished_spans() |> Enum.filter(&(&1.name == "courier.test")) do
       [finished] -> finished
       other -> flunk("expected exactly one `courier.test` span, got #{length(other)}")

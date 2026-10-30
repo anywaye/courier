@@ -8,8 +8,8 @@ defmodule Courier.TestSupport.TestDns do
   answers live here:
 
       Courier.TestSupport.TestDns.resolve({:canned, ["127.0.0.1"]})
-      Courier.TestSupport.TestDns.resolve({:canned, []})          # nothing answers
-      Courier.TestSupport.TestDns.resolve({:canned, :timeout})   # the resolver failed
+      Courier.TestSupport.TestDns.resolve({:canned, []})
+      Courier.TestSupport.TestDns.resolve({:canned, :timeout})
 
   It never calls `:inet`, so a test cannot pass or fail because of what a real
   resolver decided about a real name, and a `{:canned, []}` case says "the name
@@ -20,9 +20,6 @@ defmodule Courier.TestSupport.TestDns do
 
   @impl Courier.Webhooks.Dns
   def resolve({:canned, answers}) when is_list(answers) do
-    # An empty answer list is a name that exists and points nowhere, which
-    # `:inet.getaddrs/2` reports the same way. courier treats it as a failure
-    # rather than as a licence to connect to whatever comes next.
     case answers do
       [] -> {:error, :nxdomain}
       answers -> {:ok, answers}

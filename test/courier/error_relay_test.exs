@@ -3,7 +3,6 @@ defmodule Courier.ErrorRelayTest do
   Volume control on the error path, and the guarantee that the error path cannot
   take the main path down with it.
 
-  ## What is being controlled, and why volume control is ours to build
 
   Sentry **does not sample errors, by design**. The SDK's `sample_rate` applies
   to transactions; an exception is reported every time it happens. That is the
@@ -25,7 +24,6 @@ defmodule Courier.ErrorRelayTest do
   in a hot loop does not become ten thousand identical notifications" — because
   it holds no matter what the three SDKs do.
 
-  ## Why a token bucket and not a counter
 
   A counter with a reset is a rate limit with a cliff: at the boundary it either
   lets a burst through or it does not. A bucket refills continuously, so the
@@ -33,7 +31,6 @@ defmodule Courier.ErrorRelayTest do
   because it is the one that says *the bug is still happening* — and a continuing
   bug produces one event per refill interval rather than a wall.
 
-  ## `async: false`, and why
 
   `Courier.TestSupport.Clock` is a **named** process, and the refill assertions
   move its clock. Two of these tests advancing one clock concurrently would make
@@ -43,7 +40,6 @@ defmodule Courier.ErrorRelayTest do
   costs about thirty milliseconds; every other file in the no-database tier stays
   `async: true`.
 
-  ## Nothing here sleeps, the clock is injected, and nothing here polls either
 
   A throttle tested by waiting is a throttle tested by the wall clock, and it is
   a test that takes as long as the window it is proving. `now` is a function the
@@ -112,24 +108,13 @@ defmodule Courier.ErrorRelayTest do
   @canary "CANARY-4f19b2c7-do-not-store-me"
   @bearer "Bearer abcdefghijklmnopqrstuvwxyz012345"
 
-  # A failure deadline, not a wait budget. See the moduledoc: every wait below is
-  # for a message a named process must send, and none of them is racing a duration
-  # it is guessing at.
   @wait 2_000
 
   setup do
     start_supervised!({Clock, []})
-    # The recording sink sends to whatever pid is in its options, so `self()`
-    # here is the test process. The relay is started by `start_relay/1` inside
-    # each test rather than here, because four of these tests need a relay with
-    # different options and a `setup` one would collide with the second.
     :ok
   end
 
-  # Each relay is a unique name so a test may start as many as it needs, and
-  # `start_supervised!` guarantees the process is stopped when the test ends —
-  # which is what keeps the throttle tables and the drain supervisors from
-  # outliving a test and answering the next one.
   defp start_relay(opts \\ []) do
     name = :"relay_#{System.unique_integer([:positive])}"
 
@@ -188,29 +173,8 @@ defmodule Courier.ErrorRelayTest do
     )
   end
 
-  # An event as the **controller** hands it over: a decoded envelope item, not a
-  # bare event. The distinction is load-bearing and the first version of this
-  # file got it wrong, which is worth recording: passing the event map directly
-  # to `ingest/2` makes every item a non-event, the relay filters all of them
-  # out, and every assertion below fails at once with the relay reporting
-  # `received: 3, forwarded: 0` — a shape that reads like a broken throttle and
-  # is actually a test that built the wrong thing.
   defp as_item(event), do: %{"type" => "event", "payload" => event}
 
-  # The envelopes the sink was handed, **waiting for `expected` of them by
-  # message**.
-  #
-  # This used to be "drain the mailbox until it has been quiet for 200 ms", and
-  # that is a wait for silence: it has to outlast the slowest drain the machine
-  # can produce, which is unbounded, so it fails when the machine is busy and
-  # passes when it is idle. Waiting for a *number* inverts it — the number is
-  # known from the relay's own admission count, and each envelope is a message a
-  # named process must send.
-  #
-  # `expected` has no `0` clause on purpose. `forwarded(0)` would return `[]` and
-  # an assertion written on it would pass without the sink having been consulted,
-  # which is a check over nothing. The deterministic form of "nothing was
-  # forwarded" is the relay's own `forwarded` counter, read after `sync/1`.
   defp forwarded(expected) when expected > 0 do
     Enum.map(1..expected, fn _ ->
       assert_receive {:relayed, envelope}, @wait
@@ -218,42 +182,12 @@ defmodule Courier.ErrorRelayTest do
     end)
   end
 
-  # Every `ingest/2` is a **cast**, so a test that fires ten thousand of them has
-  # ten thousand messages in the relay's mailbox and has read nothing. Asking for
-  # the stats without this first returned `received: 1410` out of 10 000 — a
-  # number that looks like a throttle bug and is really an unsynchronised read.
-  #
-  # `:sys.get_state/1` on the relay, then on the sender, which is the idiom the
-  # house rules name for "let the process handle its prior messages". The sender
-  # is second because it is the relay that accepts the cast that starts a drain,
-  # and the relay is what casts the envelope on.
-  #
-  # This is a barrier, not a wait: nothing here is retried and nothing here can
-  # run out. It is also **not** enough for `sink_failures`, which is written by
-  # the drain — see the moduledoc and `await_drain/1`.
   defp sync(relay) do
     :sys.get_state(relay)
     :sys.get_state(ErrorRelay.sender_name(relay))
     :ok
   end
 
-  # Wait for the drain carrying this envelope to finish, which is the only moment
-  # at which `sink_failures` is guaranteed written.
-  #
-  # The drain is a `Task` under the sender's `Task.Supervisor`, and it writes the
-  # counter in `Sender.forward/2` *before* it casts `:drained` on its way out. So
-  # a process that observes the drain **exit** observes the count, and
-  # `Process.monitor/1` with `assert_receive` on the `:DOWN` is that observation.
-  # It is the first thing the house rules name, and unlike the 200-iteration spin
-  # this replaces it is a barrier: nothing is retried, nothing is a count of
-  # iterations, and the count cannot be missing.
-  #
-  # The pid comes from `which_children/1` after one `:sys.get_state/1` on the
-  # sender, which is a barrier for *the drain existing*: the sender starts it
-  # synchronously, inside the `handle_cast` that accepted the envelope. An empty
-  # list means the drain has already been reaped, and a drain is reaped only after
-  # it has exited — so that is "finished" as well. All three shapes are sound:
-  # alive, already-exited, already-reaped.
   defp await_drain(relay) do
     :sys.get_state(ErrorRelay.sender_name(relay))
 
@@ -273,13 +207,6 @@ defmodule Courier.ErrorRelayTest do
       for _ <- 1..10_000, do: ErrorRelay.ingest(relay, [as_item(event())])
       sync(relay)
 
-      # Three is `@burst`. The ten thousand is not a performance figure — it is
-      # the shape of the failure this exists for, and 10k costs the same as 10.
-      #
-      # The counter and the messages are asserted together because each one
-      # bounds the other: the relay admitted exactly three, so the sink cannot
-      # have been handed a fourth, so three envelopes arriving is "exactly
-      # three" rather than "at least three".
       assert %{forwarded: 3, throttled: 9_997} = ErrorRelay.stats(relay)
       assert 3 == length(forwarded(3))
     end
@@ -290,9 +217,6 @@ defmodule Courier.ErrorRelayTest do
       for _ <- 1..@burst, do: ErrorRelay.ingest(relay, [as_item(event())])
       assert @burst == length(forwarded(@burst))
 
-      # The first bug's bucket is empty. This is a different operation, so it is
-      # a different fingerprint and a different key: one bug in a hot loop must
-      # not be able to silence a second bug that is also happening.
       ErrorRelay.ingest(relay, [as_item(event(%{"transaction" => "courier.webhook.send"}))])
       assert 1 == length(forwarded(1))
     end
@@ -303,18 +227,10 @@ defmodule Courier.ErrorRelayTest do
       for _ <- 1..@burst, do: ErrorRelay.ingest(relay, [as_item(event())])
       assert @burst == length(forwarded(@burst))
 
-      # No time has passed: still empty. Asserted on the relay's admission count
-      # rather than on a quiet mailbox, because the count is written by the relay
-      # in the same `handle_cast` that decides to admit, and a mailbox that has
-      # not received anything is a claim about the scheduler rather than about
-      # the throttle.
       ErrorRelay.ingest(relay, [as_item(event())])
       sync(relay)
       assert @burst == ErrorRelay.stats(relay).forwarded
 
-      # `@per_minute` 60 is one token per second. 999ms is not enough, and
-      # asserting the near miss is what pins the *rate* rather than just
-      # "eventually something happened".
       Clock.advance(999)
       ErrorRelay.ingest(relay, [as_item(event())])
       sync(relay)
@@ -335,10 +251,6 @@ defmodule Courier.ErrorRelayTest do
       for _ <- 1..(@burst * 3), do: ErrorRelay.ingest(relay, [as_item(event())])
       sync(relay)
 
-      # Without the cap, a relay left alone over a weekend comes back with a
-      # bucket of several thousand tokens and emits a burst on the first
-      # exception — the throttled path would then be the thing that surprises
-      # somebody, and it would surprise them during an incident.
       assert %{forwarded: 6, throttled: 6} = ErrorRelay.stats(relay)
       assert @burst == length(forwarded(@burst))
     end
@@ -354,8 +266,6 @@ defmodule Courier.ErrorRelayTest do
 
       sync(relay)
 
-      # Asserted on the table rather than on a counter, because a counter would
-      # not notice a table that stopped being pruned.
       assert :ets.info(relay, :size) <= @capacity
     end
 
@@ -365,29 +275,12 @@ defmodule Courier.ErrorRelayTest do
       assert :ok == ErrorRelay.ingest(relay, [as_item(event())])
       assert Process.alive?(Process.whereis(relay))
 
-      # The sink really was called, and it really raised — `assert_receive` on
-      # the mode is what distinguishes this from the error-tuple test below, and
-      # it cannot pass by a counter going up for some other reason.
       assert_receive {:sink_attempted, :raise}, @wait
 
-      # The load-bearing half: a sink that raises on every call does not take the
-      # relay with it, and the counter survives to say so. An error store that
-      # crashes itself stops working at the exact moment it is needed.
-      #
-      # `sink_failures` is written by the drain **after** the sink has returned,
-      # in a `Task` two hops below the relay, so the notification above — which
-      # the sink sends on the way *in* — says nothing about it either way: it
-      # arrives whether or not the drain has counted yet. `await_drain/1` is the
-      # barrier, and it is a message rather than a deadline.
-      #
-      # `1 ==` and not `> 0`: the exact count also says the raising sink was
-      # counted once per envelope rather than once per attempt inside it.
       await_drain(relay)
       assert 1 == ErrorRelay.stats(relay).sink_failures
       assert Process.alive?(Process.whereis(relay))
 
-      # And it is still accepting: a second, differently-fingerprinted event is
-      # attempted and counted rather than lost.
       ErrorRelay.ingest(relay, [as_item(event(%{"transaction" => "courier.webhook.send"}))])
       assert_receive {:sink_attempted, :raise}, @wait
 
@@ -400,16 +293,8 @@ defmodule Courier.ErrorRelayTest do
 
       ErrorRelay.ingest(relay, [as_item(event())])
 
-      # `{:sink_attempted, :error}` and not `{:sink_attempted, :raise}`: that
-      # assertion is what proves `:sink_mode` reached the sink through the
-      # relay's option forwarding. When the key was not forwarded, this test
-      # passed anyway — the counter went up either way — and proved nothing about
-      # the error-tuple path at all.
       assert_receive {:sink_attempted, :error}, @wait
 
-      # `1 ==` and not `> 0`, and the drain is awaited rather than slept through:
-      # an exact figure is what says an error tuple is counted once, on the
-      # ordinary branch, the same way a raise is.
       await_drain(relay)
       assert 1 == ErrorRelay.stats(relay).sink_failures
     end
@@ -417,26 +302,13 @@ defmodule Courier.ErrorRelayTest do
 
   describe "it never blocks the caller" do
     test "ingest/2 returns when the queue is full and nothing is draining" do
-      # `queue_size: 0` is the honest way to reach the full state: filling a real
-      # queue needs a sink slow enough to make the test wait, which is a sleep
-      # wearing a test's clothes. The drop is the behaviour under test and the
-      # zero is what puts us in it.
       relay = start_relay(queue_size: 0)
 
       assert :ok == ErrorRelay.ingest(relay, [as_item(event())])
 
-      # `queue_full` is the sender's counter, and `sync/1` is a complete barrier
-      # for it: the drop can only be counted after the relay has cast the
-      # envelope, which is what the relay's half of `sync/1` waits for, and the
-      # sender answers only after handling the cast that precedes it. One round
-      # trip, no loop — the difference between this and the 200-iteration spin
-      # this line replaced.
       sync(relay)
       assert 1 == ErrorRelay.stats(relay).queue_full
 
-      # The load-bearing half: the caller got `:ok` and the relay is up. A full
-      # queue is a **drop**, and a drop is the whole point — the error store is
-      # best-effort and must never be the reason a request waits.
       assert Process.alive?(Process.whereis(relay))
     end
 
@@ -453,11 +325,6 @@ defmodule Courier.ErrorRelayTest do
                  as_item(event(%{"tags" => %{"service.name" => "courier"}}))
                ])
 
-      # Both counters are written by the relay itself, in the `handle_cast` that
-      # reads the event, so one round trip settles them. `forwarded: 0` is the
-      # "nothing reached the sink" claim in its deterministic form: the relay
-      # admitted nothing, and an admitted event is the only thing that produces an
-      # envelope.
       sync(relay)
 
       assert %{malformed: 1, unclassified: 1, forwarded: 0} = ErrorRelay.stats(relay)
@@ -480,8 +347,6 @@ defmodule Courier.ErrorRelayTest do
     test "two events in one envelope arrive as two items in one envelope" do
       relay = start_relay()
 
-      # The Sentry SDK batches, and a relay that forwarded one item per request
-      # would turn a batch of fifty into fifty requests to the store.
       ErrorRelay.ingest(relay, [
         as_item(event()),
         as_item(event(%{"transaction" => "courier.webhook.send"}))
@@ -495,10 +360,6 @@ defmodule Courier.ErrorRelayTest do
     test "a non-event item — a session, a transaction — is not forwarded" do
       relay = start_relay()
 
-      # Sessions are the SDK's own health bookkeeping. A transaction is a second
-      # copy of the span data the OTel pipeline already ships and already
-      # redacts, and forwarding it would put instrumented data into the error
-      # store through the one door this packet is careful about.
       ErrorRelay.ingest(relay, [
         %{"type" => "session", "payload" => %{"status" => "ok"}},
         %{"type" => "event", "payload" => event()},
@@ -550,11 +411,6 @@ defmodule Courier.ErrorRelayTest do
 
   describe "the fingerprint is the relay's, not the caller's" do
     test "a caller that changes its Sentry fingerprint every event cannot defeat the throttle" do
-      # Sentry's own `fingerprint` field lets a client choose its grouping. If
-      # the relay honoured it, a caller could defeat the throttle entirely by
-      # sending a fresh value per event — and, in the other direction, could
-      # collapse every error in the fleet into a single group. So the relay
-      # computes its own, from the redacted event, and drops the field.
       relay = start_relay()
 
       for n <- 1..5 do
@@ -572,10 +428,6 @@ defmodule Courier.ErrorRelayTest do
         )
       end
 
-      # `sync/1` before the counters, because `throttled` is written by the relay
-      # in response to a cast and the test's `ingest` calls return before any of
-      # them has been read. Reading the table straight after the last `ingest`
-      # reads whatever the relay had got to, which on a busy machine is not five.
       sync(relay)
 
       assert %{forwarded: 3, throttled: 2} = ErrorRelay.stats(relay)

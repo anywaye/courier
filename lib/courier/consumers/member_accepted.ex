@@ -2,7 +2,6 @@ defmodule Courier.Consumers.MemberAccepted do
   @moduledoc """
   `identity.member.accepted` → an in-app notification: "you're in".
 
-  ## THE EVENT, AND THE PAYLOAD IT CARRIES
 
   identity publishes this from `internal/outbox/tenancy.go` (`NewMemberAccepted`),
   in the same transaction as the membership it describes — an event without a
@@ -16,7 +15,6 @@ defmodule Courier.Consumers.MemberAccepted do
   redeemed and the membership is created (`internal/accounts/service.go`, the
   accept flow).
 
-  ## THE NAME DIVERGENCE, CONSUMED AND NOT RESOLVED
 
   core's catalog (`core/docs/event-naming.md`) calls this fact
   `identity.member.joined`; identity publishes `accepted` per the packet decision
@@ -25,7 +23,6 @@ defmodule Courier.Consumers.MemberAccepted do
   fails on somebody else's deploy (core's rule 6) — and the divergence is
   reported rather than renamed: `REPORT-courier-consumer-memberaccepted-01`.
 
-  ## THE SURFACE DECISION: IN-APP, AND THE PAYLOAD IS WHY
 
   Two delivery surfaces exist in courier, and the payload decides which one is
   actionable:
@@ -49,7 +46,6 @@ defmodule Courier.Consumers.MemberAccepted do
   packet refused to send. The refusal is named in the report, not coded here:
   a handler that never attempts email has no email-refusal branch to write.
 
-  ## THE NOTIFICATION TYPE IS `welcome`, AND THAT IS A CLOSED-VOCABULARY DECISION
 
   `Courier.Notifications.types/0` is `welcome`, `mention`, `assignment`,
   `comment`, `billing`. A member who just accepted is being told they are in:
@@ -61,7 +57,6 @@ defmodule Courier.Consumers.MemberAccepted do
   renderer's worth of semantics behind it already; a second name for the same
   fact would not have.
 
-  ## WHAT `params` CARRIES, AND WHAT IT DELIBERATELY DOES NOT
 
   `params` is `%{"role" => role}` — the one fact a renderer needs that is not
   already a column on the event row. Three absences are decisions:
@@ -81,7 +76,6 @@ defmodule Courier.Consumers.MemberAccepted do
       `Courier.NotificationEvent`'s moduledoc lists as the reason the pair is
       validated in the first place.
 
-  ## THE HANDLER TAKES THE ROW, NOT THE ENVELOPE
 
   `handle/1` is given the `consumed_events` row rather than the envelope as it
   arrived — the same principle as `Courier.Consumers.MemberInvited`, and for the
@@ -90,7 +84,6 @@ defmodule Courier.Consumers.MemberAccepted do
   receives is the row courier recorded rather than a re-rendering that could
   drift from it.
 
-  ## WHAT THIS HANDLER ADDS TO COURIER'S VOCABULARY
 
   Nothing beyond the parse refusals every handler has. A payload it can parse is
   recorded through `Courier.Notifications.record/2` and whatever that answers —
@@ -109,9 +102,6 @@ defmodule Courier.Consumers.MemberAccepted do
           required(:role) => String.t()
         }
 
-  # The three fields identity publishes, checked by NAME so the reason names the
-  # one that was wrong. Order is the payload's own, so the message a caller sees
-  # is the payload's rather than a hash order's.
   @fields ~w(account_id user_id role)
 
   @event_type "identity.member.accepted"

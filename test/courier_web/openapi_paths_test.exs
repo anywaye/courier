@@ -17,8 +17,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
 
   alias Courier.TestSupport.OpenAPIPaths, as: Paths
 
-  # A document written to the shape this repository's `openapi.yaml` uses: keys at
-  # column 0, path items two in, operations four in, and bodies deeper still.
   defp write_document(lines) do
     path = Path.join(System.tmp_dir!(), "openapi-#{System.unique_integer([:positive])}.yaml")
     File.write!(path, Enum.join(lines, "\n") <> "\n")
@@ -66,8 +64,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "the spellings it keeps are the document's own, not the normalised key's" do
-      # The failure message names the path, so it has to name the path as the
-      # reader saw it: `{id}` from the document, `:id` from the router.
       document = write_document(["paths:", "  /v1/widgets/{id}:", "    get:"])
       operations = Paths.document_operations!(document)
 
@@ -76,8 +72,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a body key that merely starts with a method name is not an operation" do
-      # `get:` is an operation. `getaway:` is not, and a reader that matched on
-      # the prefix would count a schema property as a route.
       document =
         write_document(["paths:", "  /v1/widgets:", "    get:", "    getaway:", "    posting:"])
 
@@ -100,18 +94,12 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "the two indentation levels are derived from the document, not assumed" do
-      # Four-space YAML is legal and common. A reader that hardcoded two and four
-      # would read this document as having no operations at all — and a check
-      # that finds nothing passes.
       document = write_document(["paths:", "    /v1/widgets:", "        get:", "        post:"])
 
       assert map_size(Paths.document_operations!(document)) == 2
     end
 
     test "anything deeper than the operation level is an operation's body, not structure" do
-      # A real document nests: `parameters` holds a list of `- $ref:` entries, and
-      # an operation holds a `responses:` mapping. A reader that treated every
-      # deeper level as structure would count a response's status codes as routes.
       document =
         write_document([
           "paths:",
@@ -134,10 +122,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a key inside an operation's body that is spelled like a method is not an operation" do
-      # The failure this guards against is specific: a schema property named
-      # `delete`, three levels down inside a response body, read as a `DELETE`
-      # route. It would be a phantom operation in the document, and the check
-      # would demand a route that should not exist.
       document =
         write_document([
           "paths:",
@@ -168,8 +152,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a path item's own fields are not operations" do
-      # OpenAPI 3.1 puts `summary`, `description` and `servers` directly under a
-      # path key. They are part of the Path Item Object, not of its operations.
       document = write_document(["paths:", "  /v1/widgets:", "    summary: widgets", "    get:"])
 
       assert map_size(Paths.document_operations!(document)) == 1
@@ -177,9 +159,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
   end
 
   describe "the document reader refuses rather than under-reads" do
-    # Every one of these is a document that would make the check pass for the
-    # wrong reason, so the reader raises instead. "Finds no paths and passes" is
-    # the failure mode this whole file is about.
 
     test "a document with no top-level paths: is an error, not an empty check" do
       document = write_document(["openapi: 3.1.0", "info:", "  title: courier"])
@@ -198,9 +177,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a path item with no operation under it is an error" do
-      # OpenAPI does not allow a path item with no operations, and a reader that
-      # skipped it would report the router as serving something the document does
-      # not describe, for the wrong reason.
       document =
         write_document(["paths:", "  /v1/widgets:", "    parameters:", "      - $ref: x"])
 
@@ -210,8 +186,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a path key that does not start with a slash is an error, not normalised" do
-      # Prepending a slash would quietly accept an invalid document and hide the
-      # invalidity, so the reader refuses the document instead.
       document = write_document(["paths:", "  v1/widgets:", "    get:"])
 
       assert_raise RuntimeError, ~r/not a valid OpenAPI path/, fn ->
@@ -244,9 +218,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
 
   describe "reading paths out of the router" do
     test "it reads the router's own route definitions, not a list written by hand" do
-      # This is the pantry-03 lesson in one assertion: the route set has to come
-      # from `__routes__/0`, or the check can only ever fail for a route somebody
-      # remembered to write down.
       operations = Paths.router_operations!()
 
       assert Enum.any?(operations, fn {_key, op} ->
@@ -289,8 +260,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
 
   describe "normalising the method" do
     test "an atom verb and a string verb are the same operation" do
-      # `Phoenix.Router.Route.verb` is an atom (`:get`); a document's key is the
-      # string `"get"`. Neither is a difference between the two sides.
       assert Paths.normalise_method(:get) == "GET"
       assert Paths.normalise_method("get") == "GET"
       assert Paths.normalise_method("GET") == "GET"
@@ -300,8 +269,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a document that writes GET: and get: is a collision, not a duplicate to keep" do
-      # Case folding is only safe while it cannot hide two operations. If it can,
-      # the reader says so rather than quietly keeping one of them.
       document = write_document(["paths:", "  /v1/widgets:", "    get:", "    GET:"])
 
       assert_raise RuntimeError, ~r/both read as GET \/v1\/widgets/, fn ->
@@ -317,19 +284,11 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "renaming a path parameter is not drift" do
-      # A generated client substitutes a path parameter positionally, so `{id}`
-      # becoming `{endpoint_id}` is a rename inside one route, not two routes.
-      # Failing on it would make the check fail on a change that breaks nothing,
-      # and a check that cries wolf is a check people turn off.
       assert Paths.normalise_operation("GET", "/v1/webhook_endpoints/{id}") ==
                Paths.normalise_operation("GET", "/v1/webhook_endpoints/:endpoint_id")
     end
 
     test "the parameter name is the only thing erased, and only inside a segment" do
-      # A mechanical rewrite: the whole segment becomes `{}` whether it is
-      # written `:id`, `{id}` or `{some_long_name}`. What is *not* erased is
-      # which segment it was, so a path that gains or loses a parameter is still
-      # a difference.
       assert Paths.normalise_path("/v1/widgets/:id") == "/v1/widgets/{}"
       assert Paths.normalise_path("/v1/widgets/:id/parts/:part_id") == "/v1/widgets/{}/parts/{}"
       assert Paths.normalise_path("/v1/widgets/extra") == "/v1/widgets/extra"
@@ -337,8 +296,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a path parameter is replaced by a whole segment, never by part of one" do
-      # `{id}.json` is a file suffix on the same parameter. Erasing only `{id}`
-      # would leave `.json` behind and produce a path the router could never serve.
       assert Paths.normalise_path("/v1/widgets/{id}.json") == "/v1/widgets/{}"
       assert Paths.normalise_path("/v1/widgets/:id.json") == "/v1/widgets/{}"
     end
@@ -346,10 +303,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
 
   describe "normalising a trailing slash" do
     test "a trailing slash is not a difference, and the router is the reason why" do
-      # This is the one normalisation that could be a convenience, so it is
-      # grounded in the router's own behaviour rather than in taste: Phoenix
-      # resolves `/healthz/` to the `/healthz` route, so the two are the same
-      # route and the check must not see them as two.
       assert %{route: "/healthz"} =
                Phoenix.Router.route_info(CourierWeb.Router, "GET", "/healthz/", "")
 
@@ -364,10 +317,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
 
   describe "a normaliser that maps two different things onto one" do
     test "two router paths that erase to the same route are an error" do
-      # `/v1/widgets/{id}` and `/v1/widgets/{name}` are one route to a client.
-      # If the check cannot see them as one, it reports a phantom route forever;
-      # if it can, it is blind to a collision. So the reader refuses the
-      # ambiguity rather than picking a winner.
       defmodule CollidingRouter do
         def __routes__ do
           [
@@ -384,17 +333,9 @@ defmodule CourierWeb.OpenAPIPathsTest do
   end
 
   describe "the comparison, pointed at an injected fault" do
-    # Each of these injects one fault and asserts the checker names it. This is
-    # the test that a checker pointed the wrong way cannot pass: if the
-    # comparison reported drift in the wrong direction, or none at all, the
-    # assertion below that expects the offender would fail.
 
     defp document_for(lines), do: lines |> write_document() |> Paths.document_operations!()
 
-    # A module with the one function the reader looks for. Built rather than
-    # written out so a test can change the route set without changing the fixture
-    # — a hand-written module per case is a hand-maintained list wearing a
-    # disguise, which is the thing this whole check is against.
     defp router_for(routes) do
       module = :"FaultRouter#{System.unique_integer([:positive])}"
 
@@ -445,9 +386,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a renamed path is reported on both sides, not on whichever one moved" do
-      # A count comparison passes here: two operations become two operations.
-      # Comparing the paths does not, and the offender appears twice — once for
-      # the document's spelling, once for the router's.
       document =
         document_for([
           "paths:",
@@ -498,10 +436,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "an exclusion covers the route it names, and the difference says so" do
-      # A named carve-out is how a real omission stays a real omission. It has to
-      # be narrow: the same omission with a different path, or with a different
-      # method, is drift again. And the reason has to survive into the report,
-      # or a carve-out reads as a gap the check happened to miss.
       document = document_for(["paths:", "  /v1/widgets:", "    get:"])
 
       router =
@@ -545,9 +479,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
   end
 
   describe "reading responses out of a document" do
-    # The route reader's discipline, applied to the response reader. Every case
-    # here is a document that would make the check pass for the wrong reason, or
-    # report a promise the document does not actually make.
 
     defp responses_for(lines) do
       lines |> write_document() |> Paths.document_responses!()
@@ -611,10 +542,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a $ref is followed, so a response that says nothing still knows the envelope" do
-      # This is the whole reason the reader resolves a `$ref`. The one-line
-      # `'404': { $ref: … }` names no media type and no schema; the promise is in
-      # the component it points at, and a reader that stopped at the line would
-      # report every reusable error as unwired.
       responses = a_document_with_responses() |> Paths.document_responses!()
 
       not_found = Map.fetch!(Map.fetch!(responses, {"GET", "/v1/widgets/{}"}), "404")
@@ -653,9 +580,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a $ref to a component the document does not define is an error" do
-      # The failure this reader exists for. A response wired to nothing is
-      # described as though it were wired, and a client generated from it has a
-      # method that answers with a body nobody wrote.
       assert_raise RuntimeError, ~r/defines no response of that name/, fn ->
         responses_for([
           "paths:",
@@ -702,10 +626,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a method inherits only its own responses, not its sibling's" do
-      # Without the per-method subtree, `POST` would be checked against `GET`'s
-      # promises: a document where `GET` declares a 404 and `POST` does not would
-      # look like both do, and the check could not see a `POST` that never declared
-      # its own failure.
       responses =
         responses_for([
           "paths:",
@@ -743,9 +663,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "component_responses! reports the media type and the schema separately" do
-      # Two questions, and only the second makes the first true: a response can
-      # name `application/problem+json` over some other schema, which promises
-      # courier's error shape and delivers something else.
       path =
         write_document([
           "paths:",
@@ -770,8 +687,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "a document with no components: at all is an error, not an empty set" do
-      # A reader that returned `%{}` here would report every `$ref` as dangling,
-      # which is a louder failure than the right one but for the wrong reason.
       assert_raise RuntimeError, ~r/no top-level `components:`/, fn ->
         Paths.component_responses!(
           write_document([
@@ -786,42 +701,8 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "it reads courier's own document, and every non-2xx there is wired" do
-      # The reader against the real thing, so a change to `openapi.yaml`'s shape
-      # is caught here rather than as a baffling failure in the check built on it.
       responses = Paths.document_responses!()
 
-      # 12 operations, and the number is here to be changed in the commit that adds
-      # or removes one rather than to be discovered by the count assertion below
-      # firing on an unrelated edit. It is a tripwire, not the assertion: the check
-      # that matters is the loop underneath, which asks every non-2xx whether it is
-      # wired to courier's envelope.
-      #
-      # 9 → 10 with `POST /inbound/resend`, the provider webhook courier receives
-      # signed reports on. 10 → 12 with `GET` and `POST /unsubscribe/{token}`, the
-      # RFC 8058 one-click endpoint every bulk message's `List-Unsubscribe` header
-      # points at. **Two operations on one path, which is why this moved by two and
-      # not by one** — RFC 8058 §3.2 has the mail client POST to the same URI a
-      # person GETs, and a bulk sender whose header points at a `405` has not met
-      # the requirement by the clients people actually use. They are counted here
-      # for the same reason every other operation is: a document that quietly stops
-      # describing an operation is the failure `CourierWeb.OpenAPIDocumentTest`
-      # exists to catch, and this file is the reader that would stop understanding
-      # the document first.
-      #
-      # 12 → 16 with the four notification operations: `GET /v1/notifications`,
-      # `GET /v1/notifications/unread_count`, `POST /v1/notifications/{id}/seen`
-      # and `POST /v1/notifications/{id}/read`. Four operations on two new paths,
-      # and the two POSTs declare a 400 for the reason every other operation with
-      # a body-reading verb does: the parser reads a body on `POST`, so a body
-      # that is not JSON is refused before the controller runs.
-      #
-      # 16 → 21 with the five sending-domain operations: `GET` and
-      # `POST /v1/sending_domains`, `GET /v1/sending_domains/{id}`,
-      # `POST /v1/sending_domains/{id}/verify` and
-      # `POST /v1/sending_domains/{id}/revoke`. The three POSTs declare a 400 for
-      # the same body-reading reason, and the two that can be retried
-      # (`registerSendingDomain`, `verifySendingDomain`) also declare a 409, so
-      # the count moved by five.
       assert map_size(responses) == 26
 
       for {_operation, declared} <- responses, {status, response} <- declared do
@@ -874,11 +755,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
   end
 
   describe "reading which operations accept Idempotency-Key" do
-    # The reader `CourierWeb.OpenAPIErrorResponsesTest` compares the document's
-    # half of "which operations are guarded" against the router's half. A reader
-    # that returned an empty set would make that comparison agree for the wrong
-    # reason, so these are its tests, on synthetic documents, with the faults
-    # injected — the same discipline the rest of this file applies to itself.
 
     test "it finds the operation that refs the parameter" do
       document =
@@ -902,9 +778,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "it finds an inline parameter as well as a $ref" do
-      # A document that does not use `components.parameters` is still a document
-      # that declares the header, and the check would otherwise report a drift
-      # that does not exist.
       document =
         write_document([
           "openapi: 3.1.0",
@@ -924,10 +797,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "it does not read one operation's header as another's" do
-      # The fault this reader is most likely to have: `POST` inheriting `GET`'s
-      # `parameters`, or the reverse, because a subtree was taken one level too
-      # wide. `PATCH` is here as the innocent bystander a too-wide read would
-      # wrongly pick up.
       document =
         write_document([
           "openapi: 3.1.0",
@@ -948,9 +817,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "it normalises the path the way the other readers do" do
-      # Otherwise the document says `POST /v1/widgets/{id}/test` and the router
-      # says `POST /v1/widgets/:id/test`, and the two halves of the comparison
-      # never meet.
       document =
         write_document([
           "openapi: 3.1.0",
@@ -967,9 +833,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "it is empty, not broken, for a document that declares the header nowhere" do
-      # The empty case is a real answer here and must not raise: a service that
-      # does not implement idempotency is a legitimate document, and the point of
-      # the comparison is to notice the moment that stops being true.
       document =
         write_document([
           "openapi: 3.1.0",
@@ -983,9 +846,6 @@ defmodule CourierWeb.OpenAPIPathsTest do
     end
 
     test "it is the same reader the check uses, not a second implementation" do
-      # Against the real document, so a rename of the parameter component that
-      # broke the reader would be caught here rather than in a green check over
-      # an empty set.
       operations = Paths.document_idempotency_keys!("openapi.yaml")
 
       assert Map.keys(operations) |> Enum.sort() == [

@@ -3,7 +3,6 @@ defmodule Courier.InboundConfig do
   The signing secrets courier verifies inbound webhooks with — optional in
   production, with the cost stated on a boot log line.
 
-  ## This is a *verification* secret, and it is not the outbound one
 
   courier signs outbound deliveries with a secret it generates per endpoint
   (`Courier.WebhookEndpoints`, sealed under `COURIER_SECRET_BOX_KEY`) and
@@ -14,7 +13,6 @@ defmodule Courier.InboundConfig do
   secret can also forge inbound suppressions. So the two are configured
   separately and this module says so where the variable is read.
 
-  ## Why a secret is OPTIONAL in production — cf-inbound-optional
 
   Unset, `Courier.Inbound.Signature.verify/4` answers `:invalid_secret` for every
   request, the route answers 500, and **every hard bounce and every complaint
@@ -48,7 +46,6 @@ defmodule Courier.InboundConfig do
   a request to the route in either environment is a 500 naming the variable, not a
   silent success.
 
-  ## One variable per provider, named for the provider
 
   `COURIER_INBOUND_RESEND_SECRET` rather than one shared `COURIER_INBOUND_SECRET`,
   because a second provider will need a second secret and a shared variable cannot
@@ -82,19 +79,6 @@ defmodule Courier.InboundConfig do
   def secret(provider) when is_binary(provider) do
     case stored() do
       %{} = secrets -> Map.get(secrets, provider)
-      # A **keyword list** is what `config :courier, :inbound_secrets, resend: "…"`
-      # stores, and it is a plausible thing for a deployment to have. Accepting it
-      # rather than raising is the whole reason this is a `case`: a `BadMapError` on
-      # the request path of a route whose entire vocabulary is a 400, a 401, a 422
-      # and a 500 is a crash where a diagnosis belongs, and the diagnosis is one
-      # line of prose. `test/courier/inbound_config_test.exs` asserts the shipped
-      # configuration is a map, because the safe direction is also the correct one.
-      #
-      # Normalised through `to_string/1` on the way, so the lookup key stays a
-      # string on both sides. `Keyword.get/2` would want an atom and the obvious
-      # way to give it one is `String.to_atom/1` — which is precisely the
-      # conversion this module's own docstring says not to do, on the request path
-      # of a route.
       secrets when is_list(secrets) -> stringify(secrets) |> Map.get(provider)
       _anything_else -> nil
     end

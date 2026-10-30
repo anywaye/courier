@@ -3,7 +3,6 @@ defmodule Courier.StartupNoticesTest do
   `Courier.StartupNotices` replays the operator-facing notices
   `config/runtime.exs` composes, at the level each was composed with.
 
-  ## What this file CANNOT prove, and why it exists anyway
 
   The defect these notices fix is about WHEN the release's boot script evaluates
   `config/runtime.exs` relative to the `:logger` application: at that moment
@@ -30,11 +29,6 @@ defmodule Courier.StartupNoticesTest do
 
   import ExUnit.CaptureLog
 
-  # `Application.put_env/3` and `Logger.configure/1` change state the whole VM
-  # shares, so this file is `async: false` under the AGENTS.md rule. It touches
-  # no `Courier.Repo`, which is why the tier it belongs to is the no-database
-  # one — a leak-check that needed a row would be one a database-less runner
-  # silently skips.
   setup do
     previous_notices = Application.get_env(:courier, :startup_notices, :unset)
     previous_level = Logger.level()
@@ -57,10 +51,6 @@ defmodule Courier.StartupNoticesTest do
       {:info, "notice: the info"}
     ])
 
-    # The suite's baseline is `config :logger, level: :warning`, and
-    # `capture_log/2` does NOT raise that threshold — it only sets the capture
-    # level. So the `:info` notice needs the logger level opened for the length
-    # of the capture. This file is `async: false`, so the window is ours.
     Logger.configure(level: :info)
 
     log = capture_log(fn -> Courier.StartupNotices.log_startup() end)
@@ -88,13 +78,6 @@ defmodule Courier.StartupNoticesTest do
   end
 
   test "Courier.Application.start/2 replays the notices — the wiring, behaviourally" do
-    # A sentinel at `:warning`, so the assertion does not depend on the logger
-    # level. `Courier.Application.start/2` is the release's entry point; calling
-    # it here re-runs the adapter gate and the other startup lines, then tries to
-    # start `Courier.Supervisor`, which this suite already runs — so it returns
-    # `{:error, {:already_started, _}}` AFTER the notices are emitted. That window
-    # is what this asserts in, and deleting the call from the application would
-    # go red here rather than in a review.
     Application.put_env(:courier, :startup_notices, [{:warning, "sentinel: boot notice"}])
 
     log = capture_log(fn -> Courier.Application.start(:normal, []) end)

@@ -34,25 +34,12 @@ defmodule Courier.OutboxEvent do
     field :occurred_at, :utc_datetime_usec
     field :data, :map
 
-    # The provider's own id for this send, when the adapter's receipt carried
-    # one. `subject` stays courier's id — it is what the platform's events are
-    # keyed on — and this is the SECOND id, recorded so a provider's bounce or
-    # delivery report, which quotes the provider's id and not courier's, can be
-    # joined to the send it is about. Null is a real state: a 2xx with no
-    # `message_id` in the body records nothing here and courier invents none.
-    # See `Courier.InboundReports.with_data/2` for the join.
     field :provider_message_id, :string
 
     field :published_at, :utc_datetime_usec
     field :attempt_count, :integer, default: 0
     field :last_error, :string
 
-    # The two columns courier added for the webhook fan-out. `account_id` is
-    # whose endpoints this event goes to and is nullable because `Courier.Deliver`
-    # records a send for a *user*, and courier does not know which account that
-    # user is in. `webhooks_dispatched_at` is when the event was fanned out, which
-    # is a different moment from `published_at`: an event can be on the bus and
-    # not yet fanned out.
     field :account_id, Ecto.UUID
     field :webhooks_dispatched_at, :utc_datetime_usec
 
@@ -82,11 +69,6 @@ defmodule Courier.OutboxEvent do
     |> put_account(attrs)
   end
 
-  # `account_id` is optional and set here rather than cast. It is the account the
-  # event is fanned out to, and an event courier emitted itself (`email.delivered`
-  # for a person, not a tenant) has none — which is a valid state, not a
-  # validation error, and a row with none is skipped by the fan-out rather than
-  # delivered to every account that happens to exist.
   defp put_account(changeset, attrs) do
     case Map.get(attrs, :account_id) || Map.get(attrs, "account_id") do
       nil -> changeset

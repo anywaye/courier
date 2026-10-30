@@ -16,7 +16,6 @@ defmodule Courier.TestSupport.MailChannelsServer do
     * the real `Courier.Adapters.CloudflareEmail` posting through the real
       `Swoosh.ApiClient.Req` client.
 
-  ## Why the response is configurable
 
   The adapter's reason to exist is that a provider REFUSING the send is
   surfaced as `{:error, _}` rather than vanishing. A server that always
@@ -25,7 +24,6 @@ defmodule Courier.TestSupport.MailChannelsServer do
   `400` malformed, `403` unauthorized, `500` transient — is a response the
   test can ask for.
 
-  ## How a test reads what arrived
 
   The request is handled by a Plug process unrelated to the test process, so
   the test cannot `assert_receive` what it saw. Every request is written to an
@@ -144,22 +142,10 @@ defmodule Courier.TestSupport.MailChannelsServer do
     :ok
   end
 
-  # --------------------------------------------------------------------------
-  # The Plug pipeline.
-  #
-  # One function: read the body, record the request, answer with whatever the
-  # test configured. It is deliberately not a router — every path is the
-  # send endpoint as far as this server is concerned, and a test that posts
-  # to the wrong path is a test whose adapter is misconfigured.
-  # --------------------------------------------------------------------------
 
   defmodule Plug do
     @moduledoc false
 
-    # `Elixir.Plug.Conn`, not `Plug.Conn`: inside this nested module the name
-    # `Plug` resolves to `Courier.TestSupport.MailChannelsServer.Plug` itself,
-    # so a bare `import Plug.Conn` looks for a submodule of the test server
-    # and fails to compile. The `Elixir.` prefix forces the top-level lookup.
     import Elixir.Plug.Conn
 
     def init(opts), do: opts

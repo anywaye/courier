@@ -1,35 +1,5 @@
 ---
 <%
-# WHY ERB, AND WHY ONLY FOR THESE FOUR VALUES.
-#
-#   The four things below are the ones that differ per operator rather than per
-#   service: where the boxes are, what the registry org is called, and the
-#   two names that make an image unambiguous. Everything else in this file is a
-#   decision, and a decision belongs in the file where a reviewer can read it.
-#
-#   Kamal evaluates this file with ERB before it parses it (Kamal::Configuration
-#   uses `ERB.new(...).result`), so ERB is free for anyone who already has
-#   Kamal — it is the same interpreter, not a second tool. That is the whole
-#   reason this is not "just write the values out": the alternative to ERB is a
-#   second config file per environment, and a second config file is a second
-#   thing to keep correct forever.
-#
-#   A MISSING VALUE FAILS LOUDLY, ON PURPOSE.
-#
-#   The obvious spelling interpolates ENV["WEB_HOST"] directly, which renders
-#   an empty string when the variable is unset. Empty renders as a null list
-#   item, the hosts array becomes [null], and the failure surfaces several
-#   layers away as a deploy that cannot find a host. The four calls below turn
-#   that into a message naming the variable at the moment it is read. This is
-#   the kit habit — refuse by name, print what to do — applied to a template
-#   rather than to a command.
-#
-#   NOTHING SECRET IS RENDERED HERE, AND THAT IS THE POINT OF THE WHOLE FILE.
-#   Every credential below is a NAME in `env.secret`, never a value. A rendered
-#   config is an ordinary file that gets committed, pasted into a ticket, and
-#   read over someone's shoulder; the only safe content for one is the name of
-#   the secret and where to find it. The values live in `.kamal/secrets` on the
-#   operator's machine, which is git-ignored, and nowhere else in the repo.
 require = lambda do |name|
   value = ENV[name].to_s.strip
   raise "config/deploy.yml: #{name} is not set. It is a non-secret deployment value, so it belongs in the shell that runs kamal, not in .kamal/secrets: export #{name}=... (an address or a name, never a credential)." if value.empty?
@@ -43,46 +13,9 @@ registry    = ENV.fetch("KIT_REGISTRY", "ghcr.io")
 web_host    = require.call("KIT_WEB_HOST")
 app_domain  = require.call("KIT_APP_DOMAIN")
 %>
-# `config/deploy.yml` — the Kamal configuration for <%= service %>.
-#
-# Copied from anywaye/kit, `templates/kamal/deploy.yml.erb`, at kit commit
-# d201080, and changed in exactly two places. Every one of them is courier's
-# own fact and each is marked below with the reason, so a reader diffing this
-# against kit's template sees two differences rather than a fork:
-#
-#   1. the proxy healthcheck path is `/readyz` and not `/up`;
-#   2. `env.secret` carries courier's own boot-required variables.
-#
-# And one difference that is an ABSENCE rather than a change, named here because
-# a reader diffing this against kit's template will wonder about it: neither
-# file has a `migrate:` key, so courier's `bin/migrate` is not run by `kamal
-# deploy`. Kamal 2 has no such key — it refuses the document with `unknown key:
-# migrate`, measured against this file with the real binary — and runs
-# migrations from `.kamal/hooks/pre-deploy` instead. That hook is courier's own
-# file to add and is NOT added by the packet that wrote this one, because
-# silently changing what a deploy does is the thing this repository keeps
-# refusing to do. See the note below `deploy_timeout`.
-#
-# Everything else is kit's, verbatim, including the `backup` accessory — which is
-# what makes `config/kamal-backup.yml` reachable. Kamal mounts that file into
-# the accessory's container at `/app/config/kamal-backup.yml`, and nothing else
-# reads it: delete the `files:` line and the backup config stops being
-# configuration and becomes a document. `test/courier/backup_config_test.exs`
-# reads both files and fails if that mount ever goes away.
 
-# Names the application, and therefore every container, network and volume
-# Kamal creates for it. Changing it renames the containers, which orphans the
-# old ones; treat it as permanent.
 service: <%= service %>
 
-# THE IMAGE NAME MUST NOT CARRY THE REGISTRY HOST.
-#
-# `registry.server` below is prepended to this value by Kamal, so
-# `image: ghcr.io/org/repo` with `server: ghcr.io` resolves to
-# `ghcr.io/ghcr.io/org/repo` and the deploy fails at the push, not here.
-# Measured on kamal 2.12.0: `kamal config` reports
-# `:repository: ghcr.io/ghcr.io/anywaye/courier` for exactly that spelling.
-# The host appears in `registry.server` and nowhere else.
 image: <%= org %>/<%= repo %>
 
 servers:
@@ -94,176 +27,27 @@ proxy:
   hosts:
     - <%= app_domain %>
   healthcheck:
-    # A READINESS endpoint, not a liveness one, and it must exercise the
-    # service's real dependencies — because this is the signal `kamal deploy`
-    # gates the rollout on. A container that answers 200 while its database is
-    # unreachable is a container Kamal will happily declare healthy. The interval
-    # is deliberately short for the same reason: the window in which a broken
-    # release is receiving traffic is interval x timeout.
-    #
-    # `/readyz`, AND NOT THE `/up` IN KIT'S TEMPLATE. This is change 1 of 2 and
-    # it is the one that would have broken a deploy rather than a rollback:
-    # `CourierWeb.Router` serves `/healthz` and `/readyz` and NOTHING else at the
-    # root, so `/up` is a 404 on every request the proxy makes, the container
-    # never becomes healthy, and `kamal deploy` tears the whole rollout back
-    # after `deploy_timeout` — on a release that is otherwise fine. The same
-    # reason the endpoint has to be `/readyz` rather than `/healthz`: liveness
-    # answers whenever the VM can dispatch, so a database outage would look
-    # healthy here and courier would keep taking traffic it cannot serve.
-    # `test/courier_web/router_test.exs` pins both paths.
     path: /readyz
     interval: 2
     timeout: 5
-  # Do not let kamal-proxy outlive a bad deploy silently. `kamal deploy`
-  # already refuses to finish a rollout that never goes green, and this is the
-  # setting that makes "never went green" observable in the proxy's own log
-  # rather than only in the deploy output.
-  #
-  # A proxy that keeps routing to a container Docker has stopped is the failure
-  # that turns a bad deploy into user-facing 502s. Kamal's default is to leave
-  # the running container up until the new one is healthy, which is the
-  # behaviour we want; this block is here to say so rather than to change it.
-  #
-  # service_timeout: 10
 
-# RAISED FROM KAMAL'S 30s DEFAULT, AND THE REASON IS THE ONLY PART THAT MATTERS.
-#
-# The number is not a preference. A container that boots by running migrations
-# and then warming caches on a loaded host takes longer than 30 seconds to
-# answer its first healthcheck, and when the grace expires Kamal reports
-# "target failed to become healthy", tears the rollout back, and the operator
-# retries — a deploy that cannot succeed rather than a deploy that failed.
-#
-# 180 seconds is generous on purpose: the cost of the extra window is a slow
-# deploy in the failure case, and the cost of too small a window is a deploy
-# that rolls back a perfectly good release. If you raise it, replace this
-# paragraph with the failure you actually observed. If you cannot name one, set
-# it back to 30 and say why.
 deploy_timeout: 180
 
-# NO `migrate:` KEY, AND THE REASON IS MEASURED RATHER THAN CHOSEN.
-#
-# Kamal 2.12.0 refuses this file outright with
-# `Kamal::ConfigurationError: unknown key: migrate` — verified by running the
-# real binary against this file. `migrate:` was Kamal 1's way; Kamal 2 runs
-# migrations from a hook (`.kamal/hooks/pre-deploy`, and the app is booted after
-# it), which is not a key in this document at all.
-#
-# So courier's migration command is NOT here, and this is a real gap rather than
-# a decision: `bin/migrate` — `Courier.Release.migrate/0`, shipped in this
-# repository's release and used by the compose stack — is not run by `kamal
-# deploy`, because a Kamal 2 deploy has nowhere to put it. See the packet
-# report: this needs a `.kamal/hooks/pre-deploy`, which is courier's own file to
-# add and is NOT added here because doing it silently would change what a deploy
-# does without anybody having decided that.
 
-# `clear` is what lands in the container's environment, and it is printed by
-# `docker inspect` and by `docker compose config` — so nothing here may be a
-# credential, ever. `secret` is the list of NAMES whose VALUES come from
-# `.kamal/secrets` on the operator's machine.
 env:
   clear:
-    # Telemetry endpoint. The value is a plain address, not a secret, and it is
-    # the ONE contract a service honours: a self-hoster running a vendor
-    # backend sets it and the collector chain is bypassed, which is a supported
-    # deployment rather than a degraded one.
     <%= service.upcase %>_OTEL_ENDPOINT: http://localhost:4318
-    # The mail relay, which courier REFUSES to boot without
-    # (`Courier.MailerAdapter.adapter!/1` raises on an unset
-    # COURIER_MAIL_ADAPTER). These four are the shipped `smtp` adapter's
-    # non-credential settings and they live here rather than in
-    # `.kamal/secrets` because none of them is one: a hostname is an address,
-    # and a port, an auth mode and a TLS mode are choices.
-    #
-    # They are the DEFAULTS `Courier.MailerAdapter` documents, written out so
-    # that the file says what a deploy of courier will dial rather than leaving
-    # it to be inferred from a module. The two halves that ARE credentials —
-    # the username, which at SMTP is usually an API key, and the password —
-    # are in `secret` below.
     COURIER_MAIL_ADAPTER: smtp
     COURIER_SMTP_HOST: smtp.example-provider.com
     COURIER_SMTP_PORT: "587"
     COURIER_SMTP_AUTH: always
     COURIER_SMTP_TLS: always
     COURIER_SMTP_SSL: "false"
-    # Where identity is. An ADDRESS and not a secret, so it lives here rather
-    # than in `.kamal/secrets` — the same reasoning as COURIER_OTEL_ENDPOINT
-    # above. `config/runtime.exs` defaults it to `http://identity:8080`, and this
-    # line is written out so that the file says what a deploy of courier will
-    # authenticate against rather than leaving it to be inferred from a default.
-    # 8080 is identity's own port (its Dockerfile `EXPOSE 8080`, its compose
-    # `PORT: "8080"`); 4000 is courier's own Phoenix port, and a deployed courier
-    # pointed there answers 503 to every authenticated request.
     COURIER_IDENTITY_URL: http://identity:8080
-    # The SSL redirect opt-in. `CourierWeb.Plugs.ForceSSL` redirects every
-    # plain-HTTP request to https only when this is `true`; anything else —
-    # including this default — serves plain HTTP. Genuine prod sets it to
-    # `true`, because it terminates TLS at the edge (kamal-proxy, `ssl: true`
-    # above) and wants no plaintext past it. The launch tier and local compose
-    # leave it off: courier-to-courier traffic inside those networks is plain
-    # HTTP on a private network, and the old compile-time `force_ssl` 307'd
-    # every mail send there. `/healthz` and `/readyz` answer plain HTTP either
-    # way, so the proxy healthcheck never reads a redirect as a dead service.
     COURIER_FORCE_SSL: "false"
   secret:
-    # The database URL. It carries a password, which is why it is a secret and
-    # never a clear value: at runtime it will be in the container's
-    # environment, and that is the one honest limitation of Kamal's model,
-    # recorded in DECISIONS.md.
     - DATABASE_URL
-    # THE OWNER, for `bin/migrate` only. `DATABASE_URL` names `courier_app` —
-    # the app login role, which owns nothing and is a subject of courier's
-    # row-level-security policies — and a migration is DDL, so the release needs
-    # the owner's DSN to run one. It is a separate variable because one variable
-    # cannot be two credentials.
-    #
-    # It is NOT a boot requirement and `config/runtime.exs` does not raise on it:
-    # nothing in the request path reads it, and a release that refuses to START
-    # over a missing migration credential has turned an incomplete deploy into an
-    # outage. `bin/migrate` fails instead, and names the module.
     - COURIER_OWNER_DATABASE_URL
-    # The five below are courier's own BOOT CONTRACT, and this is the second
-    # reason the list is longer than kit's. `config/runtime.exs` raises on each
-    # of them in `:prod`, so a deploy that omits one does not degrade — it does
-    # not start, and the container image is the only place an operator looks
-    # first. Read off that file, not from memory:
-    #
-    #   SECRET_KEY_BASE              raises when unset
-    #   COURIER_SECRET_BOX_KEY       raises when unset; the AES-256-GCM key every
-    #                                webhook signing secret is sealed under
-    #   COURIER_ERROR_RELAY_TOKEN    raises when unset; the shared secret the
-    #                                ingest surface authenticates with
-    #   COURIER_SMTP_USERNAME        the SMTP username, which is usually an API key
-    #   COURIER_SMTP_PASSWORD        the SMTP password
-    #   COURIER_IDENTITY_TOKEN       raises when unset; courier's own scoped API
-    #                                token, which it presents to identity's
-    #                                introspection endpoint to learn who is
-    #                                calling. It must be the SAME key identity
-    #                                presents as its own COURIER_TOKEN: identity
-    #                                lets a token caller introspect only itself,
-    #                                so two distinct keys produce identity's 403
-    #                                and courier's 503. See
-    #                                `Courier.Principal.Introspection` for what
-    #                                it is and how it is rotated.
-    #
-    # `COURIER_INBOUND_RESEND_SECRET` is **not** in that list — cf-inbound-optional.
-    # It is optional in production: a Cloudflare-only box has no webhook to
-    # configure, boots with no provider, and logs the cost ("a hard bounce or a
-    # spam complaint is discarded and courier goes on mailing an address that has
-    # said it is gone"). Set it and the surface is exactly today's behaviour;
-    # leaving it in the `secret:` list would make Kamal refuse a cloudflare box
-    # that has no such thing to copy.
-    #
-    # WHAT IS DELIBERATELY NOT LISTED, because listing it is a trap:
-    # `COURIER_ERROR_REPORTING_DSN`, `COURIER_ERROR_SINK_DSN` and
-    # `COURIER_INBOUND_RESEND_SECRET` are optional (see `config/runtime.exs`:
-    # unset, courier boots and logs what it loses), and Kamal refuses a name in
-    # `env.secret` that has no value in `.kamal/secrets`. An optional credential
-    # therefore cannot be named here at all — it is set in the deployment's
-    # environment when the operator has it, and the omission is a real limit
-    # rather than an oversight. The same is why `COURIER_IDENTITY_URL` is in
-    # `clear` above: it is an address, and Kamal would refuse a secret name with
-    # no value.
     - SECRET_KEY_BASE
     - COURIER_SECRET_BOX_KEY
     - COURIER_ERROR_RELAY_TOKEN
@@ -272,25 +56,12 @@ env:
     - COURIER_IDENTITY_TOKEN
     - KAMAL_REGISTRY_PASSWORD
 
-# Credentials for the image host. The password is a NAME, resolved from
-# `.kamal/secrets`. `kamal registry login --password-stdin` is the supported
-# way to populate it and writes the file for you.
 registry:
   server: <%= registry %>
   username: <%= org %>
   password:
     - KAMAL_REGISTRY_PASSWORD
 
-# Built in CI and pushed; the server only pulls. Building on the host means
-# the build's peak memory competes with the running service, which on a small
-# box is an OOM during a deploy. `arch` is not optional — kamal 2.12.0 refuses
-# the config outright with "builder: Builder arch not set" when it is absent,
-# because a wrong architecture produces an exec-format error at run time rather
-# than at build time.
-#
-# `arm64` is kit's choice, inherited verbatim, and it is the one value in this
-# file an operator on an amd64 host has to change. It is called out here rather
-# than left to be discovered as an exec-format error mid-rollout.
 builder:
   arch: arm64
   cache:
@@ -309,30 +80,11 @@ accessories:
         - POSTGRES_PASSWORD
 
   backup:
-    # kamal-backup, as an ordinary container. The image ships its own Ruby, so
-    # the SERVICE IMAGE NEVER NEEDS RUBY — see kit's templates/kamal/README.md
-    # for the full answer on which side of the boundary Ruby lives.
     image: ghcr.io/crmne/kamal-backup:0.5.2
     host: <%= web_host %>
     files:
-      # THE LINE THAT MAKES config/kamal-backup.yml REACHABLE. It is the only
-      # reference to that file anywhere in a deployment, and it is here because
-      # kamal-backup reads its configuration from inside this container, at the
-      # path it mounts it to. Delete it and `config/kamal-backup.yml` is no
-      # longer a backup configuration — it is a file in a repository that no
-      # process opens. `test/courier/backup_config_test.exs` asserts this line.
       - config/kamal-backup.yml:/app/config/kamal-backup.yml:ro
     env:
-      # Every secret `config/kamal-backup.yml` names MUST also be listed here.
-      # This is not a convention: `kamal-backup validate` builds the accessory's
-      # environment from this list and from nothing else, so a secret that is
-      # named in the backup config and missing here fails validation with
-      # "RESTIC_REPOSITORY or RESTIC_REPOSITORY_FILE is required" — measured on
-      # kamal-backup 0.5.2, not inferred. The two files are one contract.
-      #
-      # `COURIER_SECRET_BOX_KEY` is NOT here, and that is the whole SecretBox
-      # answer in one line: the dump carries sealed ciphertext and the key that
-      # opens it lives only in the service's own environment. See README.md.
       secret:
         - DATABASE_URL
         - DATABASE_PASSWORD
@@ -341,8 +93,4 @@ accessories:
         - AWS_ACCESS_KEY_ID
         - AWS_SECRET_ACCESS_KEY
     volumes:
-      # The scheduler's state: when the last backup finished. This volume is
-      # what makes `backup.schedule` mean "at most every 1d" rather than
-      # "every time the container restarts", and it is the reason a reboot does
-      # not trigger a full dump.
       - <%= service %>_backup_state:/var/lib/kamal-backup

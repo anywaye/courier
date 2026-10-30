@@ -42,14 +42,8 @@ defmodule Courier.Health do
       {:error, reason} -> error(reason)
     end
   rescue
-    # The repo is not running, or its pool is gone: the adapter raises instead
-    # of handing back an error tuple.
     exception -> error(exception)
   catch
-    # A pool call that times out exits rather than raising. Not reachable from
-    # the tests — taking the pool down makes the adapter raise — and kept
-    # anyway: this is the one function an orchestrator reaches for while the
-    # service is already in trouble.
     kind, reason -> error({kind, reason})
   end
 

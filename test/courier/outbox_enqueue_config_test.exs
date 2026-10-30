@@ -15,7 +15,6 @@ defmodule Courier.OutboxEnqueueConfigTest do
   `on_exit` restores it before the next test starts. This is the same reason
   `Courier.DeliverAdapterTest` owns the swap, and the two never run at once.
 
-  ## Why "no job" is the answer and not "no row, job left behind"
 
   A job that outlived the row it names is a relay that will claim nothing and
   report success: the event is on no bus and no table says so. So the assertion
@@ -58,9 +57,6 @@ defmodule Courier.OutboxEnqueueConfigTest do
   end
 
   test "and the next send does enqueue, so the pair is not vacuously empty" do
-    # A negative assertion with no positive beside it passes when the enqueue
-    # never worked at all, which is the state this repository was in. So: the
-    # same call with an adapter that accepts leaves exactly one job.
     Application.put_env(:courier, Courier.Mailer, adapter: Swoosh.Adapters.Test)
 
     assert {:ok, %{event_id: event_id}} =

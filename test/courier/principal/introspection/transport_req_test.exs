@@ -16,7 +16,6 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
   really built, and they are the four things identity's contract requires of it:
   the path, the method, a JSON body carrying `token`, and one authorization header.
 
-  ## What each side of the seam is responsible for
 
   The resolver decides **which** headers courier sends and **what goes in the
   body**; `test/courier/principal/introspection_test.exs` asserts that, against
@@ -45,8 +44,6 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
   @service_token "anywaye_couriers-own-service-credential"
   @caller_token "anywaye_caller-token-for-the-suite"
 
-  # The three headers the resolver sends. WHICH headers is asserted against the
-  # double in `introspection_test.exs`; what is asserted here is that they arrive.
   @headers [
     {"accept", "application/json"},
     {"content-type", "application/json"},
@@ -54,15 +51,6 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
   ]
 
   setup do
-    # The stub is registered PER TEST, not in `setup_all`. `Req.Test` uses
-    # nimble_ownership: a stub belongs to the process that set it, so one set in
-    # `setup_all` is owned by a process that has already exited by the time the
-    # first test runs — and every assertion fails with "cannot find mock/stub".
-    #
-    # And it reports to a **registered** process rather than to a pid captured in
-    # a closure. A closure over `self()` works today and breaks the moment this
-    # file grows a second concurrent test, with the second test's assertion
-    # silently reading the first one's request.
     Req.Test.stub(@stub, fn conn ->
       send(
         Process.whereis(@probe),
@@ -117,9 +105,6 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
     test "and courier's credential in exactly ONE authorization header" do
       assert {{:ok, 200, _}, {_method, _path, headers, _body_params}} = post()
 
-      # The separation the packet asks to be made explicit, asserted rather than
-      # described: one authorization, and it is courier's. A second one carrying
-      # the caller's token would be a design nobody chose.
       assert for {"authorization", value} <- headers, do: value == ["Bearer " <> @service_token]
     end
 
@@ -138,9 +123,6 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
     end
 
     test "and nothing that was not handed to it" do
-      # `Req` adds its own `user-agent`, which is fine and is asserted as present
-      # rather than swept up in a list this file does not control. What must not
-      # appear is a header nobody asked for.
       assert {{:ok, 200, _}, {_method, _path, headers, _body_params}} = post()
 
       unexpected =
@@ -164,11 +146,8 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
     end
 
     test "and a non-200 is reported rather than raised" do
-      # identity's 401 and 403 are decisions about courier's own credential, and
-      # the resolver above turns them into a 503. Raising here would make them a
-      # 500 — courier reporting itself broken when identity answered.
       for status <- [401, 403, 404, 405, 422, 500, 502, 503] do
-        answering(status, ~s({"code": "forbidden", "status": #{status}}))
+        answering(status, ~s({"code": "forbidden", "status":
 
         assert {{:ok, ^status, _body}, _request} = post(),
                "identity answering #{status} was not reported as a status"
@@ -176,20 +155,12 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
     end
 
     test "and a dial failure is a symbol, so no part of either token can ride out in it" do
-      # `Req.Test.transport_error/2` is how a timeout is produced here. The point
-      # is the SHAPE of the answer: `{:error, :unreachable}` is a symbol, so there
-      # is no string in it for a caller to interpolate a credential into — which
-      # is what `Courier.ErrorRelay.Sink.Req` does with its DSN.
       assert {{:error, :unreachable}, _request} = post(@origin <> @failure_path)
     end
   end
 
   describe "the options, asserted as numbers rather than as intent" do
     test "the dial is bounded, because this is on the request path of every call" do
-      # 2s, not Req's 15s default. A Bandit connection held for 15 seconds by a
-      # dependency that is not answering is a slowloris against courier's own
-      # pool, and the caller can retry a 503 far more cheaply than courier can hold
-      # the socket.
       assert Transport.receive_timeout_ms() == 2_000
     end
 
@@ -199,10 +170,6 @@ defmodule Courier.Principal.Introspection.Transport.ReqTest do
     end
 
     test "and configuration cannot switch the four decisions off" do
-      # `req_options/0` is merged first inside `post/3`, so nothing written in
-      # `config/` can re-enable a retry loop or follow a redirect. Asserted as a
-      # property of the merge rather than by reading the keyword list, because the
-      # list is the implementation.
       assert Keyword.get(Transport.req_options(), :plug) == {Req.Test, @stub}
     end
   end

@@ -206,8 +206,6 @@ defmodule Courier.MailersTest do
     end
 
     test "the subject is the configured one, and reason-agnostic" do
-      # One subject for both reasons, because the configuration is one line per
-      # type and the body is where the reason-specific wording lives.
       assert {:ok, email} = Mailers.build(:account_security, account_security_payload())
 
       assert email.subject == "Security notice for your Anywaye account"
@@ -222,7 +220,6 @@ defmodule Courier.MailersTest do
     end
 
     test "the email-address reason renders the email wording, from the one template" do
-      # The branch is on the mail, not on the type: one template, two renderings.
       assert {:ok, email} =
                Mailers.build(
                  :account_security,
@@ -235,8 +232,6 @@ defmodule Courier.MailersTest do
     end
 
     test "a payload with no reason is an error, not a mail in the wrong branch" do
-      # The template cannot render a branch for a reason it was not given, so
-      # the renderer refuses a payload without one rather than defaulting.
       assert {:error, {:invalid_payload, changeset}} =
                Mailers.build(:account_security, account_security_payload(%{reason: nil}))
 
@@ -271,9 +266,6 @@ defmodule Courier.MailersTest do
     end
 
     test "the body names the account's address and carries the confirmation link" do
-      # The security notice's whole content: who must act, and the one link that
-      # acts on it. Asserted on both formats, because a text-only reader is a
-      # reader too and the link is the point of the mail.
       assert {:ok, email} = Mailers.build(:email_change_current, email_change_current_payload())
 
       assert email.html_body =~ "kaka@example.com"
@@ -283,8 +275,6 @@ defmodule Courier.MailersTest do
     end
 
     test "a payload with no link is an error, not a mail with no way to confirm" do
-      # The link is the action the notice asks for; a mail without it tells the
-      # reader something happened and gives them nothing to do about it.
       assert {:error, {:invalid_payload, changeset}} =
                Mailers.build(:email_change_current, email_change_current_payload(%{url: nil}))
 
@@ -319,8 +309,6 @@ defmodule Courier.MailersTest do
     end
 
     test "the body names the address the account is moving from" do
-      # The one fact the new address's owner is owed: where the account lived
-      # before. Asserted on both formats, like its sibling.
       assert {:ok, email} = Mailers.build(:email_change_new, email_change_new_payload())
 
       assert email.html_body =~ "kaka@example.com"
@@ -328,9 +316,6 @@ defmodule Courier.MailersTest do
     end
 
     test "a payload with no previous address is an error" do
-      # Without it the mail cannot say what it is about: "somebody asked to move
-      # the account on <nothing> to this address" is not a sentence a person can
-      # act on, and rendering it would be a mail with a hole in it.
       assert {:error, {:invalid_payload, changeset}} =
                Mailers.build(:email_change_new, email_change_new_payload(%{previous_email: nil}))
 
@@ -347,11 +332,6 @@ defmodule Courier.MailersTest do
 
   describe "types" do
     test "the notification types are exactly the seven courier sends" do
-      # EIGHT, and the eighth is `payment_failed` — the warning for an attempt
-      # that did not go through, `Courier.Consumers.PaymentFailed`, and the
-      # receipt's other half. The seventh was `receipt`; this list is the
-      # catalog every preference, subject and template is asserted against, so
-      # a type added without it fails here by name.
       assert Mailers.types() ==
                ~w(welcome password_reset team_invitation account_security
                   email_change_current email_change_new receipt payment_failed)
@@ -377,10 +357,6 @@ defmodule Courier.MailersTest do
     end
   end
 
-  # The parts of the layout that are not this particular email's copy. Two emails
-  # that agree on these are rendered through the same template, which is the
-  # thing worth asserting — byte-comparing whole bodies would only prove that
-  # the fixtures are stable.
   defp shared_chrome(body) do
     for line <- String.split(body, "\n"),
         String.contains?(line, "Anywaye"),

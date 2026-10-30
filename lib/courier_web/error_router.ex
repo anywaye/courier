@@ -15,7 +15,6 @@ defmodule CourierWeb.ErrorRouter do
       `probes.schema.json` gives for why `healthz` must consult no dependency,
       applied to the component that most needs it.
 
-  ## The ingest path is the SDK's, not ours, and that is the whole trick
 
   `POST /api/:project_id/envelope/` is not a naming preference. **A Sentry SDK does
   not let you choose an ingest path.** `Sentry.DSN.parse/1` splits the DSN's path,
@@ -37,7 +36,6 @@ defmodule CourierWeb.ErrorRouter do
   `<scheme>://<host>/api/<project_id>/envelope/` and posts there, so the URL that
   comes in is the URL that goes out and the relay is transparent.
 
-  ### The DSN must not carry a base path
 
   `pop_project_id/1` *splits* the path, so `http://<token>@host/errors/1` derives
   `/errors/api/1/envelope/` — and that path is not served, deliberately. The
@@ -47,7 +45,6 @@ defmodule CourierWeb.ErrorRouter do
   prefixed DSN gets a `404` and the fix is a character in the operator's DSN, not
   a code change. `CourierWeb.ErrorRelayEndpointTest` holds both halves.
 
-  ## The project id is the sender's framing, not the destination
 
   Worth stating plainly, because it reads like a bug otherwise: the relay does
   **not** route on `:project_id`. All three services report into **one** GlitchTip
@@ -58,7 +55,6 @@ defmodule CourierWeb.ErrorRouter do
   service's errors from another's is the `error.type` vocabulary and the service
   tag on the event, both of which the relay sets from the envelope itself.
 
-  ## It is not a anywaye probe
 
   `core`'s probe contract pins `/healthz` and `/readyz` on the service's own
   endpoint, and this is neither: it is the health of one optional component, on
@@ -78,15 +74,6 @@ defmodule CourierWeb.ErrorRouter do
     plug :put_error_relay
   end
 
-  # The relay's process name, as an assign, and the reason it is an assign rather
-  # than a config read in the controller is that **a test must be able to point
-  # this surface at its own relay**. `Application.put_env/3` is the whole VM, so a
-  # test that used it would be `async: false` and would race every other test that
-  # captures an error — which is most of this one.
-  #
-  # Reading an existing assign first means a test can put it there itself and a
-  # production deployment never has to, so the only way to end up with the wrong
-  # relay is to put the assign in deliberately.
   defp put_error_relay(conn, _opts) do
     case Map.fetch(conn.assigns, :error_relay) do
       {:ok, _relay} ->
@@ -101,23 +88,10 @@ defmodule CourierWeb.ErrorRouter do
     end
   end
 
-  # The relay's liveness, deliberately **outside** `:ingest`.
-  #
-  # A probe behind the auth middleware answers `401`, whatever calls it concludes
-  # the component is down, and a deployment rolls back with nothing in the message
-  # saying why. darkroom's README records the test that caught this: axum applies
-  # a `Router.layer` to every route the router holds, so registering the probes
-  # "before" the auth layer does not exempt them. The Elixir equivalent is a
-  # `scope` with no `pipe_through`, and it is written that way rather than by
-  # putting the probe first inside the same scope.
   scope "/internal/v1", CourierWeb do
     get "/errors/healthz", ErrorEnvelopeHealthController, :healthz
   end
 
-  # `:project_id` is bound but never read — see "The project id is the sender's
-  # framing" in the moduledoc. It is still a route segment rather than a wildcard
-  # `*rest` because a wildcard would also match `/api/1/envelope/anything/deeper`
-  # and turn a misconfigured DSN into a 200 instead of a 404.
   scope "/api", CourierWeb do
     pipe_through :ingest
 

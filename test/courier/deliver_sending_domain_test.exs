@@ -3,7 +3,6 @@ defmodule Courier.DeliverSendingDomainTest do
   The send path chooses the sender by the message's FROM DOMAIN, and refuses
   rather than falling back.
 
-  ## The four outcomes, and which one is the point
 
     1. A VERIFIED, ENABLED row for the from-domain → the TENANT's credential is
        posted. The assertion that matters is the Authorization header on the
@@ -18,7 +17,6 @@ defmodule Courier.DeliverSendingDomainTest do
        sender_domain/0`) → the deployment credential, exactly as before this
        table existed. This is the branch that keeps every existing send green.
 
-  ## `async: false`, and why
 
   The tenant tests change `config :courier, :mailing`'s from-address and
   `config :courier, :tenant_sending`/`config :swoosh, :api_client` — all shared
@@ -66,10 +64,6 @@ defmodule Courier.DeliverSendingDomainTest do
     Map.merge(%{user_id: @user_id, email: "recipient@example.com", name: "Kaka"}, overrides)
   end
 
-  # Point the deployment's configured sender at `domain`, which is how a
-  # message's from-domain — the key the credential lookup uses — is set. In a
-  # hosted deployment this is what a per-account sender would move; here the
-  # from-address is configuration, and `Courier.Mailers` reads it.
   defp set_from(domain) do
     mailing = Application.get_env(:courier, :mailing, [])
 
@@ -80,9 +74,6 @@ defmodule Courier.DeliverSendingDomainTest do
     )
   end
 
-  # A row that is registered AND proven without going through the DNS proof and
-  # the verification send, so this file is about the SEND path's selection and
-  # not about the proof. `Courier.TenantSendingDomainsTest` is where the proof is.
   defp register_verified(domain, token, account \\ @account) do
     {:ok, row} =
       TenantSendingDomains.register(account, %{
@@ -120,8 +111,6 @@ defmodule Courier.DeliverSendingDomainTest do
       assert authorization_from(request) == "Bearer #{@tenant_token}"
       assert request.path == "/accounts/#{@provider_account_id}/email/sending/send"
 
-      # The from-address on the wire is the tenant's domain, which is the pair
-      # the credential is scoped to.
       assert decode!(request.body)["from"] == %{
                "address" => "no-reply@#{@domain}",
                "name" => "Anywaye"
@@ -131,8 +120,6 @@ defmodule Courier.DeliverSendingDomainTest do
     test "an unverified row for a DIFFERENT domain does not leak into the choice", %{
       server: server
     } do
-      # A verified other domain exists; the message is from @domain, which has
-      # no row, and is refused rather than being sent on the other credential.
       register_verified("other.example.com", @tenant_token)
       set_from(@domain)
 
@@ -175,9 +162,6 @@ defmodule Courier.DeliverSendingDomainTest do
     end
 
     test "the DEPLOYMENT's own from-domain still uses the deployment credential" do
-      # Nothing registered, and the from-address is the deployment's own
-      # (`config :courier, :mailing`), so this is the deployment's mail and the
-      # global adapter path is unchanged.
       assert {:ok, _result} = Deliver.welcome(payload())
 
       assert_email_sent(subject: "Welcome to Anywaye", to: [{"Kaka", "recipient@example.com"}])
@@ -189,9 +173,6 @@ defmodule Courier.DeliverSendingDomainTest do
       register_verified(@domain, @tenant_token, @account)
       set_from(@domain)
 
-      # Under account B's identity the row is invisible (row-level security),
-      # so the from-domain is unregistered from B's side and the send is
-      # refused. No mail and no request.
       assert {:error, {:no_sending_domain, @domain}} =
                as_account(@other_account, fn -> Deliver.welcome(payload()) end)
 
@@ -200,8 +181,6 @@ defmodule Courier.DeliverSendingDomainTest do
     end
 
     test "the policy protecting the credentials table exists and is forced" do
-      # The refusal above is only meaningful if the boundary is a DATABASE
-      # object and not just the context's predicate. Read it out of the catalog.
       %{rows: [[rls, forced]]} =
         Repo.query!(
           "select relrowsecurity, relforcerowsecurity from pg_class where relname = 'tenant_sending_domains'"
@@ -224,10 +203,6 @@ defmodule Courier.DeliverSendingDomainTest do
     end
   end
 
-  # The rows that record a SEND. A refusal writes none of them. Scoped to this
-  # test's own rows by account is not possible — `outbox_events` carries no
-  # account on a user-addressed send — so this counts the delivered events this
-  # file could have written, and the sandbox makes the count this test's own.
   defp no_send_recorded? do
     Repo.aggregate(
       from(e in Courier.OutboxEvent, where: e.type == ^Courier.Events.delivered_type()),

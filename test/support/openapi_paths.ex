@@ -7,7 +7,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
   It lives in courier's own `test/support` rather than in a shared helper, so the
   next service that publishes a document copies one file and reads it.
 
-  ## It reads responses too, not only paths
 
   `document_operations!/1` answers *which routes does this document describe*.
   That is not the same question as *which responses does it declare*, and a
@@ -25,7 +24,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
   neutral harness cannot be: it provokes each status against the running
   endpoint and asks the document whether it admits it.
 
-  ## Both sets are read, neither is written down
 
   The document's operations come from `openapi.yaml` and the router's come from
   `CourierWeb.Router.__routes__/0`. Neither side is a list this repository
@@ -33,7 +31,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
   remembered to type — the failure mode that made pantry-03's coverage test
   useless, and the one this check must not share.
 
-  ## Every reader refuses rather than under-reading
 
   A document reader that finds nothing returns an empty set, and an empty set
   agrees with an empty set. So every way this reader could come back with less
@@ -43,7 +40,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
   what it found. A loud failure in the reader is worth more than a green check
   over nothing.
 
-  ## Why this is not a YAML parser
 
   courier has no YAML dependency, and adding one is a decision this repository
   has not made (`AGENTS.md`: "No dependency without approval"). So this reads
@@ -76,13 +72,8 @@ defmodule Courier.TestSupport.OpenAPIPaths do
   add one and delete this; the check itself does not change.
   """
 
-  # OpenAPI 3.1's Operation Object fields, plus `trace` — in HTTP, not in
-  # OpenAPI's fixed field list, but a router can declare it and a document that
-  # declares it is at least telling the truth about a route that exists.
   @methods ~w(get head post put patch delete options trace)
 
-  # The fields OpenAPI 3.1 allows directly under a path key, in the Path Item
-  # Object. They belong to the path, not to any of its operations.
   @path_item_fields ~w(summary description servers parameters $ref)
 
   @typedoc """
@@ -109,8 +100,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     block = paths_block!(path, lines)
     {path_level, method_level} = levels!(path, block)
 
-    # Each group is one direct child of `paths:` plus everything indented under
-    # it, because the level a key sits at is what makes it a path item.
     block
     |> groups(path_level)
     |> Enum.reduce(%{}, fn [{_indent, text, number} | children], acc ->
@@ -118,10 +107,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
 
       cond do
         path?(key) ->
-          # Only a key at the operation level is an operation. Anything deeper is
-          # inside an operation's body, and a body may contain a key that happens
-          # to be spelled like a method: a schema property named `delete` is not
-          # a `DELETE` route.
           methods =
             children
             |> Enum.filter(fn {indent, _, _} -> indent == method_level end)
@@ -315,7 +300,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     |> strip_trailing_slash()
   end
 
-  # --- reading responses out of a document -------------------------------------
 
   @typedoc """
   One response, as the document declares it.
@@ -384,10 +368,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end)
   end
 
-  # Two methods on one path that normalise onto one operation is a collision, and
-  # the same collision guard the route reader has. Without it the second would
-  # overwrite the first and the check would compare one operation's promises
-  # against the other's.
   defp put_responses!(acc, key, responses) do
     case Map.fetch(acc, key) do
       {:ok, existing} ->
@@ -415,7 +395,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
   is a behaviour a generated client has never been told about. Both are the
   `openapi_paths_test.exs` failure mode, in a new place.
 
-  ## What "accepts" means here, and what it does not
 
   An operation counts if its own subtree names the header — either as a `$ref` to
   `#/components/parameters/IdempotencyKey` or as an inline `name: Idempotency-Key`
@@ -458,10 +437,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end)
   end
 
-  # The two forms a document may use, and nothing else. `in: header` is not
-  # required in the match because the `$ref` form does not carry it, and a `$ref`
-  # to a parameter that turned out to be a query parameter would be caught by core's
-  # rule rather than guessed at here.
   defp accepts_idempotency_key?(subtree) do
     Enum.any?(subtree, fn {_indent, text, _number} ->
       String.contains?(text, "#/components/parameters/IdempotencyKey") or
@@ -522,12 +497,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end
   end
 
-  # The `responses:` block of one operation, or a raise.
-  #
-  # `subtree` is the operation's own lines: the method key, everything under it,
-  # and nothing belonging to a sibling method. The status keys are the least-
-  # indented lines in the block, because `responses:` is immediately followed by
-  # them and nothing else is allowed to be shallower.
   defp responses!(path, method, current, line, subtree, components) do
     case Enum.find(subtree, fn {indent, text, _} -> indent > 0 and text == "responses:" end) do
       nil ->
@@ -568,7 +537,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end
   end
 
-  # Each status key in a `responses:` block, with the lines that are its body.
   defp each_status(block, level) do
     block
     |> Enum.with_index()
@@ -589,9 +557,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
 
     resolved =
       case ref do
-        # An inline response answers for itself. A `$ref` is followed into the
-        # component, because the one-line form names no media type and no schema
-        # and the promise is in the component it points at.
         nil ->
           component_shape(body)
 
@@ -615,7 +580,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     })
   end
 
-  # The component name a response points at, or `nil` when it is inline.
   defp component_ref(body) do
     body
     |> Enum.find_value(fn {_indent, text, _n} ->
@@ -629,11 +593,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
   @problem_json "application/problem+json:"
 
   @doc false
-  # Two questions a response has to answer about itself, and only the second makes
-  # the first true: does it NAME the problem media type, and is its body
-  # `#/components/schemas/Problem`? A response can name the media type over some
-  # other schema, which is a content type that promises courier's error shape and
-  # delivers something else.
   defp component_shape(subtree) do
     %{
       problem_json:
@@ -647,10 +606,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     }
   end
 
-  # `'404':` on its own, or `'404': { $ref: '#/components/responses/NotFound' }` on
-  # one line. OpenAPI 3.1 writes status keys quoted, and this document writes the
-  # reusable ones inline, so the key is the quoted run at the start of the line
-  # rather than the whole line.
   defp status_key(text) do
     case Regex.run(~r/^'([0-9A-Za-z]+)':/, text) do
       [_, key] -> key
@@ -658,10 +613,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end
   end
 
-  # Each method under a path, with its own subtree: the method line and every
-  # following line until the next line at or above the method level. Without this
-  # a method would inherit its sibling's `responses:`, and `POST` would be checked
-  # against `GET`\'s promises.
   defp method_subtrees(children, method_level) do
     starts =
       for {entry, index} <- Enum.with_index(children),
@@ -687,7 +638,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end
   end
 
-  # --- reading a document -----------------------------------------------------
 
   defp significant_lines(contents) do
     contents
@@ -719,10 +669,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end
   end
 
-  # The two levels are derived from the document rather than assumed to be two and
-  # four spaces, so four-space YAML is read correctly instead of read as empty.
-  # Only the first two distinct levels are levels: anything deeper is inside an
-  # operation's body, and an operation's body is not part of the route set.
   defp levels!(path, block) do
     case block |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> Enum.sort() do
       [] ->
@@ -739,9 +685,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end
   end
 
-  # A direct child of `paths:` and everything indented under it, in one list each.
-  # `chunk_by/2` groups consecutive equal keys, so the key here is a counter that
-  # only advances on a path-level line.
   defp groups(block, path_level) do
     block
     |> Enum.map_reduce(-1, fn {indent, _text, _number} = line, group ->
@@ -803,7 +746,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end
   end
 
-  # --- comparing and reporting ------------------------------------------------
 
   defp difference(operations, keys, others) do
     keys
@@ -820,15 +762,11 @@ defmodule Courier.TestSupport.OpenAPIPaths do
       nil
     else
       """
-      #{subject} #{count(offenders, "operation")} #{absence}.
 
-        #{why}
 
         Offending operations:
-      #{Enum.map_join(offenders, "\n", &offender_line/1)}
 
         To fix this, do one of the two things:
-      #{fixes |> Enum.with_index(1) |> Enum.map_join("\n", fn {fix, n} -> "      #{n}. #{fix}" end)}
 
         `anywaye.yml` declares `exposes.api: openapi.yaml` and PLAN.md MD6 has SDK
         generation reading that file, so every operation in it is a method on a
@@ -839,14 +777,11 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     end
   end
 
-  # The omissions that were declared on purpose, printed so a carve-out reads as
-  # a choice somebody made rather than as a gap the check happened to miss.
   defp exclusions_note([]), do: nil
 
   defp exclusions_note(excluded) do
     """
     Declared omissions — the router serves these and `openapi.yaml` does not, on purpose:
-    #{Enum.map_join(excluded, "\n", &"  #{&1["label"]} — #{&1["reason"]}")}
     """
   end
 
@@ -859,8 +794,6 @@ defmodule Courier.TestSupport.OpenAPIPaths do
     "    #{operation["label"]}#{served}"
   end
 
-  # A plug action is an atom in every route this repository declares, and
-  # `inspect/1` on an atom is `:show`, which reads as a typo in a sentence.
   defp handler(action) when is_atom(action), do: Atom.to_string(action)
   defp handler(action), do: inspect(action)
 

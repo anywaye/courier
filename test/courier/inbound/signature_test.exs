@@ -3,7 +3,6 @@ defmodule Courier.Inbound.SignatureTest do
   Verifying an INBOUND webhook, which is the half of the Standard Webhooks scheme
   courier had never implemented.
 
-  ## Why this file leads with a vector svix published
 
   `test/courier/webhooks/signature_test.exs` says the thing this file has to
   respect: "A test that asserted the signer against itself would pass even if the
@@ -38,7 +37,6 @@ defmodule Courier.Inbound.SignatureTest do
   a fixture would have been a test asserting a coincidence, so the vector above
   is used instead and this note records the measurement.
 
-  ## The header names are the one place svix is not the spec
 
   Spec §Webhook headers says "All of the headers should be prefixed with
   `webhook-`". Resend sends `svix-` by default, and svix's docs add that
@@ -56,7 +54,6 @@ defmodule Courier.Inbound.SignatureTest do
   alias Courier.Inbound.Signature
   alias Courier.Webhooks.Signature, as: WebhookSignature
 
-  # svix's published example, verbatim. See the moduledoc.
   @vector_secret "whsec_plJ3nmyCDGBKInavdOK15jsl"
   @vector_id "msg_loFOjxBNrRLzqYUf"
   @vector_timestamp 1_731_705_121
@@ -75,9 +72,6 @@ defmodule Courier.Inbound.SignatureTest do
     }
   end
 
-  # Signed the way a provider signs: the base string is the provider's, and the
-  # HMAC is computed here rather than by `Courier.Webhooks.Signature`, so the
-  # "accept" tests below do not lean on courier's own signer agreeing with itself.
   defp sign(provider_secret, id, timestamp, body) do
     "v1," <>
       (provider_secret
@@ -101,10 +95,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "and the same bytes with the real clock are out of tolerance" do
-      # The pair is the point. A verifier that accepted this forever would be a
-      # verifier with no replay window, and the timestamp check is the only part
-      # of this scheme that defends against a captured delivery being re-sent.
-      # `@vector_timestamp` is November 2024, so "now" is years outside it.
       assert {:error, :timestamp_out_of_tolerance} =
                Signature.verify(
                  @vector_body,
@@ -115,10 +105,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "and courier's own outbound signer produces a signature it accepts" do
-      # One implementation of the base string, in both directions. This is the
-      # assertion that keeps the two halves from drifting; the vector above is
-      # what proves the shared implementation is the SPEC's and not merely
-      # consistent.
       signing_secret = secret()
 
       body =
@@ -141,9 +127,6 @@ defmodule Courier.Inbound.SignatureTest do
       body = ~s({"type":"email.bounced"})
       signature = sign(secret, id, timestamp, body)
 
-      # The hard bounce, with one space added. Still valid JSON, still the same
-      # event, and a different signature — which is why a framework that parses
-      # and re-serializes the body before verifying breaks here.
       assert {:error, :signature_mismatch} =
                Signature.verify(body <> " ", headers(id, timestamp, signature), secret)
     end
@@ -153,9 +136,6 @@ defmodule Courier.Inbound.SignatureTest do
       timestamp: timestamp,
       id: id
     } do
-      # The failure mode the spec §Signature scheme names outright: "many webhook
-      # consumers often accidentally parse the body as json, and then serialize it
-      # again". Key order here differs from the signed bytes.
       signed = ~s({"type":"email.bounced","data":{"email_id":"a"}})
       resent = ~s({"data":{"email_id":"a"},"type":"email.bounced"})
 
@@ -168,10 +148,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "the recipient's address", %{secret: secret, timestamp: timestamp, id: id} do
-      # The body courier is asked to act on, byte for byte. An attacker who can
-      # change one address in a signed payload can suppress a competitor's
-      # mailbox, which is the denial of service this whole boundary exists to
-      # prevent.
       body = ~s({"to":["victim@example.com"]})
 
       assert {:error, :signature_mismatch} =
@@ -183,7 +159,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "the id the signature is bound to", %{secret: secret, timestamp: timestamp, id: id} do
-      # The base string leads with the id, so an id is part of what is signed.
       signature = sign(secret, id, timestamp, ~s({}))
 
       assert {:error, :signature_mismatch} =
@@ -206,11 +181,6 @@ defmodule Courier.Inbound.SignatureTest do
       timestamp: timestamp,
       id: id
     } do
-      # Not a timing test, which would be flaky and would prove nothing about
-      # `:crypto.hash_equals`. This is the property a short-circuit comparison
-      # gets wrong: a value that is a PREFIX of the right answer is not the right
-      # answer, and a verifier that says otherwise accepts a forged signature
-      # that an attacker can extend.
       signature = sign(secret, id, timestamp, ~s({}))
       truncated = "v1," <> String.slice(signature, 3, 20)
 
@@ -230,24 +200,6 @@ defmodule Courier.Inbound.SignatureTest do
 
   describe "the comparison is constant time" do
     test "which is asserted on the source, because nothing observable can assert it" do
-      # MEASURED. A mutation test — replacing `:crypto.hash_equals(received,
-      # expected)` with `received == expected` — leaves this file at 108/108
-      # PASSING. The reason is that constant-timeness is a property of HOW a
-      # comparison happens, not of what it returns, and every test here is about
-      # what it returns: a wrong implementation returns the same `:ok` and the same
-      # `{:error, :signature_mismatch}`. A timing test would be the alternative and
-      # it is worse than useless — it is flaky on a loaded machine, so it fails
-      # when nothing is wrong and passes when something is.
-      #
-      # So the assertion reads the source. It is the only check that can fail, and
-      # it is also the only one that would still be true if the function were
-      # rewritten. Spec §Verifying signatures is not a style preference: "Failing
-      # to do so can expose consumers to timing-attacks and turn them into signing
-      # oracles", and an `==` here is exactly that.
-      # `Path.expand/2` against `__DIR__` rather than a path from the repository
-      # root: the suite has to find this file from wherever `mix test` was started,
-      # and a test that only passes from the root is a test that only runs on one
-      # machine. The same trick as `mailer_adapter_credentials_test.exs`.
       source =
         Path.expand("../../../lib/courier/inbound/signature.ex", __DIR__)
         |> File.read!()
@@ -255,15 +207,9 @@ defmodule Courier.Inbound.SignatureTest do
       assert source =~ ":crypto.hash_equals(",
              "Courier.Inbound.Signature must compare signatures with :crypto.hash_equals/2"
 
-      # And the length guard in front of it, which is what stops a four-character
-      # signature raising `ArgumentError` out of `hash_equals/2` — an
-      # unauthenticated 500, which is the self-inflicted outage the probe rules
-      # out. Also unobservable: mutating it away still returns
-      # `{:error, :signature_mismatch}` on every test but raises on this one.
       assert source =~ "byte_size(received) == byte_size(expected)",
              "the length guard before :crypto.hash_equals/2 must be kept"
 
-      # A `==` on the two signatures is the mutation, so its ABSENCE is the claim.
       refute source =~ "received == expected",
              "an == on two signatures is a timing oracle"
     end
@@ -306,9 +252,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "a timestamp with trailing rubbish", %{secret: secret, id: id, body: body} do
-      # `Integer.parse/1` returns the number it managed to read, so a lenient
-      # check would accept "1731705121x" — and the base string is built from the
-      # header's own bytes, which makes that a signature over a different string.
       signature = sign(secret, id, now(), body)
       timestamp = to_string(now())
 
@@ -321,10 +264,6 @@ defmodule Courier.Inbound.SignatureTest do
       timestamp: timestamp,
       body: body
     } do
-      # Spec §Signature scheme: "It's important that both the message id and the
-      # timestamp not be user controlled, or at the very least not be allowed to
-      # include any `.` to prevent certain attacks." A dot lets the id append
-      # fields to the base string.
       signature = sign(secret, "msg_a.b", timestamp, body)
 
       assert {:error, :malformed_id} =
@@ -349,9 +288,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "a timestamp at the edge is inside it", %{secret: secret, id: id, body: body} do
-      # Signed AT the drifted timestamp, because the timestamp is part of the
-      # signed base string. A signature made at `now` and checked against
-      # `now - 300` is a mismatch, not an edge case.
       now = now()
 
       for drift <- [-@tolerance, @tolerance] do
@@ -379,12 +315,6 @@ defmodule Courier.Inbound.SignatureTest do
       id: id,
       body: body
     } do
-      # Honest about what the window does and does not buy. Inside five minutes a
-      # captured delivery verifies again, which is why spec §Verifying signatures
-      # ALSO says "Use the `webhook-id` header as an idempotency key" — and why
-      # `email_suppressions_provider_idempotency_index` is a real defence rather
-      # than bookkeeping. This test exists so nobody later reads the tolerance as
-      # a complete replay defence.
       timestamp = now()
       signature = sign(secret, id, timestamp, body)
 
@@ -395,9 +325,6 @@ defmodule Courier.Inbound.SignatureTest do
 
   describe "the signing secret" do
     test "one without the whsec_ prefix is refused, not used" do
-      # `Courier.Webhooks.Signature.sign_key/2` RAISES here, which is right at
-      # boot and wrong at a request boundary: a route that 500s on a misconfigured
-      # secret is indistinguishable from one that is being attacked.
       bare = Base.encode64(:crypto.strong_rand_bytes(32))
 
       assert {:error, :invalid_secret} = Signature.verify(~s({}), %{}, bare)
@@ -413,9 +340,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "an empty string is refused" do
-      # The env-var shape: `COURIER_RESEND_WEBHOOK_SECRET=` in a compose file
-      # produces `""`, not an unset variable, and a secret that decodes to
-      # nothing is a key anybody can sign with.
       assert {:error, :invalid_secret} = Signature.verify(~s({}), %{}, "")
     end
   end
@@ -434,10 +358,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "the current key beside a previous one is found", ctx do
-      # Spec §Webhook headers: the list exists "to support zero downtime secret
-      # rotation", the webhook being signed with both the current and an old key.
-      # A verifier that only ever looked at the first entry would break every
-      # rotation in progress.
       %{secret: secret, id: id, timestamp: timestamp, body: body} = ctx
       previous = sign(secret(), id, timestamp, body)
       header = previous <> " " <> sign(secret, id, timestamp, body)
@@ -483,9 +403,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "the spec's webhook- prefix is accepted too, which is svix's white-labelling", ctx do
-      # svix's docs: "Professional and Enterprise tier customers can have the
-      # headers white-labeled to use the `webhook-` prefix instead of the `svix-`
-      # prefix used above. The Svix libraries support both."
       %{secret: secret, id: id, timestamp: timestamp, body: body} = ctx
 
       assert :ok =
@@ -497,10 +414,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "the two prefixes are not interchangeable", ctx do
-      # A signature is a space-delimited list, and a list is not a header name.
-      # Reading `svix-signature` beside a `webhook-timestamp` is a request missing
-      # a header, not one half-satisfied — and treating it as anything else is
-      # how a scheme with two namings turns into a scheme with none.
       %{secret: secret, id: id, timestamp: timestamp, body: body} = ctx
 
       mixed = %{
@@ -514,9 +427,6 @@ defmodule Courier.Inbound.SignatureTest do
     end
 
     test "a header name in the wrong case is not the header", ctx do
-      # Plug downcases what a client sends, so this is a hand-rolled `fetch` or a
-      # proxy that rewrote the case. `Courier.Webhooks.Verifier` takes the same
-      # position in the other direction.
       %{secret: secret, id: id, timestamp: timestamp, body: body} = ctx
 
       shouted = %{
@@ -537,10 +447,6 @@ defmodule Courier.Inbound.SignatureTest do
         svix_signature: sign(secret, id, timestamp, body)
       ]
 
-      # Not a real request — a keyword list has symbol keys, and no proxy sends
-      # one. It is here because `Map.new/1` on a keyword list yields atom keys
-      # and this asserts they are NOT silently accepted as if they were the
-      # strings, which would be a request boundary that answers from nothing.
       assert {:error, {:missing_header, "svix-id"}} = Signature.verify(body, list, secret)
     end
   end

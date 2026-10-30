@@ -1,35 +1,4 @@
 #!/bin/sh
-# The postgres courier's gate needs, when this machine does not already have one
-# at the address config/test.exs names.
-#
-#   bin/gate-db          # start it (idempotent: a running one is left alone)
-#   bin/gate-db stop     # stop and remove it
-#
-# WHY THIS EXISTS AND IS NOT `docker compose up -d db`.
-#
-# It used to be exactly that. This repository adopted kit's stack, and a service
-# that adopts kit's stack owns no container of its own — there is no `db` service
-# to bring up, and the compose file that named one is gone. The stack that exists
-# now publishes kit's postgres on kit's port under kit's credentials, and courier
-# cannot publish its own port on it: `ports:` is a LIST and a second file's list
-# is APPENDED, so overriding it would leave postgres on BOTH ports rather than on
-# this one. kit's `tests/fleet_check.py` fails that shape precisely because it is
-# the shape people reach for.
-#
-# So the host-side suite and the dev container are on different databases:
-#   * the dev container reaches courier's database over the compose network by
-#     service name, as the `courier` role and no other, where no host port is
-#     involved at all — `bin/dev` is unaffected by any of this;
-#   * the host-side suite needs a postgres on localhost:5432 as postgres/postgres,
-#     which is what this script starts.
-#
-# 17-alpine, matching what every other anywaye service runs. It is the ONLY
-# postgres image this repository pulls.
-#
-# IDEMPOTENT, and checked by asking the container rather than by `docker ps`
-# grepping. `docker compose up` is declarative and re-running it costs nothing;
-# a `docker run` that starts a second container on an occupied port fails, so the
-# port is the thing to look at and the running container is the answer.
 set -eu
 
 name="${COURIER_GATE_PG:-courier-gate-pg}"
@@ -53,21 +22,12 @@ if docker ps --filter "name=^/${name}$" --filter status=running --format '{{.Nam
   exit 0
 fi
 
-# A container that exists but is stopped is not "already running", and starting it
-# is cheaper than replacing it: it keeps whatever `courier_test` schema the last
-# run created. `--rm` below is why a fresh one never lingers, so this is only
-# reachable after a `docker stop` somebody issued by hand.
 if docker ps --all --filter "name=^/${name}$" --format '{{.Names}}' | grep -q .; then
   docker start "$name" >/dev/null
   echo "started $name"
   exit 0
 fi
 
-# `--health-cmd` rather than trusting `docker run` to return when postgres is
-# answering: `mix ecto.setup` runs immediately after this in bin/prime, and a
-# container that exists is not a server that accepts connections. The loop polls
-# a health signal against a deadline and says what was unhealthy if it expires —
-# no sleep, because a sleep is a guess about someone else's startup time.
 docker run --rm --detach --name "$name" \
   --publish 5432:5432 \
   --env POSTGRES_PASSWORD=postgres \

@@ -1,25 +1,4 @@
 #!/usr/bin/env bash
-#
-# The toolchain pins, read from the one file that holds them.
-#
-#   bin/toolchain-pins            print elixir=<v> and erlang=<v>
-#   bin/toolchain-pins --check F  assert F's kit `versions:` input matches
-#
-# mise.toml's `[tools]` table is courier's pin. The Dockerfile's ARGs name the
-# same two versions, and AGENTS.md says so: "Versions live in two places, not
-# three." CI would otherwise become that third place, because GitHub cannot read
-# a file into a `with:` input and every toolchain version therefore has to be
-# written out again in the workflow.
-#
-# So it is written out again, and this is what stops the two copies from
-# disagreeing. Bump mise.toml, forget the workflow, and CI says so instead of
-# quietly building and testing a different runtime than the one a developer's
-# `mise install` gives them — the failure where a green suite means nothing,
-# because it was green on a program nobody deploys.
-#
-# With GITHUB_OUTPUT set (it is, in Actions) the pins are appended there as
-# well, so a step can hand them straight to erlef/setup-beam and no step ever
-# holds a second copy at all.
 set -euo pipefail
 
 usage() {
@@ -27,13 +6,6 @@ usage() {
   exit 2
 }
 
-# mise.toml is TOML, not shell, so this reads the two lines it needs rather than
-# pretending to parse it. The key may be bare (`elixir = "1.20"`) or quoted
-# (`"elixir" = "1.20"`): kit's template quotes its keys and courier's does not,
-# and a future copy of either has to keep working. awk rather than sed, because
-# BRE interval syntax is the portable way to say "optional" — `?` after a quote
-# is a literal question mark on BSD sed, which is a silent no-match rather than
-# an error, and a silent no-match here reads as "no pin".
 pin() {
   awk -v key="$1" '
     match($0, "^[[:space:]]*\"?" key "\"?[[:space:]]*=[[:space:]]*\"[^\"]*\"") {
@@ -61,14 +33,6 @@ check() {
     echo "toolchain-pins: no such file: $file" >&2
     exit 1
   fi
-  # The literal kit's `with.versions` holds, in this order:
-  #   versions: '{"elixir":"<v>","erlang":"<v>"}'
-  #
-  # Every match is kept rather than taking the first: if a second `versions:`
-  # line ever appears with a different pin, the comparison below fails, which is
-  # the direction a duplicate should fail in. One sed expression, not two — sed
-  # rewrites the pattern space in place, so a second `s///` would search the
-  # first one's output and never match.
   in_workflow="$(
     grep -E '^ *versions:' "$file" |
       sed -n 's/.*"elixir":"\([^"]*\)".*"erlang":"\([^"]*\)".*/\1 \2/p'

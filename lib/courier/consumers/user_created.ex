@@ -3,7 +3,6 @@ defmodule Courier.Consumers.UserCreated do
   `identity.user.created` → the welcome mail, and the packet's proof that the
   bus is two-ended.
 
-  ## THE EVENT, AND WHY IT IS THE ONE THIS PACKET BUILDS AROUND
 
   identity publishes this from `internal/outbox/envelope.go`
   (`NewUserCreated`, verified there and **not re-derived here**), appended in
@@ -27,7 +26,6 @@ defmodule Courier.Consumers.UserCreated do
   user signs up, and another service does something about it" — still
   unreachable, and the handler chain unexercised on its one positive path.
 
-  ## NO CREDENTIAL IN THE PAYLOAD, AND THE PUBLISHER SAYS WHY
 
   identity's own comment on `NewUserCreated` is the boundary:
 
@@ -45,7 +43,6 @@ defmodule Courier.Consumers.UserCreated do
   handler's return, and the one field a future identity build might add
   (a token) is the one this file's test plants and asserts absent.
 
-  ## THE SEND GOES THROUGH `Courier.Deliver`, AND NOT AROUND IT
 
   Not `Courier.Mailer`, and not a provider call in this module: `Deliver` is
   where the preference check, the per-type unsubscribe check and the mailbox
@@ -57,7 +54,6 @@ defmodule Courier.Consumers.UserCreated do
   remedy courier could offer a person who just signed up is not a link in
   their first email.
 
-  ## THE HANDLER TAKES THE ROW, NOT THE ENVELOPE
 
   `handle/1` is given the `consumed_events` row rather than the envelope as it
   arrived — the same principle as every handler before it, and for the same
@@ -66,7 +62,6 @@ defmodule Courier.Consumers.UserCreated do
   receives is the row courier recorded rather than a re-rendering that could
   drift from it.
 
-  ## WHAT THIS HANDLER DOES NOT DO
 
   It renders nothing of its own. There is a `welcome` template and a `welcome`
   subject in configuration, both of which predate this packet; the handler is
@@ -84,9 +79,6 @@ defmodule Courier.Consumers.UserCreated do
           required(:email) => String.t()
         }
 
-  # The two fields identity publishes, checked by NAME so the reason names the
-  # one that was wrong. Order is the payload's own, so the message a caller
-  # sees is the payload's rather than a hash order's.
   @fields ~w(user_id email)
 
   @event_type "identity.user.created"

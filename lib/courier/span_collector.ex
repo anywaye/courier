@@ -2,7 +2,6 @@ defmodule Courier.SpanCollector do
   @moduledoc """
   courier's span processor, and the reason it exists at all.
 
-  ## The upstream bug it works around
 
   The Erlang OpenTelemetry SDK cannot start a span processor. Not in 1.7.0, not
   in 1.5.1, and not through any configuration. `otel_tracer_server:init_processor/3`
@@ -20,17 +19,16 @@ defmodule Courier.SpanCollector do
   on this tree, against both versions:
 
       $ mix run -e "IO.inspect(Supervisor.which_children(:otel_span_sup))"
-      [{:otel_span_sweeper, #PID<…>, :worker, …},
-       {:otel_span_ets,     #PID<…>, :worker, …}]      # no processor, ever
+      [{:otel_span_sweeper,
+       {:otel_span_ets,
 
   And a span with no processor is not exported at all: `otel_span_ets:end_span/3`
   does `ets:take(SPAN_TAB, SpanId)` and hands the record to the on-end list, which
   is empty, so the record is destroyed. A courier with this SDK emits nothing, and
   its startup line says telemetry is on.
 
-  ## What this module does instead
 
-  It supplies the on-end processor directly. `#tracer{}` in the SDK carries
+  It supplies the on-end processor directly. `
   `on_end_processors :: fun((span()) -> boolean() | {error, term()})`, and
   `get_tracer/3` hands that record back — so courier can rebuild the record with
   its own function in that field. That is reaching into an SDK private, and it is
@@ -44,7 +42,6 @@ defmodule Courier.SpanCollector do
     * it is asserted, not assumed: `test/courier/span_collector_test.exs` drives a
       real request and reads what came out the other end.
 
-  ## What it is NOT
 
   Not a reimplementation of the SDK's batch processor in general. It accumulates
   into an ETS table and hands the table to a real exporter on an interval, which is
@@ -67,16 +64,8 @@ defmodule Courier.SpanCollector do
 
   @table :courier_pending_spans
 
-  # Bounded, and bounded SMALL. The collector holds finished spans waiting for the
-  # next flush; a hundred thousand of them is a hundred thousand records in the BEAM
-  # heap, which is the memory-leak-with-a-telemetry-shaped-trigger the moduledoc
-  # names. At 2000 the worst case is a few hundred kilobytes and a visible gap in
-  # the trace store, which is the right way round.
   @capacity 2_000
 
-  # The interval between exports, in milliseconds. 5s is the SDK's own batch
-  # default and a dev-friendly number: long enough that a request is not an export,
-  # short enough that `docker compose up` followed by one curl shows a trace.
   @flush_interval_ms 5_000
 
   @doc "Supervisor entry point, named for `Courier.Application`."
@@ -99,10 +88,6 @@ defmodule Courier.SpanCollector do
     :ets.insert(@table, {:erlang.unique_integer(), span})
     true
   catch
-    # A telemetry failure must not take a request down. An `ets:insert` should not
-    # fail, and if the table is gone because the collector is restarting it will be
-    # back; swallowing it here means a telemetry problem costs a span rather than
-    # costing the caller a 500.
     _, _ -> false
   end
 
@@ -110,8 +95,6 @@ defmodule Courier.SpanCollector do
   def flush do
     GenServer.call(__MODULE__, :flush, 30_000)
   catch
-    # No collector (a test that never started the tree), which is a no-op rather
-    # than an error: a flush with nothing to flush is not a failure.
     :exit, _ -> :ok
   end
 
@@ -129,9 +112,6 @@ defmodule Courier.SpanCollector do
   @last_failure_key {__MODULE__, :last_failure}
 
   @doc false
-  # The last flush's refusal. For a test diagnosing "nothing to render" — which is
-  # how this whole defect presented, from six test files at once, with the reason
-  # visible only on one log line nobody was reading.
   def last_failure, do: :persistent_term.get(@last_failure_key, nil)
 
   @doc """
@@ -154,10 +134,6 @@ defmodule Courier.SpanCollector do
   """
   def exporter_endpoints do
     case exporter_state() do
-      # `#state{}`'s field 8 is `endpoints`, from `otel_exporter_traces_otlp`'s
-      # record definition. The tag check is the guard: an exporter that changed
-      # its record would otherwise return a confidently wrong address, and this
-      # is the only place courier looks at the exporter's internals.
       state when is_tuple(state) and tuple_size(state) == 9 and elem(state, 0) == :state ->
         elem(state, 8)
 
@@ -172,11 +148,10 @@ defmodule Courier.SpanCollector do
   @doc """
   The pending spans, in the shape the exporter's encoder reads.
 
-  ## Why courier assembles this instead of handing over its own table
 
   `:otel_otlp_traces.to_proto/2` iterates its argument with `ets:first/1`,
   `ets:lookup/2` on that key, and `ets:next/2` — so the table's KEY is an
-  `#instrumentation_scope{}` and its VALUE is a `#span{}`. courier's queue is
+  `
   keyed by `:erlang.unique_integer()` instead, because that is what makes
   `drop_oldest/0` and an atomic drain possible.
 
@@ -184,7 +159,6 @@ defmodule Courier.SpanCollector do
   the other. Measured, on the shape courier used to pass:
 
       ** (FunctionClauseError) no function clause matching in :otel_otlp_traces.to_proto/1
-          # 1
           {-576460752303345823, {:span, 250261861607385731661550453041408069235, ...}}
 
   The negative integer is courier's queue key arriving where the encoder asked
@@ -199,16 +173,6 @@ defmodule Courier.SpanCollector do
     export_table(@table |> :ets.tab2list() |> Enum.map(&elem(&1, 1)))
   end
 
-  # The table the exporter's encoder walks, built from a list of `#span{}` records.
-  #
-  # `:public`, `duplicate_bag` and `keypos`, because the SDK's own export table
-  # (`otel_batch_processor:new_export_table/1`) is exactly this and the encoder's
-  # `ets:lookup/2` walk depends on it. Two spans from the same instrumentation
-  # scope are two rows, not one overwrite — a `set` here silently drops every span
-  # but the last.
-  #
-  # `:ets.insert/2` with a LIST is one operation, so there is no window in which the
-  # encoder could see a half-built table.
   defp export_table(spans) do
     table =
       :ets.new(:courier_export_spans, [
@@ -224,33 +188,24 @@ defmodule Courier.SpanCollector do
   @doc """
   The key position the export table uses: the span's `instrumentation_scope`.
 
-  `otel_batch_processor:new_export_table/1` writes `{keypos, #span.instrumentation_scope}`
+  `otel_batch_processor:new_export_table/1` writes `{keypos,
   and comments why — the OTLP proto groups by instrumentation scope, so keying on
   it lets the encoder gather one scope's spans at a time. That is courier's
   encoder's assumption too, and this is the one number that has to agree with it.
 
-  Read off the record rather than written as a literal: `#span{}` is fixed by the
+  Read off the record rather than written as a literal: `
   SDK, and `instrumentation_scope` is its LAST field, so `tuple_size/1` is the
   position. An SDK that adds a field to the record would otherwise give this a
   confidently wrong key position.
   """
-  # `#span{}` as the SDK defines it, in
-  # `deps/opentelemetry/include/otel_span.hrl`: tag, trace_id, span_id,
-  # tracestate, parent_span_id, parent_span_is_remote, name, kind, start_time,
-  # end_time, attributes, events, links, status, trace_flags, is_recording,
-  # instrumentation_scope. Seventeen elements, with `instrumentation_scope` LAST —
-  # which is why the key position is the arity rather than a literal somebody has
-  # to remember. `test/courier/otel_export_test.exs` asserts the arity against a
-  # real span, so an SDK that adds a field goes red there rather than quietly
-  # grouping courier's spans under a wrong key.
   @span_arity 17
 
   def span_keypos, do: @span_arity
 
   @doc """
-  The scope of a finished span: the tail of the `#span{}` record.
+  The scope of a finished span: the tail of the `
 
-  `#span{}` is fixed by the SDK and `instrumentation_scope` is its LAST field, so
+  `
   this is `element/2` against a fixed arity rather than a named lookup — and the
   arity is checked, because an SDK that adds a field would otherwise return a
   silently WRONG scope and group courier's spans under nothing at all.
@@ -279,9 +234,6 @@ defmodule Courier.SpanCollector do
     pending = drain_pending()
 
     if pending == [] do
-      # Not an export attempt. Calling the exporter with nothing to send is what
-      # makes `to_proto/2` answer `empty`, and `empty` is indistinguishable from
-      # success — so "nothing to export" and "exported nothing" have to stay apart.
       :nothing_pending
     else
       case safe_export(exporter, pending) do
@@ -289,9 +241,6 @@ defmodule Courier.SpanCollector do
           :ok
 
         other ->
-          # Re-queued rather than dropped: a transient refusal should cost a
-          # delayed span, not a missing one, and @capacity bounds what a stuck
-          # exporter can hold.
           requeue(pending)
           {:error, other}
       end
@@ -308,7 +257,7 @@ defmodule Courier.SpanCollector do
   Record one real span, through the same two calls the request plug makes.
 
   Not a convenience for its own sake: it is the pair every assertion in the
-  redaction and propagation tests depends on, and a hand-built `#span{}` record
+  redaction and propagation tests depends on, and a hand-built `
   would let a change in how courier OPENS spans pass all of them.
   """
   def record_one_span(name \\ "courier.web.request", context \\ :undefined) do
@@ -347,24 +296,12 @@ defmodule Courier.SpanCollector do
     end
   end
 
-  # The exporter is a third-party module called with data courier did not build, so
-  # it raises: an `httpc` profile that was never started, an endpoint its own parser
-  # refuses, an OS-level failure under an accepted request. None of those are
-  # courier's to raise into a request, and a crash here would take the collector —
-  # and with it every later flush — down. A raise is a REFUSAL: the spans are
-  # re-queued and the flush ends.
   defp safe_export(exporter, spans) when is_function(exporter, 1) do
     exporter.(spans)
   catch
     kind, reason -> {:raised, kind, reason}
   end
 
-  # It takes the DRAINED spans, not the queue. `export_pending/1` has already taken
-  # them out — that is what makes a refusal re-queueable — so reading `@table` again
-  # here would hand the exporter an empty queue and report success. Measured: the
-  # canary suite went from 10 green to "nothing to render (0 spans in)" on exactly
-  # that, because `to_proto/2` answers `empty` for an empty table and the exporter
-  # treats that as a successful export.
   defp call_exporter(spans) do
     table = export_table(spans)
 
@@ -380,48 +317,19 @@ defmodule Courier.SpanCollector do
     end
   end
 
-  # A refusal is a WARNING, once per flush rather than once per span: the queue is
-  # bounded and retried, so a collector that cannot reach its endpoint produces one
-  # line every five seconds rather than one line per request. And it names the
-  # answer rather than saying "failed", because the whole of the previous defect
-  # was that `{:error, :unimplemented}` and a refused POST looked identical.
   defp warn(reason) do
     Logger.warning("span export failed; they stay queued for the next flush",
       reason: inspect(reason)
     )
 
-    # Kept readable, because "nothing to render (0 spans in)" from six test files
-    # is the shape this defect had and the reason was visible only on the log line
-    # above it.
     :persistent_term.put(@last_failure_key, reason)
 
     :ok
   end
 
   @doc false
-  # Forget the last refusal. Paired with `last_failure/0`, and for the same reason:
-  # a stale reason is a reason that names the wrong defect.
   def clear_failure, do: :persistent_term.erase(@last_failure_key)
 
-  # Take the queue and hand it over. `:ets.take/2` with an OBJECT reference, which
-  # is the one ETS operation that reads AND deletes atomically against concurrent
-  # writers: `on_end/1` inserts from whatever request process ended a span, and
-  # the pair this replaces — `tab2list` then `delete_all_objects` — dropped
-  # whatever landed in between. Spans arriving after the take stay for the next
-  # flush.
-  #
-  # Read the keys, then TAKE each one. `:ets.take/2` is atomic per object, so this
-  # cannot drop a span that arrived between the read and the take, and it cannot
-  # miss one that was already there.
-  #
-  # The pair this replaces was `tab2list` then `delete_all_objects`, which dropped
-  # whatever landed between the two. The `:ets.take/2` with `[:reference]` version
-  # was worse: it answers a REFERENCE, and neither `ets:tab2list/1` nor
-  # `ets:match_object/2` accepts one. Measured, on OTP 29:
-  #
-  #     ** (ArgumentError) errors were found at the given arguments:
-  #       * 1st argument: not an atom or a table identifier
-  #     (stdlib 1.8.1) :ets.match_object([], :_)
   defp drain_pending do
     case :ets.whereis(@table) do
       :undefined ->

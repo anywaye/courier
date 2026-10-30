@@ -23,9 +23,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
   alias Courier.TestSupport.TestDns
   alias Courier.Webhooks.UrlGuard
 
-  # The resolver for cases about the URL alone. It answers one public address for
-  # any name, so a hostname case never reaches the network and a literal-address
-  # case never resolves at all.
   @resolver {__MODULE__.Resolver, :canned}
 
   defp check(url), do: UrlGuard.validate(url, @resolver)
@@ -38,9 +35,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "accepts http" do
-      # The spec §Enforcing HTTPS says https "may be advisable" and leaves the
-      # decision to the producer. courier accepts http and does not pretend
-      # otherwise.
       assert {:ok, _target} = check("http://hooks.example.com/events")
     end
 
@@ -120,9 +114,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "rejects link-local 169.254.0.0/16, where the cloud metadata service lives" do
-      # This is the address every cloud provider's instance metadata endpoint
-      # answers on, and the single most valuable SSRF target there is: it hands
-      # out credentials to anything that asks.
       for host <- ~w(169.254.169.254 169.254.0.1 169.254.255.254) do
         assert {:error, :blocked_address} == check("http://#{host}/latest/meta-data/"),
                "#{host} must be refused"
@@ -146,8 +137,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "accepts 172.15 and 172.32, which are public and outside the private range" do
-      # 172.16.0.0/12 covers 172.16.0.0 through 172.31.255.255. A guard that
-      # blocked "172." wholesale would be refusing paying customers' hosts.
       for host <- ~w(172.15.0.1 172.32.0.1 172.1.2.3) do
         assert {:ok, _target} = check("http://#{host}/x"),
                "#{host} is public and must be allowed"
@@ -166,8 +155,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "rejects an ipv4-mapped ipv6 address that points at a private ipv4" do
-      # ::ffff:127.0.0.1 and ::ffff:10.0.0.1 are the same addresses as their
-      # ipv4 forms to everything that connects, so they are refused too.
       assert {:error, :blocked_address} == check("http://[::ffff:127.0.0.1]/x")
       assert {:error, :blocked_address} == check("http://[::ffff:10.0.0.1]/x")
     end
@@ -199,8 +186,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "rejects localhost with a trailing dot, which is the same name to DNS" do
-      # `localhost.` and `localhost` are the same name to every resolver, so a
-      # guard that compared suffixes as plain strings would wave this through.
       assert {:error, :blocked_host} == check("http://localhost./hooks")
     end
 
@@ -209,10 +194,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "strips the trailing dot before resolving, so the address is found" do
-      # The name handed to the resolver must be the one that resolves. Resolving
-      # `localhost.` instead of `localhost` is a name that behaves the same way
-      # in this case, but on a public name it is a lookup that may answer
-      # differently from the one the customer registered.
       assert {:ok, target} = UrlGuard.validate("https://hooks.example.com./x", @resolver)
 
       assert target.host_header == "hooks.example.com."
@@ -220,9 +201,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "rejects a loopback name hidden behind userinfo" do
-      # `https://hooks.example.com@127.0.0.1/x` is a request to 127.0.0.1. A
-      # validator that reads the host as the text before the `@` checks a public
-      # name and dials a private address.
       assert {:error, :blocked_address} == check("https://hooks.example.com@127.0.0.1/x")
     end
 
@@ -245,17 +223,11 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "reads a bracketed ipv6 literal whole, not as its first four characters" do
-      # `URI.parse("http://[fe80::1]/x").host` is `"fe80"`. A guard that trusted it
-      # would check a four-character name and dial the rest of the literal.
       assert {:error, :blocked_address} == check("http://[fe80::1]/x")
       assert {:error, :blocked_address} == check("http://[::1]:8080/x")
     end
 
     test "accepts a public ipv6 literal, which is not read as a truncated ipv4" do
-      # `2606:2800:…` split at its first colon is `2606`, and `2606` parses as
-      # the IPv4 address `0.0.10.46` — private. A port stripper that accepts a
-      # partial `Integer.parse/1` refuses every IPv6 customer for the wrong
-      # reason, and a guard whose reason is wrong is one whose fix is guesswork.
       assert {:ok, target} = check("https://[2606:2800:220:1:248:1893:25c8:1946]/hooks")
 
       assert target.host == "2606:2800:220:1:248:1893:25c8:1946"
@@ -279,8 +251,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "rejects a public name that resolves to loopback" do
-      # The whole point. `evil.example.com` is a name anyone can point at
-      # 127.0.0.1, and a string-only guard waves it through.
       assert {:error, :blocked_address} ==
                resolves_to("https://evil.example.com/x", ["127.0.0.1"])
     end
@@ -296,9 +266,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "rejects a name whose answers are mixed, when any one of them is private" do
-      # One private answer among public ones is the DNS-rebinding shape: the
-      # first answer goes to a public address, a later connection gets the
-      # private one. Refusing the name is the only answer that survives it.
       assert {:error, :blocked_address} ==
                resolves_to("https://rebind.example.com/x", ["8.8.8.8", "127.0.0.1"])
     end
@@ -327,9 +294,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "refuses rather than falling back when one answer in a list is unreadable" do
-      # A half-understood answer is not a safe answer. Reading past it — say,
-      # taking the first *parseable* address — is how a guard ends up connecting
-      # somewhere it never checked.
       assert {:error, :dns_failure} ==
                resolves_to("https://weird.example.com/x", ["not-an-ip", "127.0.0.1"])
     end
@@ -337,9 +301,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
 
   describe "the address courier actually connects to" do
     test "is the resolved address, not the name" do
-      # The guard returns the address to dial, and the sender dials *that*. If it
-      # returned the hostname, the guard would be a string check with extra steps
-      # and the connection would resolve a second time, unvalidated.
       assert {:ok, target} =
                UrlGuard.validate(
                  "https://hooks.example.com/hooks",
@@ -371,8 +332,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
     end
 
     test "keeps the host header the name, not the address, because that is what the customer serves" do
-      # A consumer's virtual host is its name. Dialling the address with a `Host`
-      # of the address gets a 404 from a server that never heard of it.
       assert {:ok, target} =
                UrlGuard.validate("https://hooks.example.com/x", {TestDns, {:canned, ["8.8.8.8"]}})
 
@@ -411,9 +370,6 @@ defmodule Courier.Webhooks.UrlGuardTest do
 
   defmodule Resolver do
     @moduledoc false
-    # A resolver for the cases that assert on the URL alone: one public address
-    # for any name, so a hostname case never reaches the network and a
-    # literal-address case never resolves at all.
     @behaviour Courier.Webhooks.Dns
 
     @impl Courier.Webhooks.Dns

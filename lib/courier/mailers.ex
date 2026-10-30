@@ -12,7 +12,6 @@ defmodule Courier.Mailers do
   with no adapter, no mailbox, and no network. `deliver/2` is `build/2` plus
   `Courier.Mailer.deliver/1`.
 
-  ## The six types
 
   `welcome`, `password_reset`, `team_invitation`, `account_security`,
   `email_change_current` and `email_change_new` are courier's whole catalog.
@@ -60,7 +59,6 @@ defmodule Courier.Mailers do
   rather than a mail with a hole in it: a reset mail with no link, or an
   invitation with nobody to attribute it to, is noise in a person's inbox.
 
-  ## Bulk and transactional, and who decides
 
   Every type is also a **kind**, and the kind is what decides whether the message
   may carry `List-Unsubscribe` and `List-Unsubscribe-Post` — the headers Gmail and
@@ -71,7 +69,6 @@ defmodule Courier.Mailers do
   `:transactional`, and `Courier.Unsubscribes` for what the header does when it is
   present.
 
-  ## Configuration
 
   The sender and the subject lines are configuration
   (`config :courier, :mailing`, with the address overridden from the
@@ -85,7 +82,6 @@ defmodule Courier.Mailers do
   (`:from_not_configured`) is a deployment that is wrong, not a request that is
   wrong, and the two must not be confused in an operator's logs.
 
-  ## Templates
 
   Bodies are `EEx` templates under `lib/courier/mailers/templates/`, compiled at
   build time by `Courier.Mailers.Templates` and wrapped in one shared layout per
@@ -116,15 +112,8 @@ defmodule Courier.Mailers do
   """
   @type kind :: :transactional | :bulk
 
-  # `reason` and `previous_email` are the fields not every type uses: only
-  # `account_security` branches on the first, only `email_change_new` needs the
-  # second. Both are in the shared list rather than the type's own because the
-  # payload is normalised over one vocabulary, and a second per-type list would
-  # be a second place for a field to be dropped.
   @fields ~w(user_id email name url account_name invited_by role reason previous_email amount_display invoice_id)a
   @payload_types Map.new(@fields, &{&1, :string})
-  # Types and kinds are now discovered from registered notifiers. See
-  # `Courier.Notifiers`. This module no longer owns the catalog.
 
   @doc """
   Every notification type courier sends, in the order the platform names them.
@@ -312,9 +301,6 @@ defmodule Courier.Mailers do
   defp present?(body) when is_binary(body), do: String.trim(body) != ""
   defp present?(_other), do: false
 
-  # Type, then payload, then configuration: the two configuration errors are
-  # reported after the caller's payload is known good, because a deployment that
-  # is misconfigured should not hide a request that is also wrong.
 
   defp fetch_type(type) do
     if Courier.Notifiers.get(type) != nil,
@@ -322,10 +308,6 @@ defmodule Courier.Mailers do
       else: {:error, :unknown_notification_type}
   end
 
-  # A payload is not a schema — it is a map the platform handed over and courier
-  # does not own — so it is cast through Ecto with an explicit type map rather
-  # than onto a struct that does not exist. That is what makes a missing address
-  # a changeset error a caller can read instead of a mail to nobody.
   defp cast(type, payload) do
     changeset =
       {empty(), @payload_types}
@@ -355,9 +337,6 @@ defmodule Courier.Mailers do
     |> Swoosh.Email.text_body(body(type, :text, fields))
   end
 
-  # Bodies are rendered per format and then wrapped in the shared layout, so
-  # every email courier sends is wrapped alike and a change to the wrapper is a
-  # change to one template.
   defp body(type, format, fields) do
     assigns = [
       greeting: greeting(fields.name),
@@ -383,9 +362,6 @@ defmodule Courier.Mailers do
     |> then(&Templates.render("layout.#{format}", body: &1))
   end
 
-  # The platform keys a payload map either way — decoded JSON has strings, an
-  # Elixir caller has atoms — and a payload that arrived with strings must not
-  # come back as "email can't be blank".
   defp normalize(payload) do
     Map.new(@fields, fn field ->
       key = field |> Atom.to_string()
@@ -407,14 +383,6 @@ defmodule Courier.Mailers do
     end
   end
 
-  # Where a reader of `payment_failed` goes to update their payment method.
-  #
-  # Configuration rather than payload: the payload carries facts about the
-  # event, and this is a fact about the deployment (which page its billing
-  # screens live on) — the same split as the from-address, which is why it is
-  # read here and not required of any consumer. `nil` when unset, and the
-  # template renders the sentence without a link then: a warning that named an
-  # address nobody configured would be worse than one that asks in words.
   defp billing_url, do: Application.get_env(:courier, :mailing, [])[:billing_url]
 
   defp subject(type, fields) do
@@ -424,8 +392,6 @@ defmodule Courier.Mailers do
     end
   end
 
-  # Read by string rather than by `:erlang.binary_to_existing_atom`, so a
-  # configuration key cannot become an atom that nothing in the code holds.
   defp subject_template(type) do
     Courier.Notifiers.subject_template(type)
   end

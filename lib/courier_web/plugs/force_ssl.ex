@@ -24,10 +24,6 @@ defmodule CourierWeb.Plugs.ForceSSL do
 
   @behaviour Plug
 
-  # The probes answer plain HTTP in every environment — an orchestrator that
-  # gets a redirect reads courier as dead and stops routing to it. Nothing but
-  # the two probes is exempt, and the exemption is by path rather than by
-  # host: a peer exclusion list is the allowlist that kept rotting.
   @exempt_paths ["/healthz", "/readyz"]
 
   def init(opts), do: opts
@@ -48,11 +44,6 @@ defmodule CourierWeb.Plugs.ForceSSL do
   """
   def enabled?, do: Application.get_env(:courier, :force_ssl_enabled, false)
 
-  # `rewrite_on: [:x_forwarded_proto]` because genuine prod sits behind a
-  # TLS-terminating proxy (kamal-proxy, Traefik): the container sees plain
-  # HTTP either way, and the header is what tells the two apart. The `exclude`
-  # repeats the path check above inside the delegated plug, so a future edit
-  # that calls `Plug.SSL` without the guard keeps the probes exempt.
   defp ssl_opts do
     [rewrite_on: [:x_forwarded_proto], exclude: [paths: @exempt_paths]]
   end

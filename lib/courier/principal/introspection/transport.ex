@@ -11,7 +11,6 @@ defmodule Courier.Principal.Introspection.Transport do
   — exercised against Req's own plug adapter, so neither side of the seam is
   untested.
 
-  ## The return type is deliberately narrow
 
   `{:ok, status, body}` or `{:error, reason}`, where **`reason` is a symbol
   carrying no part of either credential**. Both tokens are in flight on this call

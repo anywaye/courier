@@ -8,7 +8,6 @@ defmodule Courier.Principal.Introspection.Document do
   literal, and the resolver's own tests are left holding the one question they are
   about.
 
-  ## Three answers, and the second one is the interesting one
 
       {:ok, principal}      a live token, with an account courier can place
       :error                identity says the token cannot be used — a 401
@@ -22,7 +21,6 @@ defmodule Courier.Principal.Introspection.Document do
   is the problem — which is a lie that costs a rotation, a support ticket and an
   engineer an afternoon.
 
-  ## `:error` is ONE answer for every reason a token is unusable
 
   Unknown, revoked, expired, and one whose owner has been removed from the account
   are all `200 {"active": false}` upstream — identity collapsed them on purpose,
@@ -31,7 +29,6 @@ defmodule Courier.Principal.Introspection.Document do
   on a `revoked` claim, and no clock in this module, which is the structural
   reason the four cannot come apart here.
 
-  ## `account_id` is the only tenancy key, and there is no `sub` fallback
 
   `sub` is the **user** a token names. `account_id` is the tenancy boundary and it
   is required. A document that is active and carries no `account_id` is therefore
@@ -43,7 +40,6 @@ defmodule Courier.Principal.Introspection.Document do
   subject is read two functions below and is a perfectly good uuid, which is
   exactly why a fallback would be so easy to write by accident.
 
-  ## `scopes` and `scope` are both read, because the fleet has not chosen
 
   MD7 in the manager's `anywaye/notes/decisions.md` is open: core's conventions require
   `scopes`, gateway's verifier reads `scope`, and identity emits **both, byte for
@@ -69,10 +65,6 @@ defmodule Courier.Principal.Introspection.Document do
 
   alias Courier.Principal
 
-  # The two claim names, in the order identity's own document names them, and
-  # because a reader should not have to count them from the prose above. Named in
-  # one place because "read both" is the rule and two literals at a call site is
-  # how a rule quietly becomes "read the first one".
   @scope_claims ["scopes", "scope"]
 
   @typedoc "A decoded introspection body, or the bytes identity sent."
@@ -90,10 +82,6 @@ defmodule Courier.Principal.Introspection.Document do
   end
 
   def from(document) when is_map(document) do
-    # The ONLY thing that means "no" is an explicit `false`. Absent, or present
-    # and not a boolean, is identity not answering the question courier asked —
-    # which is a 503, not a 401. A document that fails to say a token is usable
-    # has not said the token is unusable.
     case Map.fetch(document, "active") do
       {:ok, true} -> build(document)
       {:ok, false} -> :error
@@ -122,19 +110,8 @@ defmodule Courier.Principal.Introspection.Document do
     end
   end
 
-  # THE TENANCY KEY, and the only place in this repository that reads one.
-  #
-  # `Map.fetch/2` and not `Map.get/2`: there is no default argument here, so
-  # "no `account_id`" and "fall back to something else" are not the same shape of
-  # code. The subject is read two functions below and is a perfectly good uuid,
-  # which is exactly why a fallback would be so easy to write by accident.
   defp account_id(document) do
     case Map.fetch(document, "account_id") do
-      # Present and unparseable is a contract courier does not understand, and it
-      # is deliberately NOT `:error`. Identity's own rule is that a token with no
-      # account is answered `{"active": false}` — so its ABSENCE is an answer and
-      # a 401. A malformed value is not an answer at all, and reporting it as one
-      # is how courier ends up logging somebody in as the account "not-a-uuid".
       {:ok, value} when is_binary(value) -> cast_account(value)
       {:ok, _wrong_type} -> {:error, :unreadable}
       :error -> :error
@@ -148,11 +125,6 @@ defmodule Courier.Principal.Introspection.Document do
     end
   end
 
-  # The user, which is not a tenancy key and is not allowed to become one.
-  #
-  # An absent or unparseable `sub` is `nil` and not a refusal: courier addresses
-  # mail by user id and never authorizes on one, so the field is informational and
-  # a token that omits it is still a usable credential.
   defp subject(document) do
     with {:ok, value} when is_binary(value) <- Map.fetch(document, "sub"),
          {:ok, uuid} <- Ecto.UUID.cast(value) do
@@ -162,12 +134,6 @@ defmodule Courier.Principal.Introspection.Document do
     end
   end
 
-  # Both claim names, unioned, because MD7 is open and courier must not be the
-  # service that decides it. `Enum.uniq/1` rather than a `MapSet` because the two
-  # names carry byte-identical values in every document identity sends, so the
-  # accumulator holds each scope twice until the last step — and the ordering is
-  # sorted so a document where the two names disagree cannot produce a different
-  # `Principal` depending on which one was read first.
   defp scopes(document) do
     Enum.reduce_while(@scope_claims, {:ok, []}, fn name, {:ok, found} ->
       case claim(document, name) do
@@ -181,17 +147,9 @@ defmodule Courier.Principal.Introspection.Document do
     end
   end
 
-  # A space-separated STRING and not an array, because that is the one shape both
-  # sides can read: gateway's verifier does `raw.split(/\\s+/)` and refuses a
-  # non-string claim outright, and core's conventions name a string. An array
-  # would be a token the gateway will not parse at all.
   defp claim(document, name) do
     case Map.fetch(document, name) do
       {:ok, value} when is_binary(value) -> {:ok, split(value)}
-      # `:error` and NOT a bare variable. A bare `_absent` here matches every
-      # remaining clause including a malformed value, which is how the first draft
-      # of this function read a `["accounts:read"]` array as "no scopes" — the
-      # exact silent failure the clause order exists to prevent.
       :error -> {:ok, []}
       {:ok, _wrong_type} -> {:error, :unreadable}
     end

@@ -3,7 +3,6 @@ defmodule Courier.OwnerRepo do
   The OWNER credential: `Courier.Repo` is the login that serves, this is the login
   that builds.
 
-  ## WHY THERE ARE TWO REPOS AND NOT ONE CONFIG WITH A SWITCH
 
   kit's cluster provisions two roles per service
   (`kit/templates/compose/postgres/initdb/10-cluster.sh`):
@@ -33,7 +32,6 @@ defmodule Courier.OwnerRepo do
   `mix.exs`'s aliases and from `Courier.Release`, and the application never names
   it.
 
-  ## NOT IN THE SUPERVISION TREE, ON PURPOSE
 
   `:ecto_repos` is `[Courier.Repo]` and this module is not in it, so
   `mix ecto.create -r Courier.OwnerRepo` starts it for the task and it stops with
@@ -51,20 +49,4 @@ defmodule Courier.OwnerRepo do
     otp_app: :courier,
     adapter: Ecto.Adapters.Postgres
 
-  # `priv/repo/migrations` is named in `config/dev.exs` and `config/test.exs` as
-  # `priv: "priv/repo"`, and it has to be: Ecto derives a repo's migrations
-  # directory from its module name — `Courier.OwnerRepo` reaches for
-  # `priv/owner_repo/migrations`, finds nothing, CREATES the empty directory, and
-  # reports a migration source that is silently empty:
-  #
-  #     ** (Mix) Could not find migrations directory "priv/owner_repo/migrations"
-  #
-  # **`use Ecto.Repo, priv: …` does not fix it.** Measured: `config/0` is
-  # `Ecto.Repo.Supervisor.init_config(:runtime, module, otp_app, [])`, and
-  # `init_config/4` reads `Application.get_env(otp_app, repo, [])` — the `opts`
-  # `use` was given reach `compile_config/2`, which looks for `:otp_app` and
-  # `:adapter` and ignores everything else. So the key has to be in the
-  # environment, and it is in both files that configure this repo.
-  #
-  # Two repos, one schema, one set of migrations, one `schema_migrations` table.
 end

@@ -23,13 +23,9 @@ defmodule CourierWeb.ErrorJSON do
     Problem.build(assigns, status, code, detail(status, code))
   end
 
-  # `status` is in the assigns Phoenix renders with; the template name is the
-  # fallback for a caller that renders an error template directly.
   defp status(_template, %{status: status}) when is_integer(status), do: status
   defp status(template, _assigns), do: template |> Path.rootname() |> String.to_integer()
 
-  # Terse on purpose: these bodies are read by anyone who can reach the service,
-  # and a stack trace or an exception message is a map of courier's internals.
   defp detail(404, :not_found), do: "There is no route for that request."
   defp detail(400, :bad_request), do: "The request could not be understood."
   defp detail(422, :validation_failed), do: "The request was not valid."

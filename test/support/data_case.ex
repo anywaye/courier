@@ -2,7 +2,6 @@ defmodule Courier.DataCase do
   @moduledoc """
   The test harness: the SQL sandbox, and the account identity it now carries.
 
-  ## WHY A `@moduletag account:` IS HERE AT ALL
 
   `config/test.exs` connects as **`courier_app`**, which owns nothing and is a
   subject of every row-level-security policy the substrate installed
@@ -22,7 +21,6 @@ defmodule Courier.DataCase do
 
       35/107 passed, 72 failures, every one `42501` on an INSERT
 
-  ## HOW THE IDENTITY IS SET, AND WHY IT IS NOT A TRANSACTION
 
   `Ecto.Adapters.SQL.Sandbox` already wraps every test in a **transaction**, so
   `set_config('anywaye.account_id', …, is_local := true)` is held by that one and
@@ -34,14 +32,12 @@ defmodule Courier.DataCase do
   connection is both simpler and strictly more correct: the test body IS the
   transaction.
 
-  ## `@moduletag account:` IS OPT-IN, AND A TEST THAT NEEDS ONE AND DOES NOT
   DECLARE IT GETS A LOUD `42501`
 
   Which is the right failure. A harness that guessed an account would make the
   boundary untestable, because a wrong guess and a working policy look identical
   from inside a test that only ever writes one account's rows.
 
-  ## THE ASYMMETRY, WHICH IS THE POINT
 
   A test that reads only `outbox_events`, `email_suppressions`,
   `unsubscribe_tokens` or `webhook_deliveries` needs **no** tag: those tables
@@ -88,7 +84,6 @@ defmodule Courier.DataCase do
   @doc """
   Runs `fun` as `account_id`, then puts the file's own identity back.
 
-  ## WHY IT EXISTS RATHER THAN A TEST CALLING `with_account/3` DIRECTLY
 
   Because `with_account/3` does not restore what it replaced, and inside the
   sandbox its transaction is a **SAVEPOINT** — and `RELEASE SAVEPOINT` does not
@@ -104,7 +99,6 @@ defmodule Courier.DataCase do
   reason, which is the shape `tenancy.yml` exists to make impossible. Reading the
   previous identity back and re-setting it makes the switch balanced.
 
-  ## IT RETURNS WHAT `fun` RETURNS, NOT `{:ok, value}`
 
   `with_account/3` answers `{:ok, result}` or `{:error, reason}` because a
   *request* has to be able to fail its transaction and tell that from success. A

@@ -35,8 +35,6 @@ defmodule CourierWeb.ErrorJSONTest do
   end
 
   test "renders 500 as internal, without the reason" do
-    # Terse on purpose: this body is readable by anyone who can reach courier,
-    # and it is public. The reason is in the logs, where it belongs.
     assert ErrorJSON.render("500.json", %{}) == %{
              "type" => "https://docs.anywaye.com/errors/internal",
              "title" => "Internal server error",

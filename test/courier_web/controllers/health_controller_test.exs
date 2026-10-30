@@ -55,8 +55,6 @@ defmodule CourierWeb.HealthControllerTest do
     test "GET /readyz does not leak the database error to the client", %{conn: conn} do
       conn = get(conn, ~p"/readyz")
 
-      # The underlying reason is logged by Courier.Health; the body names the
-      # failing check and nothing about the driver, the host, or the connection.
       refute conn.resp_body =~ ~r/ecto|repo|connect|refus|timeout|nxdomain|enoent|postgres/i
     end
 
@@ -71,8 +69,6 @@ defmodule CourierWeb.HealthControllerTest do
 
   defp restart_repo do
     {:ok, _pid} = Supervisor.restart_child(Courier.Supervisor, Courier.Repo)
-    # The fresh pool comes up in its default `:auto` mode; the suite expects the
-    # sandbox to be in manual mode, as test_helper.exs left it.
     Ecto.Adapters.SQL.Sandbox.mode(Courier.Repo, :manual)
     :ok
   end

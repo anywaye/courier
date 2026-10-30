@@ -38,15 +38,7 @@ defmodule Courier.Webhooks.Sender.Req do
       method: :post,
       url: request.url,
       headers: Map.merge(headers, %{"content-type" => "application/json"}),
-      # The bytes are already what was signed, so `:body` is the whole of it and
-      # `:json` is never set: Req's `:json` option would re-encode a term, and
-      # the spec's §Signature scheme is explicit that the payload sent must be
-      # the payload signed.
       body: request.payload,
-      # §Delivery success and failure: a 3xx is a failure, and following
-      # redirects "causes unnecessary load on both the sender and the receiver".
-      # A redirect to a private address would also be an SSRF hop the URL guard
-      # never saw.
       redirect: false,
       retry: false,
       receive_timeout: timeout_ms(),
@@ -69,9 +61,6 @@ defmodule Courier.Webhooks.Sender.Req do
         {:ok, answered}
 
       {:error, error} ->
-        # Logged with the endpoint's host, never the full signed body: the body
-        # is a customer's data and a webhook failure is not a reason to write
-        # one to courier's logs.
         Logger.warning("webhook delivery to #{host(request.url)} failed: #{inspect(error)}")
 
         {:ok,
@@ -84,8 +73,6 @@ defmodule Courier.Webhooks.Sender.Req do
     end
   end
 
-  # Only the delta-seconds form, which is what the spec's example consumer sends.
-  # A date is read as absent rather than misread as a number of seconds.
   defp retry_after(headers) do
     case Req.Response.get_header(headers, "retry-after") do
       [value | _rest] ->
@@ -102,8 +89,6 @@ defmodule Courier.Webhooks.Sender.Req do
   defp host(url) do
     URI.parse(url).host
   rescue
-    # A url that will not parse is logged as such rather than taking the worker
-    # down over a log line.
     ArgumentError -> "an unparseable url"
   end
 

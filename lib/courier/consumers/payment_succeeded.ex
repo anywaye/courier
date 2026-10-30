@@ -2,7 +2,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
   @moduledoc """
   `billing.payment.succeeded` → the receipt a person is owed when money moves.
 
-  ## THE EVENT, AND WHY THIS HANDLER CAN ACT ON IT
 
   billing publishes this from `Webhooks::StripeEvents.payment_emission`, in the
   same transaction as the charge it records — an event without a charge
@@ -20,7 +19,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
   §2.6), so an event with no address on it is one nobody can mail. This is the
   subscription that field was put there for.
 
-  ## THE AMOUNT ARRIVES RENDERED, AND THIS IS THE MODULE THAT ASKS FOR IT
 
   The event carries `amount: {"amount_minor" => 1900, "currency" => "USD"}` —
   integer minor units, which is how every number in this fleet crosses a wire.
@@ -36,7 +34,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
   builds both events with one builder and one `amount` shape, and the two
   mails about one subscription must not render one figure differently.
 
-  ## THE INVOICE ID IS THE ONE OPTIONAL FIELD, AND THAT IS DELIBERATE
 
   An invoice-backed payment carries `invoice_id`; a Checkout-backed one-off
   does not — there is no invoice to reference. Refusing the send for that
@@ -47,14 +44,12 @@ defmodule Courier.Consumers.PaymentSucceeded do
   field}} is about the recipient and the amount, the two things a receipt
   cannot exist without.
 
-  ## THE HANDLER TAKES THE ROW, NOT THE ENVELOPE
 
   `handle/1` is given the `consumed_events` row rather than the envelope as it
   arrived — the same principle as every other consumer in this repository:
   the payload a handler acts on is byte for byte the payload courier stored,
   including on a redelivery days later.
 
-  ## WHO A RECEIPT IS ABOUT: THE CUSTOMER, NOT A USER
 
   `Courier.Deliver` attributes a send to a user, and the money event names no
   USER — it names the anywaye CUSTOMER the money moved for. Billing has no
@@ -80,7 +75,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
   be the honest fix and is reported in
   `REPORT-courier-consumer-paymentreceipt-01`.
 
-  ## THE CORE ENUM GAP, REPORTED AND NOT APPLIED
 
   Adding `receipt` to `Courier.Mailers.types/0` means the
   `courier.email.delivered` event's `data.notification_type` can carry an
@@ -97,10 +91,7 @@ defmodule Courier.Consumers.PaymentSucceeded do
   @type receipt :: %{
           required(:email) => String.t(),
           required(:amount_display) => String.t(),
-          # nil for a Checkout-backed one-off, which no invoice names.
           required(:invoice_id) => String.t() | nil,
-          # The anywaye customer the money moved for, carried as the send's
-          # attribution. See the moduledoc.
           required(:payer) => String.t()
         }
 
@@ -167,9 +158,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
   """
   @spec deliver(receipt()) :: {:ok, map()} | {:error, term()}
   def deliver(receipt) do
-    # `user_id` is the key `Courier.Deliver` attributes a send to, and the
-    # value is the anywaye CUSTOMER — see the moduledoc for why the event names
-    # no user and what the three checks still are.
     Deliver.email("receipt", %{
       "email" => receipt.email,
       "user_id" => receipt.payer,
@@ -178,9 +166,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
     })
   end
 
-  ## ---------------------------------------------------------------------
-  ## The payload, one field at a time
-  ## ---------------------------------------------------------------------
 
   defp fetch_type(%ConsumedEvent{type: @event_type}), do: :ok
   defp fetch_type(%ConsumedEvent{}), do: {:error, :not_this_event}
@@ -191,10 +176,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
 
   defp fetch_data(%ConsumedEvent{}), do: {:error, {:incomplete_payload, "data"}}
 
-  # The recipient. A payment event without one is a receipt nobody can be
-  # sent — the customer was created in the processor's dashboard, or the
-  # customer's email was never set — and billing keeps the field absent in
-  # that case rather than null, so the two states arrive here the same way.
   defp fetch_email(data) do
     case Map.fetch(data, "email") do
       {:ok, email} when is_binary(email) and email != "" -> {:ok, email}
@@ -202,10 +183,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
     end
   end
 
-  # The money. `{"amount_minor" => 1900, "currency" => "USD"}`, both halves
-  # required: a currency with no count and a count with no currency are both
-  # amounts nobody can render, and an invoice for either is a receipt nobody
-  # should read.
   defp fetch_amount(data) do
     case Map.fetch(data, "amount") do
       {:ok, %{"amount_minor" => minor, "currency" => currency}}
@@ -217,10 +194,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
     end
   end
 
-  # The anywaye customer the money moved for. Required: it is the identifier
-  # `Courier.Deliver` attributes the send to, and a payment without one is a
-  # payment this event does not say whose it was — the shape billing's
-  # invoice-backed events always carry, and a payment-mode Checkout does not.
   defp fetch_payer(data) do
     case Map.fetch(data, "anywaye_customer_id") do
       {:ok, payer} when is_binary(payer) and payer != "" -> {:ok, payer}
@@ -228,9 +201,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
     end
   end
 
-  # The processor's invoice id, when the payment came with one. Optional by
-  # design — see the moduledoc — and present-as-null is treated the same as
-  # absent, because a receipt that renders "nil" has rendered a bug.
   defp invoice_of(data) do
     case Map.fetch(data, "invoice_id") do
       {:ok, invoice_id} when is_binary(invoice_id) and invoice_id != "" -> invoice_id
@@ -238,9 +208,6 @@ defmodule Courier.Consumers.PaymentSucceeded do
     end
   end
 
-  ## ---------------------------------------------------------------------
-  ## The figure
-  ## ---------------------------------------------------------------------
 
   @doc """
   The rendered amount, through the one module that renders it — see

@@ -7,7 +7,6 @@ defmodule Courier.Inbound do
   reports back, by webhook, and this is the package that turns those reports into
   the events `Courier.Suppressions.ingest/1` acts on.
 
-  ## Why this exists at all
 
   `Courier.Suppressions.ingest/1` was written, tested, and documented as "the HTTP
   surface's entry point" — and nothing called it. The suppression table was
@@ -17,7 +16,6 @@ defmodule Courier.Inbound do
   is the missing caller, minus the route: parsing, and the verification that has
   to happen before any of it.
 
-  ## Three modules, three jobs, and the order they run in
 
       1. Courier.Inbound.Signature   is this POST really from the provider?
       2. Courier.Inbound.Resend      what does this provider's JSON mean?
@@ -29,7 +27,6 @@ defmodule Courier.Inbound do
   until the signature matches. `handle/4` is the whole pipeline in that order and
   `Courier.InboundTest` asserts the parser is never reached.
 
-  ## Why the split is a behaviour and not a `case` on a provider name
 
   A provider's JSON is not courier's to design, and each one brings its own
   vocabulary, its own event names and its own idea of what a bounce is. The
@@ -46,7 +43,6 @@ defmodule Courier.Inbound do
   reimplementing it. A provider on a DIFFERENT scheme brings its own verifier and
   still implements this behaviour.
 
-  ## The contract every implementation owes its caller
 
     * **The raw body, as a binary.** Never a decoded map. Spec §Signature scheme
       names parse-then-re-serialize as "a very common failure mode" of signature

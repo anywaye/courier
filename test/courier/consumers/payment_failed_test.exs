@@ -3,7 +3,6 @@ defmodule Courier.Consumers.PaymentFailedTest do
   `billing.payment.failed` → the warning for an attempt that did not go
   through, and the receipt's other half.
 
-  ## WHAT THIS FILE PROVES
 
   The sibling of `Courier.Consumers.PaymentSucceededTest`, arm for arm — the
   two events are built by one builder in billing, so a shape this refuses and
@@ -24,7 +23,6 @@ defmodule Courier.Consumers.PaymentFailedTest do
     * a redelivered envelope id is deduped at the record layer, sent exactly
       once.
 
-  ## THE PAYLOAD
 
   billing's `Webhooks::StripeEvents.payment_emission` over an
   `invoice.payment_failed`, measured there and not re-derived here: the same
@@ -43,9 +41,6 @@ defmodule Courier.Consumers.PaymentFailedTest do
   alias Courier.Consumers
   alias Courier.Consumers.PaymentFailed
 
-  # The event's payload as billing publishes it, spelled out rather than
-  # minimized: the handler reads four fields, and the remaining ones are here
-  # because a publisher sends them and a consumer sees them.
   @payload %{
     "kind" => "payment",
     "processor" => "stripe",
@@ -64,8 +59,6 @@ defmodule Courier.Consumers.PaymentFailedTest do
 
   @envelope_id "9c8d7e6f-1111-4222-8333-444455556679"
 
-  # The subject is the processor's own subscription id — billing's decision,
-  # recorded there — and it is what the failed event is filed under.
   @subject @payload["subscription_id"]
 
   defp row(overrides \\ %{}) do
@@ -100,38 +93,26 @@ defmodule Courier.Consumers.PaymentFailedTest do
 
   describe "an event courier can parse" do
     test "is dispatched and the warning is sent to the address the payload carries" do
-      # The positive arm, paired with every refusal below. The send is asserted
-      # on the message it produced, not on the return value.
       assert {:ok, warning} = PaymentFailed.parse(row())
 
       assert warning.email == "buyer@example.com"
       assert warning.payer == "865e9942-4b65-432b-8bf4-5d34b9dae5b8"
-      # 4_900 minor units of USD is 49.00, rendered through the shared
-      # `Courier.Consumers.AmountDisplay`: courier has no Money concept.
       assert warning.amount_display == "49.00 USD"
       assert warning.invoice_id == "in_1URCjNCmN780pAiWMWoH0Bxd"
 
       assert {:ok, _} = PaymentFailed.deliver(warning)
 
       assert_email_sent(fn email ->
-        # Swoosh normalizes a single `{name, address}` recipient into a one-item
-        # list, so the assertion is against the list.
         assert email.to == [{"", "buyer@example.com"}]
         assert email.subject == "Your Anywaye payment did not go through"
         assert email.html_body =~ "49.00 USD"
         assert email.text_body =~ "49.00 USD"
         assert email.html_body =~ "in_1URCjNCmN780pAiWMWoH0Bxd"
-        # The reassurance the copy owes: a failed attempt moved no money, and
-        # the mail says so rather than leaving a reader to wonder.
         assert email.html_body =~ "Nothing was charged."
       end)
     end
 
     test "names the same type the registry is keyed on" do
-      # Two strings that must be one: the handler's `type/0` and the key in
-      # `config :courier, :consumers`. A refactor that changes one and not the
-      # other is a warning a person never receives — and this one is the only
-      # signal a broken card produces.
       assert PaymentFailed.type() == "billing.payment.failed"
       assert Consumers.handler_for(PaymentFailed.type()) == PaymentFailed
     end
@@ -149,9 +130,6 @@ defmodule Courier.Consumers.PaymentFailedTest do
     end
 
     test "renders a zero-decimal currency at its own places: 2400 JPY stays 2400" do
-      # The renderer is shared with the receipt and the branch is asserted on
-      # both types, so the one table cannot drift between the two mails about
-      # one subscription.
       {:ok, warning} =
         PaymentFailed.parse(
           row(%{
@@ -163,9 +141,6 @@ defmodule Courier.Consumers.PaymentFailedTest do
     end
 
     test "a one-off attempt without an invoice still sends" do
-      # The same optional arm as the receipt's: a Checkout-backed attempt has
-      # no invoice to name, and refusing it would drop a warning the platform
-      # legitimately produces.
       {:ok, warning} = PaymentFailed.parse(row(%{data: Map.delete(@payload, "invoice_id")}))
 
       assert warning.invoice_id == nil
@@ -173,24 +148,17 @@ defmodule Courier.Consumers.PaymentFailedTest do
       assert {:ok, _} = PaymentFailed.deliver(warning)
 
       assert_email_sent(fn email ->
-        # The refute first and the assert last: a fun ending in `refute` returns
-        # false, and `assert_email_sent` asserts the fun's return value.
         refute email.html_body =~ "The attempt was for invoice"
         assert email.html_body =~ "49.00 USD"
       end)
     end
 
     test "names the retry schedule nowhere, because the schedule is the processor's" do
-      # `next_payment_attempt` is on the wire and deliberately not in the mail:
-      # rendering it would make courier compute a date. The refusal is proven
-      # by asserting its absence from both bodies.
       {:ok, warning} = PaymentFailed.parse(row())
 
       assert {:ok, _} = PaymentFailed.deliver(warning)
 
       assert_email_sent(fn email ->
-        # The refutes first and an assert last: a fun ending in `refute` returns
-        # false, and `assert_email_sent` asserts the fun's return value.
         refute email.html_body =~ "2026-10-19"
         refute email.text_body =~ "2026-10-19"
         assert email.html_body =~ "Nothing was charged."
@@ -258,9 +226,6 @@ defmodule Courier.Consumers.PaymentFailedTest do
     end
 
     test "a handler failure leaves consumed_at NULL, so the event is retried" do
-      # The packet's claim, over the real loop: a payload with no address
-      # reaches the handler, is refused, and the row comes back on the next
-      # pass rather than being dropped on the floor.
       {:ok, _} = Consumers.record(envelope(%{"data" => Map.delete(@payload, "email")}))
 
       summary = Consumers.consume()

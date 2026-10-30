@@ -8,7 +8,6 @@ defmodule Courier.Suppressions do
   that keeps writing to dead addresses is a domain that gets suspended. The
   provider tells us; this module is what courier does with being told.
 
-  ## The states, and the decision behind them
 
       :undeliverable   a HARD bounce. RFC 5321 §5.1.1 permanent failure — no such
                        user, a null reverse path. A fact about the MAILBOX.
@@ -33,7 +32,6 @@ defmodule Courier.Suppressions do
   instruction; a bounce is a fact about a mailbox, and a later fact does not
   withdraw an instruction.
 
-  ## Nothing is ever updated, which is why the precedence cannot be got wrong
 
   Rows are immutable. The state is a fold:
 
@@ -48,7 +46,6 @@ defmodule Courier.Suppressions do
   that reason — a design whose correctness lives in an UPDATE is a design whose
   correctness a future edit can remove.
 
-  ## A soft bounce records nothing, on purpose
 
   RFC 5321 §4.2.2 temporary failure — mailbox full, greylisted, "try again in
   four hours". Suppressing on one is how a suppression list starts eating live
@@ -61,7 +58,6 @@ defmodule Courier.Suppressions do
   that counted `:ignored` as a failure would retry forever; one that counted it as
   `:new` would be counting a row that does not exist.
 
-  ## Idempotency is the unique index
 
   `(provider, provider_event_id)` is unique, and a delivery that loses it is
   answered `{:ok, :duplicate, row}` — the row that won, so the caller can report a
@@ -70,7 +66,6 @@ defmodule Courier.Suppressions do
   batch again. A "have I seen this?" check in Elixir would be a race; the index
   cannot be.
 
-  ## Tenancy: there is none, and that is deliberate
 
   A suppression has no `account_id`. An address is an address, and courier's
   send-path question — "may I write to this mailbox?" — has no tenant in it: one
@@ -85,7 +80,6 @@ defmodule Courier.Suppressions do
   ever be observed as its effect on courier's own sends. That is the same posture
   as the send path — the answer is "no mail went out", never "here is a list".
 
-  ## `normalize/1` is called on both sides of every comparison
 
   Writing lowercases and trims; `suppressed?/1`, `state/1`, `find/1` and
   `history/1` lowercase what they are given. Both halves matter and they are
@@ -99,11 +93,6 @@ defmodule Courier.Suppressions do
   alias Courier.Repo
   alias Courier.Suppression
 
-  # The kinds courier accepts from a provider. **Closed on purpose**: an event
-  # courier cannot classify is not an event courier acts on, which is the same
-  # fail-closed instinct as `Courier.ErrorReporting.Filter` returning nil rather
-  # than emitting something it cannot redact. Storing an unclassifiable event as
-  # "not suppressed" would be a decision courier could not defend.
   @kinds [:hard_bounce, :soft_bounce, :complaint]
 
   @typedoc """
@@ -165,12 +154,6 @@ defmodule Courier.Suppressions do
     end
   end
 
-  # The row that won, read back rather than reconstructed. A caller being told
-  # "this event was already ingested" needs the SAME row courier stored, not a
-  # struct assembled from the attributes the duplicate happened to carry — two
-  # deliveries of one event can differ in whitespace or field order, and handing
-  # back the loser's view of it would make "idempotent" mean "answers the same
-  # thing" rather than "is the same thing".
   defp duplicate(attrs) do
     Suppression
     |> where(
@@ -181,10 +164,6 @@ defmodule Courier.Suppressions do
     |> Repo.one()
     |> case do
       %Suppression{} = row -> {:ok, :duplicate, row}
-      # Unreachable: the insert lost the unique index, so a row with this pair
-      # exists. Handled rather than matched away because the alternative is a
-      # `nil` reaching a caller that pattern-matches a struct, and the symptom
-      # would be three files away from this one.
       nil -> {:error, :duplicate_without_a_row}
     end
   end
@@ -199,19 +178,12 @@ defmodule Courier.Suppressions do
   @spec ingest(event()) ::
           {:ok, :new | :duplicate, Suppression.t()} | {:ok, :ignored} | {:error, term()}
   def ingest(%{kind: kind} = event) when kind in [:hard_bounce, :complaint] do
-    # `Map.put/3`, not `Map.merge(event, state: ...)`. The second argument of
-    # `merge/2` is a MAP, and a bare `state: :undeliverable` at the call site is a
-    # keyword LIST — so the two-line version raises `BadMapError` on every hard
-    # bounce and every complaint, which is to say on every event courier exists to
-    # act on. `record/1` drops `:kind` because the changeset does not cast it.
     record(Map.put(event, :state, state_for(kind)))
   end
 
   def ingest(%{kind: :soft_bounce}), do: {:ok, :ignored}
 
   def ingest(%{kind: other}) do
-    # The refusal carries the value because it is courier's own vocabulary being
-    # rejected, from a provider courier asked to configure — never caller text.
     _ = other
     {:error, :unsupported_kind}
   end
@@ -285,7 +257,6 @@ defmodule Courier.Suppressions do
   @doc """
   The row courier already holds for this `(provider, provider_event_id)`, or `nil`.
 
-  ## Why this lookup exists at all, and it is a workaround
 
   It is here so that a caller who needs the row AND an event to be atomic can ask
   before it inserts. `record/1` and `unsubscribe/1` find a duplicate by inserting
@@ -294,11 +265,9 @@ defmodule Courier.Suppressions do
   PostgreSQL aborts a whole transaction on a statement error, so the read that
   follows the failed insert answers `25P02 current transaction is aborted`:
 
-      # outside a transaction
-      Suppressions.unsubscribe(attrs)  #=> {:ok, :new, row}  then  {:ok, :duplicate, row}
+      Suppressions.unsubscribe(attrs)
 
-      # inside Repo.transaction/1
-      Suppressions.unsubscribe(attrs)  #=> ** (Postgrex.Error) 25P02
+      Suppressions.unsubscribe(attrs)
 
   So the lookup can only ever be *wrong* in the direction of thinking a report is
   new, and the insert that follows then loses the index and the caller rolls the
@@ -382,8 +351,6 @@ defmodule Courier.Suppressions do
 
   def history(_email), do: []
 
-  # The two kinds courier suppresses on, mapped to what it calls them. One
-  # function so the ingest path and the test cannot disagree about the mapping.
   defp state_for(:hard_bounce), do: :undeliverable
   defp state_for(:complaint), do: :suppressed
 
@@ -394,9 +361,6 @@ defmodule Courier.Suppressions do
     |> Repo.exists?()
   end
 
-  # A duplicate and a malformed event are both an insert that did not happen, and
-  # they are told apart by whether the unique index is what stopped it — matched
-  # BY NAME for the reason in `Courier.Idempotency.refusal/1`.
   defp duplicate?(changeset) do
     Enum.any?(changeset.errors, fn {_field, {_message, opts}} ->
       Keyword.get(opts, :constraint) == :unique and
@@ -405,11 +369,6 @@ defmodule Courier.Suppressions do
     end)
   end
 
-  # `record/1` and `unsubscribe/1` share the tail, because they share the
-  # mechanism: the same index, matched by the same name, answering the same two
-  # shapes. One function rather than two copies of five lines is what makes "a
-  # second `POST` is a `:duplicate`" a property of the table rather than of one
-  # call site.
   defp duplicate_or(changeset, attrs) do
     if duplicate?(changeset), do: duplicate(attrs), else: {:error, changeset}
   end

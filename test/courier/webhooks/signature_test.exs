@@ -29,9 +29,6 @@ defmodule Courier.Webhooks.SignatureTest do
   alias Courier.Webhooks.Signature
   alias Courier.Webhooks.Verifier
 
-  # The spec's own worked example (spec §Signature scheme), so the construction
-  # is checked against strings the spec published rather than ones this
-  # repository made up.
   @spec_id "msg_2KWPBgLlAfxdpx2AI54pPJ85f4W"
   @spec_timestamp "1674087231"
 
@@ -39,9 +36,6 @@ defmodule Courier.Webhooks.SignatureTest do
 
   @tolerance 300
 
-  # An independent implementation of the spec's signing scheme, written from the
-  # spec's base string. Every "the signature is the spec's" assertion goes
-  # through this and never through `Courier.Webhooks.Signature.sign/4`.
   defp reference_signature(secret, id, timestamp, payload) do
     secret
     |> String.replace_prefix("whsec_", "")
@@ -65,10 +59,6 @@ defmodule Courier.Webhooks.SignatureTest do
     end
 
     test "signs the body byte for byte, dots and all, with no re-serialization" do
-      # A body containing full-stops is the interesting case: the spec joins
-      # three parts with full-stops, and a body is allowed to contain them. If
-      # courier parsed and re-encoded the payload before signing, this signature
-      # would not be the one a consumer computes over the bytes it received.
       signing_secret = secret()
       body = ~s({"data":{"url":"https://anywaye.com/x?a=1.2"}})
 
@@ -160,9 +150,6 @@ defmodule Courier.Webhooks.SignatureTest do
     end
 
     test "headers_now/3 stamps the attempt time, which is not the event's own time" do
-      # Spec §Webhook metadata: the attempt's timestamp "may be different to the
-      # timestamp of the event that generated the attempt" and "Every time an
-      # attempt is retried the timestamp of the attempt is updated".
       payload = ~s({"type":"email.delivered","time":"2020-01-01T00:00:00Z","data":{}})
 
       before = now()
@@ -182,9 +169,6 @@ defmodule Courier.Webhooks.SignatureTest do
         assert String.starts_with?(name, "webhook-")
       end
 
-      # The Svix-dialect names are this same scheme under different names. A
-      # consumer that guesses wrong verifies nothing, which is the whole reason
-      # PLAN.md §7 adopted the spec instead of a bespoke scheme.
       refute "svix-id" in headers
       refute "x-anywaye-signature" in headers
     end
@@ -211,10 +195,6 @@ defmodule Courier.Webhooks.SignatureTest do
     end
 
     test "a secret with a full stop in it is refused, because the base string is dot-delimited" do
-      # The spec: "it's important that both the message id and the timestamp not
-      # be user controlled, or at the very least not be allowed to include any `.`
-      # to prevent certain attacks." The `.` in the encoded key is the check
-      # that matters — the prefix may not be smuggled in from the right.
       assert_raise ArgumentError, fn -> Signature.sign_key("whsec_abc.def", "v1") end
     end
 
@@ -264,8 +244,6 @@ defmodule Courier.Webhooks.SignatureTest do
     test "rejects a tampered timestamp" do
       signing_secret = secret()
       headers = Signature.headers(signing_secret, @spec_id, now(), @spec_body)
-      # Edited on the wire, and the base string is not re-signed: this is the
-      # attack the timestamp is there to catch, half of it.
       tampered = Map.put(headers, "webhook-timestamp", (now() - 1) |> Integer.to_string())
 
       assert Verifier.verify(@spec_body, tampered, signing_secret) ==
@@ -309,10 +287,6 @@ defmodule Courier.Webhooks.SignatureTest do
 
     test "accepts a timestamp exactly at the tolerance, because the window is inclusive" do
       signing_secret = secret()
-      # `now` is captured once and passed to the verifier. Reading the clock twice
-      # would let the second reading land a second later and turn a boundary case
-      # into a failure that has nothing to do with the boundary — a test that only
-      # passes when the suite is fast.
       at = now()
       edge = (at - @tolerance) |> Integer.to_string()
       headers = Signature.headers(signing_secret, @spec_id, edge, @spec_body)
@@ -331,10 +305,6 @@ defmodule Courier.Webhooks.SignatureTest do
     end
 
     test "the tolerance is five minutes, the window every reference library uses" do
-      # The spec §Verifying signatures asks for "some allowable tolerance" and does
-      # not name a number. `refs/standard-webhooks/libraries/` uses 300s in every
-      # implementation, and courier publishes the same window so a customer can
-      # point an official library at a courier webhook and get the same answer.
       assert Verifier.tolerance() == 300
     end
 
@@ -358,9 +328,6 @@ defmodule Courier.Webhooks.SignatureTest do
     end
 
     test "accepts a space-delimited list of signatures, as the spec's header is" do
-      # The spec calls the header "a space delimited list of signatures" so that
-      # verification survives a zero-downtime secret rotation. A consumer that
-      # only ever read the first entry would fail for the length of the rotation.
       signing_secret = secret()
       headers = Signature.headers(signing_secret, @spec_id, now(), @spec_body)
 
@@ -376,8 +343,6 @@ defmodule Courier.Webhooks.SignatureTest do
     end
 
     test "ignores a signature identifier it does not know" do
-      # The spec's asymmetric scheme is `v1a`. A consumer must neither accept it
-      # as a match nor let it stop it finding the `v1` one beside it.
       signing_secret = secret()
       headers = Signature.headers(signing_secret, @spec_id, now(), @spec_body)
 

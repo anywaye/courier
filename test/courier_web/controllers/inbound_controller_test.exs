@@ -2,7 +2,6 @@ defmodule CourierWeb.InboundControllerTest do
   @moduledoc """
   `POST /inbound/resend` — the door `Courier.Suppressions.ingest/1` was waiting for.
 
-  ## The negative cases are this file
 
   `Courier.InboundTest` proves the library half: verify, then parse, then ingest,
   and an unsigned payload records nothing. This file proves the half that only
@@ -26,7 +25,6 @@ defmodule CourierWeb.InboundControllerTest do
       and no part of the *request*, and that is asserted with a canary rather
       than by reading the strings.
 
-  ## Every count is over this test's own address
 
   `email_suppressions` has no `account_id`, its rows are permanent, and
   `AGENTS.md` is explicit that a count over the whole table is a claim about
@@ -34,7 +32,6 @@ defmodule CourierWeb.InboundControllerTest do
   address minted for that one call, and `assert_nothing_written/1` is the one
   place that says it.
 
-  ## The events are asserted, not inferred
 
   `Courier.Events.bounced/1` and `complained/1` had no caller when this packet
   started, which is the defect the previous packet was opened for. A builder with
@@ -59,19 +56,10 @@ defmodule CourierWeb.InboundControllerTest do
   @account "4c5d6e7f-8a9b-4c0d-9e1f-2a3b4c5d6e7f"
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The address each test mints. Unique per call, and it has to be:
-  # `email_suppressions` rows are permanent, so a hard-coded address would let one
-  # test's suppression decide another test's outcome.
   defp address, do: "bounce-#{System.unique_integer([:positive])}@example.com"
 
-  # The `Message-ID` as a provider quotes it back: angle brackets, and the
-  # qualifier `Courier.Deliver.tag/2` puts on the wire. `Courier.Suppression`
-  # stores the identifier with the brackets stripped and the qualifier KEPT, while
-  # `outbox_events.subject` holds courier's bare id — so the route's join has to
-  # try both spellings. See `CourierWeb.InboundReports`.
   defp quoted(message_id), do: "<#{message_id}@anywaye.com>"
 
-  # --- helpers -----------------------------------------------------------------
 
   defp deliver(body, headers) do
     headers
@@ -87,8 +75,6 @@ defmodule CourierWeb.InboundControllerTest do
     deliver(body, headers)
   end
 
-  # A real send, so the bounce's `message_id` is a message courier really wrote an
-  # outbox row for rather than a string that looks like one.
   defp send_message(recipient) do
     conn =
       build_conn()
@@ -129,8 +115,6 @@ defmodule CourierWeb.InboundControllerTest do
     Enum.filter(Repo.all(OutboxEvent), &(&1.type == type and &1.data["email"] == address))
   end
 
-  # The one place this file says "nothing was written", so no test can assert it
-  # about a different table or a different address than it means.
   defp assert_nothing_written(address) do
     assert rows(address) == [],
            "a refused report was recorded: #{inspect(rows(address))}"
@@ -160,19 +144,9 @@ defmodule CourierWeb.InboundControllerTest do
            }
   end
 
-  # ---------------------------------------------------------------------------
-  # Verify before parse — the property the whole base exists for
-  # ---------------------------------------------------------------------------
 
   describe "an unauthenticated request never reaches the parser" do
     test "an unsigned but perfectly well-formed bounce is refused and records nothing" do
-      # THE test. The body below is one courier would have acted on: a `Permanent`
-      # bounce for a real address. The only thing missing is the signature, and the
-      # answer is a refusal with an empty table behind it.
-      #
-      # If the endpoint's JSON parser ran first and the controller trusted what it
-      # decoded, this is the request that suppresses a live mailbox — so the
-      # assertion is deliberately about rows and not about a status code.
       recipient = address()
 
       conn = deliver(FakeResend.bounce(recipients: [recipient]), %{})
@@ -184,10 +158,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "the 401 carries the reason and no part of the request" do
-      # A refusal that echoes a request value back is an oracle. The reason is
-      # courier's own vocabulary — an atom, or a header NAME, both public in the
-      # spec — and this asserts the difference on a request whose only identifying
-      # values are ones courier must not repeat.
       canary = "canary-#{System.unique_integer([:positive])}"
 
       {body, headers} =
@@ -210,10 +180,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "signed by a stranger, with a same-shaped secret" do
-      # The point of `FakeResend.other_secret/0` being the same SHAPE and LENGTH as
-      # the real one: a malformed secret would be refused as `:invalid_secret`
-      # before the comparison, and this test would pass without ever exercising the
-      # HMAC check.
       recipient = address()
       {body, headers} = FakeResend.signed_by_stranger(FakeResend.bounce(recipients: [recipient]))
 
@@ -225,11 +191,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "a signature over a body that is not the body that arrived" do
-      # The re-serialization attack, and the one the spec names as "a very common
-      # failure mode" of signature verification: courier verifies the bytes as
-      # received. The address in the tampered copy is a second one, so both are
-      # asserted — a body that was rewritten after signing must not be recorded
-      # under EITHER address.
       original = address()
       swapped = address()
       signed_body = FakeResend.bounce(recipients: [original])
@@ -244,9 +205,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "a timestamp outside the tolerance" do
-      # The other half of replay defence. Inside the window a replay is
-      # deduplicated by the unique index (there is a test for that below); outside
-      # it the signature is stale and there is nothing to deduplicate.
       recipient = address()
 
       conn =
@@ -260,10 +218,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "the `webhook-` prefix is accepted as well as `svix-`" do
-      # Spec §Webhook headers: "All of the headers should be prefixed with
-      # `webhook-`", and Svix's docs say white-labelled accounts send that instead
-      # of the `svix-` prefix Resend sends. Both are read; neither substitutes for
-      # the other.
       recipient = address()
 
       conn = deliver_signed(FakeResend.bounce(recipients: [recipient]), prefix: "webhook")
@@ -273,9 +227,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # The accepted path
-  # ---------------------------------------------------------------------------
 
   describe "a signed hard bounce" do
     test "records the suppression and publishes courier.email.bounced" do
@@ -298,9 +249,6 @@ defmodule CourierWeb.InboundControllerTest do
       assert [%Suppression{state: :undeliverable, provider: "resend"} = row] = rows(recipient)
       assert row.message_id == "#{message_id}@anywaye.com"
 
-      # The event, and its payload is core's schema field for field: the four
-      # fields `courier.email.delivered` carries, with `email` naming the address
-      # that BOUNCED — which for a broadcast is not the address the send was for.
       assert [event] = outbox(Events.bounced_type(), recipient)
 
       assert event.subject == message_id
@@ -336,10 +284,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "a complaint outranks a bounce for the same mailbox, and both are published" do
-      # The precedence `Courier.Suppressions` exists to make unbreakable, asserted
-      # from the route rather than from the context. The complaint arrives second
-      # and is a DIFFERENT provider event id, so the unique index does not mistake
-      # it for a repeat — and the state folds to `:suppressed`.
       recipient = address()
       message_id = send_message(recipient)
 
@@ -358,11 +302,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "a soft bounce records nothing and publishes nothing, and says so" do
-      # `Transient` is RFC 5321 §4.2.2 temporary failure. Suppressing on one is how
-      # a suppression list starts eating live addresses, so `ingest/1` answers
-      # `{:ok, :ignored}` — a THIRD shape, and the response has to be able to say
-      # which of the three happened without a caller having to know courier's
-      # table.
       recipient = address()
       message_id = send_message(recipient)
 
@@ -383,10 +322,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "a broadcast is one report per recipient, and one event each" do
-      # Resend's `to` is "Array of impacted recipient email addresses" and a
-      # broadcast shares one `email_id` across all of them. Keyed on the email
-      # alone, four of five bounces would collide with the first and four live
-      # mailboxes would go on being mailed forever.
       recipients = Enum.map(1..3, fn _ -> address() end)
       message_id = send_message(List.first(recipients))
 
@@ -406,9 +341,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "an event courier has read and has no opinion on is a 200 with nothing done" do
-      # `email.delivered` is the provider telling courier the mail arrived. courier
-      # has no opinion about that, and `{:ok, []}` is a distinct answer rather than
-      # a success the caller should retry.
       conn = deliver_signed(FakeResend.event("email.delivered"))
 
       assert conn.status == 200
@@ -416,9 +348,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Idempotency, deliberately
-  # ---------------------------------------------------------------------------
 
   describe "a provider delivering the same report twice" do
     test "the second delivery is a 200 that says duplicate, and writes nothing new" do
@@ -449,12 +378,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "the same report under a FRESH signature is still one write" do
-      # This is the choice the route makes rather than the `:idempotent` pipeline,
-      # asserted. Deduplication is on `(provider, provider_event_id)`, which
-      # `Courier.Inbound.Resend` derives from the report's own CONTENT — so a
-      # provider that re-signs a retry (a new `svix-id`, a new timestamp) is
-      # deduplicated all the same, and somebody cannot get a second write by
-      # resending with a new header.
       recipient = address()
       message_id = send_message(recipient)
       body = FakeResend.bounce(recipients: [recipient], message_id: quoted(message_id))
@@ -468,8 +391,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "and a replay past the tolerance is refused, still writing nothing new" do
-      # The two halves of replay defence, and this is the other one: the index
-      # deduplicates inside the window and the signature is refused outside it.
       recipient = address()
       {body, headers} = FakeResend.signed(FakeResend.bounce(recipients: [recipient]))
 
@@ -487,17 +408,11 @@ defmodule CourierWeb.InboundControllerTest do
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Refusals after verification
-  # ---------------------------------------------------------------------------
 
   describe "a report courier cannot act on" do
     test "a body that is not JSON is a 400 and writes nothing" do
       recipient = address()
 
-      # Signed OVER the malformed bytes. A 400 here is reachable only by somebody
-      # holding the signing secret, which is the point: `openapi.yaml` declares it
-      # and says why an unsigned malformed body is a 401 instead.
       conn = deliver_signed(FakeResend.bounce(recipients: [recipient]) <> "{not json")
 
       assert conn.status == 400
@@ -514,10 +429,6 @@ defmodule CourierWeb.InboundControllerTest do
     test "an event type courier has not read is a 422, a log line, and nothing written" do
       recipient = address()
 
-      # `Courier.Inbound.Resend`'s moduledoc asks for exactly this: "a provider
-      # that adds a bounce type should produce a log line, not silence". A 200
-      # would be courier claiming it did something with a report it could not read,
-      # so this is a 422 and the provider is told.
       log =
         capture_log(fn ->
           conn =
@@ -559,10 +470,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "a recipient courier cannot send to is a 422 that does not quote it" do
-      # The address is in courier's LOGS and not in its RESPONSE. The parser names
-      # it precisely so an operator can act on it; the response is a body anybody
-      # who can reach the route can read, and this table is not exposed through any
-      # route for the same reason the 409 on `POST /v1/messages` does not echo one.
       bad = "not-an-address@@example.com"
 
       log =
@@ -580,9 +487,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "a payload missing a field courier needs names that field" do
-      # `type` present, `data` absent. A 422 rather than a 500: the request was
-      # authentic and well-formed JSON and the thing it asked for is not allowed,
-      # which is core's own "anything semantically wrong is 422".
       conn =
         deliver_signed(~s({"type":"email.bounced","created_at":"2026-11-22T23:41:12.126Z"}))
 
@@ -592,10 +496,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
 
     test "a body larger than courier will verify is refused before the parser" do
-      # An unauthenticated caller must not be able to make courier buffer an
-      # unbounded body. Every provider report courier accepts is a few kilobytes,
-      # so the bound is generous, and the refusal happens before verification
-      # rather than after it.
       recipient = address()
       oversize = FakeResend.bounce(recipients: [recipient]) |> overflow()
 
@@ -603,24 +503,14 @@ defmodule CourierWeb.InboundControllerTest do
 
       assert conn.status == 400
       assert problem(conn)["code"] == "bad_request"
-      # The size refusal and not a parse refusal: the body padded above is still
-      # valid JSON carrying a bounce courier would have acted on, so a 400 for any
-      # other reason would be a different answer to a different question.
       assert problem(conn)["detail"] =~ "larger than"
       assert_nothing_written(recipient)
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # A report courier cannot attribute to a send
-  # ---------------------------------------------------------------------------
 
   describe "a bounce courier cannot tie back to a send" do
     test "records the suppression, publishes no event, and says why in a log" do
-      # The suppression is the load-bearing fact: the address is not going to be
-      # mailed again whatever courier can say about which message it was. So the
-      # row is written, the transaction commits, and the missing event is a log
-      # line rather than a rollback that would throw the row away with it.
       recipient = address()
       send_message(recipient)
 
@@ -644,25 +534,10 @@ defmodule CourierWeb.InboundControllerTest do
 
       assert log =~ "something-else"
 
-      # And the message courier DID send is untouched, which is the point: an
-      # unattributable bounce says nothing about whether that message arrived.
       assert length(outbox(Events.delivered_type(), recipient)) == 1
     end
 
     test "a report with no Message-ID at all is the same case" do
-      # Resend documents `message_id` on the bounced payload and a provider that
-      # omits it is not hypothetical — an SMTP-level bounce arriving through a
-      # relay courier does not control quotes no `Message-ID` at all. So this is
-      # the case where a suppression is the *only* thing courier can record, and
-      # the assertion is that the row is there anyway.
-      #
-      # Built with `Jason.encode!/1` rather than the documented literal the rest
-      # of this file uses, because the field is *absent* here and a hand-written
-      # body with a missing key is a typo waiting to become a test that passes
-      # for the wrong reason. `FakeResend` cannot build it: its `encode_value/1`
-      # has no clause for `nil`, and adding one would make a fake able to write
-      # `"message_id": null` — a payload that is documented and that courier
-      # therefore has to accept.
       recipient = address()
 
       body =
@@ -688,16 +563,8 @@ defmodule CourierWeb.InboundControllerTest do
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # The response, and what it must never carry
-  # ---------------------------------------------------------------------------
 
   describe "nothing in the response is about a mailbox" do
-    # The six answers the six requests below are built to produce, asserted
-    # together. A list written down beside the requests it describes is a check
-    # that can only fail for a case somebody remembered to type, and the point of
-    # this one is that the refusals differ from each other — a 400 that quietly
-    # became a 422 would still keep every address out of every body below.
     @answers [200, 401, 401, 400, 422, 422]
 
     test "the accepted answer and every refusal carry no address" do
@@ -758,8 +625,6 @@ defmodule CourierWeb.InboundControllerTest do
     end
   end
 
-  # A body one byte over the bound, so the assertion is about the bound and not
-  # about a kilobyte of test data.
   defp overflow(body) do
     room = CourierWeb.InboundController.max_body_bytes() - byte_size(body) + 1
     body <> String.duplicate(" ", room)

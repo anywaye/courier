@@ -2,13 +2,11 @@ defmodule Courier.TenancyTest do
   @moduledoc """
   The identity reaches the database, in a transaction, and dies with it.
 
-  ## WHAT THIS FILE PROVES
 
   That `anywaye.current_account_id()` holds the caller's account **while the
   transaction runs** — read back through the substrate's own accessor, so the
   value asserted on is the value a policy would compare against.
 
-  ## WHAT THIS FILE DELIBERATELY DOES NOT PROVE, AND WHY IT IS NOT A GAP
 
   Two things, both of which look assertable and are not:
 
@@ -77,10 +75,6 @@ defmodule Courier.TenancyTest do
     end
 
     test "and it really is a transaction, which is the whole mechanism" do
-      # `in_transaction?/1` is the half that matters: `is_local := true` outside a
-      # transaction expires at the end of the statement that set it, so a query
-      # that ran without one would read zero rows. So "the identity is set" is not
-      # the claim — "the identity is set AND a transaction is open to hold it" is.
       assert {:ok, inside} =
                Tenancy.with_account(Repo, @account_a, fn ->
                  Tenancy.in_transaction?(Repo)
@@ -90,11 +84,6 @@ defmodule Courier.TenancyTest do
     end
 
     test "a later identity REPLACES an earlier one on the same transaction" do
-      # The shape that matters for a nested call or a worker: within one
-      # transaction the most recent `begin_account/1` is the one the policies see.
-      # An identity that silently did nothing would leave the boundary reading as
-      # the FIRST account rather than as nothing — the opposite failure to the one
-      # a reader worries about, and the one no test would catch.
       assert {:ok, @account_b} =
                Tenancy.with_account(Repo, @account_a, fn ->
                  assert @account_a == Tenancy.current_account_id(Repo)
@@ -105,10 +94,6 @@ defmodule Courier.TenancyTest do
     end
 
     test "nil CLEARS one already set, on the same transaction" do
-      # `anywaye.begin_account(NULL)` CLEARS rather than failing, and it clears
-      # *within* the transaction — which is what makes the negative control "zero
-      # rows, not an error": a request whose account is unknown does not go on
-      # reading as whoever it was a moment ago.
       assert {:ok, nil} =
                Tenancy.with_account(Repo, @account_a, fn ->
                  assert @account_a == Tenancy.current_account_id(Repo)
@@ -140,14 +125,6 @@ defmodule Courier.TenancyTest do
 
   describe "begin_account/2" do
     test "a malformed account is refused in Elixir, before the database is asked" do
-      # `Ecto.UUID.dump!/1` raises `ArgumentError`, and that is deliberate rather
-      # than incidental. The substrate's `current_account_id()` is written to raise
-      # `22023` on a non-uuid with a hint naming `begin_account/1`, but reaching
-      # that needs the value to survive encoding — and Postgrex's `uuid` encoder
-      # refuses a malformed string first, with a message about **bytes** rather
-      # than about tenancy. So the refusal happens one layer earlier than the
-      # substrate intended, and the message names the value, which is the more
-      # useful half.
       assert_raise ArgumentError, ~r/cannot dump given UUID/, fn ->
         Tenancy.begin_account(Repo, "not-a-uuid")
       end

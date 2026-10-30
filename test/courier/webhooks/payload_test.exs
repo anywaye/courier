@@ -24,9 +24,6 @@ defmodule Courier.Webhooks.PayloadTest do
   alias Courier.OutboxEvent
   alias Courier.Webhooks.Payload
 
-  # A row built the way `Courier.Deliver` writes one, with no database behind it:
-  # this file is about the bytes on the wire, and a table it does not read from
-  # cannot fail for a reason that is not the payload.
   @event %OutboxEvent{
     id: "11111111-1111-1111-1111-111111111111",
     type: "email.delivered",
@@ -63,9 +60,6 @@ defmodule Courier.Webhooks.PayloadTest do
     end
 
     test "is the same bytes every time it is built for one event" do
-      # The spec §Signature scheme: the payload sent must be the payload signed,
-      # and re-encoding could differ between calls. Encoding once and returning
-      # that binary is what makes the claim true rather than likely.
       assert event_body() == event_body()
     end
 
@@ -74,8 +68,6 @@ defmodule Courier.Webhooks.PayloadTest do
     end
 
     test "is under the size the spec recommends" do
-      # §Payload size: "recommended to keep the size of payloads small, usually
-      # smaller than 20kb".
       assert byte_size(event_body()) < 20_000
     end
   end
@@ -91,9 +83,6 @@ defmodule Courier.Webhooks.PayloadTest do
     end
 
     test "carries no event id, because it is not an event" do
-      # A ping that carried an envelope id would be an event id that means
-      # nothing, and a consumer deduplicating on it would drop a later delivery
-      # whose id happened to collide.
       decoded = Jason.decode!(Payload.ping("msg_test", "https://hooks.example.com/events"))
 
       refute Map.has_key?(decoded, "id")

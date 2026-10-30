@@ -2,7 +2,6 @@ defmodule CourierWeb.ErrorEndpoint do
   @moduledoc """
   A second Phoenix endpoint, on its own port, serving `CourierWeb.ErrorRouter`.
 
-  ## Why a second endpoint rather than a route on the first
 
   The error path carries a **shared ingest secret**, not a caller's bearer token,
   and that difference is a deployment boundary rather than a code detail:
@@ -28,7 +27,6 @@ defmodule CourierWeb.ErrorEndpoint do
   entry in that test's exclusion list, and the brief is explicit that an existing
   check does not get relaxed to accommodate new code.
 
-  ## No `Plug.Parsers`, and that is deliberate
 
   A Sentry envelope is newline-delimited binary framing, not a form and not JSON,
   and it is read with `read_body/2` in `CourierWeb.ErrorEnvelopeController`. If
@@ -46,10 +44,6 @@ defmodule CourierWeb.ErrorEndpoint do
 
   use Phoenix.Endpoint, otp_app: :courier
 
-  # No `Plug.Static`: this endpoint serves no assets. No `Plug.Parsers`: see the
-  # moduledoc. No `Plug.Session`: see the moduledoc. `force_ssl` is off by design
-  # — this listener is on a private network and terminating TLS at the ingress is
-  # the operator's decision, not something to assert from here.
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :error_endpoint]
   plug CourierWeb.Plugs.Trace

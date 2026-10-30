@@ -2,7 +2,6 @@ defmodule Courier.CIBackendTest do
   @moduledoc """
   The CI backend switch names a backend kit ships, and it is reachable.
 
-  ## What this test exists for
 
   `ci/backend` is the one-line switch kit's `backends/README.md` defines:
   `instabox` runs the pipeline in a sandbox, `github-actions` keeps
@@ -12,19 +11,13 @@ defmodule Courier.CIBackendTest do
   one of the two backends kit's table names, so the failure mode is a red test
   naming the unknown backend rather than a silent no-run.
 
-  ## It runs with no database
 
   `use ExUnit.Case`, not `Courier.DataCase`. The subject is a file on disk and
   nothing here touches `Courier.Repo`, so this belongs to the no-database tier.
   """
 
-  # `async: true`: this test reads one file and touches no shared process, no
-  # application environment and no database.
   use ExUnit.Case, async: true
 
-  # The backends kit ships, from the table in kit's `backends/README.md`. A
-  # third backend is a line in that table first, and a line here second — a
-  # backend invented in this file alone is a switch position nothing runs.
   @shipped_backends ~w(github-actions instabox)
 
   @backend_path "ci/backend"

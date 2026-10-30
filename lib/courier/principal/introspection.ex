@@ -5,7 +5,6 @@ defmodule Courier.Principal.Introspection do
   `config :courier, :principal` names this module when courier is not in test, and
   it answers the one question `CourierWeb.Plugs.Principal` asks: who is calling.
 
-  ## What courier presents to introspect — the first judgement call
 
   **`COURIER_IDENTITY_TOKEN`, a scoped API token courier holds as its own
   credential**, presented as `Authorization: Bearer` on identity's
@@ -40,7 +39,6 @@ defmodule Courier.Principal.Introspection do
       fault. Tightening identity's rule is identity's decision (packet m65),
       not courier's; courier reports the 403 as a 503 and says so here.
 
-  ## Why the credential is not the caller's own token, forwarded
 
   RFC 7662 §2.1 permits a protected resource to introspect using the token
   itself, and identity implements exactly that affordance — "a token may
@@ -58,7 +56,6 @@ defmodule Courier.Principal.Introspection do
   introspect an arbitrary tenant token, and courier's resolver reports that as a
   **503** rather than pretending otherwise.
 
-  ## Nothing is cached, and the cost of that is stated rather than assumed
 
   Every authenticated request is one extra round trip to identity, on the hot
   path. Caching is not an option that was weighed and declined on latency: a
@@ -71,7 +68,6 @@ defmodule Courier.Principal.Introspection do
   latency now includes identity's, and identity's outage is courier's outage.**
   Both show up as a 503, which is a retryable status on the caller's side.
 
-  ## Failure is a closed door
 
   identity unreachable, slow, 5xx, 401, 403, or answering in a shape courier
   cannot read is `{:error, :unavailable}`, which the plug turns into a **503**.
@@ -86,14 +82,12 @@ defmodule Courier.Principal.Introspection do
   was never the problem, and an operator reads a wall of "invalid credentials"
   when the fault is one environment variable.
 
-  ## The three answers, and what each one costs the caller
 
       {:ok, principal}              a live token with an account courier can place
       :error                        identity said no — a 401, one answer for every
                                     reason a token is unusable
       {:error, :unavailable}        courier could not find out — a 503
 
-  ## Where the token comes off the request
 
   `Authorization: Bearer <token>` and nothing else. **Not** the `__Host-session`
   cookie: that is identity's browser surface, core's conventions put cookies on
@@ -110,9 +104,6 @@ defmodule Courier.Principal.Introspection do
 
   @behaviour Courier.Principal.Resolver
 
-  # identity's own `security` for the route is `sessionCookie` / `bearerToken`,
-  # and both are the same header shape, so the value below is the whole of what
-  # courier accepts as a caller's credential.
   @authorization "authorization"
   @bearer_prefix "Bearer "
 
@@ -180,7 +171,6 @@ defmodule Courier.Principal.Introspection do
   def transport,
     do: Application.get_env(:courier, :introspection_transport, Transport.Req)
 
-  # --- the request ------------------------------------------------------------
 
   defp bearer(conn) do
     with [value] <- Plug.Conn.get_req_header(conn, @authorization),
@@ -188,8 +178,6 @@ defmodule Courier.Principal.Introspection do
          false <- token == "" do
       token
     else
-      # Absent, not a bearer, or an empty one. All three are "no credential", and
-      # all three are refused without a call to identity.
       _otherwise -> nil
     end
   end
@@ -205,11 +193,6 @@ defmodule Courier.Principal.Introspection do
     end
   end
 
-  # The only shape that counts as an answer. Everything else is a closed door, and
-  # it is worth being explicit that **the status is not consulted for anything but
-  # 200**: identity's 401 and 403 are about courier's credential, its 404 and 422
-  # are about courier being wrong, and none of those is a fact about the caller's
-  # token that the caller could act on.
   defp document(200, body) do
     case Document.from(body) do
       {:ok, principal} -> {:ok, principal}
@@ -229,26 +212,16 @@ defmodule Courier.Principal.Introspection do
     end
   end
 
-  # Written here rather than with Req's `json:` option so the bytes courier sends
-  # are the bytes this function produced — the same rule as the signed bytes on
-  # the outbound webhook path, and for a smaller version of the same reason: a
-  # test asserting on a body Req re-encoded is asserting on Req.
   defp body(token), do: Jason.encode!(%{"token" => token})
 
   defp headers(service_token) do
     [
       {"accept", "application/json"},
       {"content-type", "application/json"},
-      # courier's OWN credential. The caller's is in the body and never in a
-      # header, so a request this module makes carries exactly one authorization.
       {"authorization", @bearer_prefix <> service_token}
     ]
   end
 
-  # Every path out of here is a LOG LINE and a 503, and the two are separated: the
-  # caller gets the status, courier's operator gets the reason. `detail` is the
-  # only part that would reach a caller and it names courier, not identity's
-  # internals and not the token.
   defp unavailable(detail) do
     Logger.warning("[principal] refusing a request: #{detail}")
     {:error, :unavailable}

@@ -54,9 +54,6 @@ defmodule Courier.NotificationType do
     |> maybe_validate_eex(:text_template, text)
   end
 
-  # Dummy assigns for a dry-run render: every field a template may reference,
-  # present (as nil) so a template that compiles but references an unknown
-  # assign fails here rather than on the first real send.
   @dummy_assigns [
     greeting: nil, email: nil, url: nil, account_name: nil, invited_by: nil,
     role: nil, reason: nil, previous_email: nil, amount_display: nil,
@@ -67,9 +64,6 @@ defmodule Courier.NotificationType do
   defp maybe_validate_eex(changeset, field, src) when is_binary(src) do
     try do
       compiled = EEx.compile_string(src)
-      # Dry-run render so a template that compiles but cannot render (missing
-      # assign, bad expression) is rejected at create/update time, not at
-      # send time.
       Code.eval_quoted(compiled, assigns: @dummy_assigns)
       changeset
     rescue

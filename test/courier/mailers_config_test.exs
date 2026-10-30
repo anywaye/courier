@@ -49,9 +49,6 @@ defmodule Courier.MailersConfigTest do
   end
 
   test "a type with no subject is not reachable through the API" do
-    # subject is NOT NULL at the database, so a missing subject is rejected by
-    # the changeset before it reaches the send path. Covered by the changeset's
-    # required validation; nothing to assert here.
     :ok
   end
 
@@ -62,9 +59,6 @@ defmodule Courier.MailersConfigTest do
   end
 
   test "the payment-failure warning carries the configured billing url as a link" do
-    # The one action the warning asks for, and the url is deployment
-    # configuration — the payload carries facts about the event, and which
-    # page the billing screens live on is a fact about the deployment.
     mailing_config(billing_url: "https://app.example.com/billing/subscriptions")
 
     assert {:ok, email} =
@@ -80,9 +74,6 @@ defmodule Courier.MailersConfigTest do
   end
 
   test "with no billing url configured the warning still asks, in words" do
-    # The default is `nil`, and the template renders the sentence without a
-    # link then: a warning that named an address nobody configured would be
-    # worse than one that asks in words.
     mailing_config(billing_url: nil)
 
     assert {:ok, email} =

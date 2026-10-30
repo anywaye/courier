@@ -10,7 +10,6 @@ defmodule Courier.Workers.DispatchWebhooksWorker do
   breaker. Folding them into one worker would mean every unreachable consumer
   retried the dispatch loop as fast as the database could answer.
 
-  ## Idempotence
 
   This worker runs on a timer, so it runs again after a crash and may run
   concurrently on two replicas. Three things make a second run harmless:
@@ -26,14 +25,12 @@ defmodule Courier.Workers.DispatchWebhooksWorker do
     * the claim is `for update skip locked`, so two replicas do not dispatch the
       same event at the same time.
 
-  ## Events with no account
 
   `Courier.Deliver` records `email.delivered` for a person, and courier does not
   know which account that person is in, so those events have no `account_id` and
   this worker skips them. Fanning them out to every account would deliver one
   customer's mail events to another — the payloads carry a recipient address.
 
-  ## THE FAN-OUT READS UNDER AN IDENTITY, AND THAT IS THE POINT OF THIS SECTION
 
   `webhook_endpoints` is one of the three tables
   `20261003090000_protect_account_scoped_tables` protects, and it does so with
@@ -87,9 +84,6 @@ defmodule Courier.Workers.DispatchWebhooksWorker do
   alias Courier.WebhookDeliveries
   alias Courier.WebhookEndpoints
 
-  # Read at compile time because Oban reads a worker's options when it builds a
-  # job, and the same number is in `config :courier, :webhooks` for the runtime
-  # read. The two agreeing is what "past the cap" means.
   @max_batch Application.compile_env(:courier, :webhooks)[:dispatch_batch_size]
 
   use Oban.Worker, queue: :webhooks, max_attempts: @max_batch
@@ -111,9 +105,6 @@ defmodule Courier.Workers.DispatchWebhooksWorker do
 
   defp dispatch do
     Enum.reduce(claim(), 0, fn event, dispatched ->
-      # One transaction per event: the deliveries and the mark that says they were
-      # made commit together or not at all. A dispatch recorded without its
-      # deliveries is an event nobody will ever deliver again, silently.
       {:ok, created} = Repo.transaction(fn -> fan_out(event) end)
 
       {:ok, _event} = mark_dispatched(event)

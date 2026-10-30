@@ -16,7 +16,6 @@ defmodule Courier.TestSupport.CloudflareServer do
     * the real `Courier.Adapters.CloudflareEmail` posting through the real
       `Swoosh.ApiClient.Req` client.
 
-  ## Why the response is configurable
 
   The adapter's reason to exist is that a provider REFUSING the send is
   surfaced as `{:error, _}` rather than vanishing. A server that always
@@ -27,7 +26,6 @@ defmodule Courier.TestSupport.CloudflareServer do
   (`permanent_bounces`, `suppressed_recipients`, `success: false`) is the
   critical one: it arrives under a 2xx and must still be an error.
 
-  ## How a test reads what arrived
 
   The request is handled by a Plug process unrelated to the test process, so
   the test cannot `assert_receive` what it saw. Every request is written to an
@@ -38,7 +36,6 @@ defmodule Courier.TestSupport.CloudflareServer do
   The response configuration lives in a SECOND table, so `take/1` clearing
   the requests cannot discard what the server is meant to answer.
 
-  ## The tables are the server's own, and carry no global name
 
   Both tables are created in `init/1` against THIS process, unnamed. An ETS
   name is a VM-wide registration, so a named table here made the harness
@@ -58,10 +55,6 @@ defmodule Courier.TestSupport.CloudflareServer do
 
   use GenServer
 
-  # Not names — LABELS. `:ets.new/2` only registers a name against the VM when
-  # the options carry `:named_table`; without it the atom is what `:ets.info/2`
-  # reports for the table and nothing more. Two servers running at once each
-  # get their own table under the same label, which is the point.
   @requests_label :courier_cloudflare_requests
   @response_label :courier_cloudflare_response
 
@@ -169,14 +162,6 @@ defmodule Courier.TestSupport.CloudflareServer do
     :ok
   end
 
-  # --------------------------------------------------------------------------
-  # The Plug pipeline.
-  #
-  # One function: read the body, record the request, answer with whatever the
-  # test configured. It is deliberately not a router — every path is the
-  # send endpoint as far as this server is concerned, and a test that posts
-  # to the wrong path is a test whose adapter is misconfigured.
-  # --------------------------------------------------------------------------
 
   defmodule Plug do
     @moduledoc false
@@ -198,20 +183,6 @@ defmodule Courier.TestSupport.CloudflareServer do
         }
       })
 
-      # Two refusals the real provider makes, and both are modelled here so the
-      # test server behaves like the provider rather than re-stating the
-      # adapter's own constants.
-      #
-      # 1. The REST API's named-address object is `{"address", "name"}` — a
-      #    payload carrying `"email"` is refused with 400
-      #    invalid_request_schema (measured live on anywaye.com).
-      # 2. Cloudflare Email Sending OWNS the Message-ID: it assigns one and
-      #    returns it as `result.message_id`, and a caller-supplied
-      #    `message-id` header — in EITHER case — is refused with 400 / 10202
-      #    (measured live on anywaye.com, 2026-10-16). A test that asserted only
-      #    that the adapter dropped the header would be re-stating the
-      #    adapter's own constant; this makes the round trip fail if the
-      #    header is forwarded again.
       {status, response_body} =
         cond do
           contains_email_key?(body) ->
@@ -254,8 +225,6 @@ defmodule Courier.TestSupport.CloudflareServer do
 
     defp address_value_has_email_key?(_), do: false
 
-    # Cloudflare refuses a caller-supplied Message-ID in EITHER case, so the
-    # check is case-insensitive on the `headers` object's keys.
     defp has_message_id_header?(body) do
       case Jason.decode(body) do
         {:ok, %{"headers" => headers}} when is_map(headers) ->

@@ -3,7 +3,6 @@ defmodule Courier.Consumers.PaymentFailed do
   `billing.payment.failed` → the warning a person is owed when their money did
   not move.
 
-  ## THE SIBLING OF THE RECEIPT, AND WHY IT EXISTS AT ALL
 
   A settled payment already has its mail (`Courier.Consumers.PaymentSucceeded`).
   This is the other half of the same event family: billing publishes
@@ -30,14 +29,12 @@ defmodule Courier.Consumers.PaymentFailed do
   the processor owns (the retry policy lives in Stripe's dashboard, not in
   this fleet). The mail's job is the fact and the remedy.
 
-  ## THE ALLOWANCE, SAID RATHER THAN HIDDEN
 
   A failure is not always final: the processor retries on its own schedule,
   and a renewed card mid-retry is a subscription that never lapses. So the
   copy asks for the update without announcing an ending it cannot see, and the
   amount named is the amount of the attempt that failed.
 
-  ## THE HANDLER TAKES THE ROW, AND ATTRIBUTES LIKE ITS SIBLING
 
   `handle/1` is given the `consumed_events` row — byte for byte the payload
   courier stored, including on a redelivery. And the send is attributed to the
@@ -53,10 +50,7 @@ defmodule Courier.Consumers.PaymentFailed do
   @type warning :: %{
           required(:email) => String.t(),
           required(:amount_display) => String.t(),
-          # nil for a Checkout-backed one-off, which no invoice names.
           required(:invoice_id) => String.t() | nil,
-          # The anywaye customer the failed payment was for, carried as the
-          # send's attribution. See the moduledoc.
           required(:payer) => String.t()
         }
 
@@ -119,9 +113,6 @@ defmodule Courier.Consumers.PaymentFailed do
     })
   end
 
-  ## ---------------------------------------------------------------------
-  ## The payload, one field at a time
-  ## ---------------------------------------------------------------------
 
   defp fetch_type(%ConsumedEvent{type: @event_type}), do: :ok
   defp fetch_type(%ConsumedEvent{}), do: {:error, :not_this_event}
@@ -132,9 +123,6 @@ defmodule Courier.Consumers.PaymentFailed do
 
   defp fetch_data(%ConsumedEvent{}), do: {:error, {:incomplete_payload, "data"}}
 
-  # The recipient: a warning nobody can be sent is not a warning, and an event
-  # with no address on it (a customer created in the processor's dashboard,
-  # or one whose email was never set) is refused rather than guessed at.
   defp fetch_email(data) do
     case Map.fetch(data, "email") do
       {:ok, email} when is_binary(email) and email != "" -> {:ok, email}
@@ -142,9 +130,6 @@ defmodule Courier.Consumers.PaymentFailed do
     end
   end
 
-  # The failed attempt's amount, in the same integer-minor-units shape the
-  # receipt handler renders: `{"amount_minor" => 1900, "currency" => "USD"}`,
-  # both halves required.
   defp fetch_amount(data) do
     case Map.fetch(data, "amount") do
       {:ok, %{"amount_minor" => minor, "currency" => currency}}
@@ -156,9 +141,6 @@ defmodule Courier.Consumers.PaymentFailed do
     end
   end
 
-  # The anywaye customer the failed payment was for. Required: it is the
-  # identifier `Courier.Deliver` attributes the send to, exactly as on the
-  # receipt.
   defp fetch_payer(data) do
     case Map.fetch(data, "anywaye_customer_id") do
       {:ok, payer} when is_binary(payer) and payer != "" -> {:ok, payer}
@@ -166,10 +148,6 @@ defmodule Courier.Consumers.PaymentFailed do
     end
   end
 
-  # The processor's invoice id, when the failed attempt came with one —
-  # optional by design, the same arm as the receipt's: a one-off
-  # Checkout-backed attempt has no invoice, and refusing it would drop a
-  # warning the platform legitimately produces.
   defp invoice_of(data) do
     case Map.fetch(data, "invoice_id") do
       {:ok, invoice_id} when is_binary(invoice_id) and invoice_id != "" -> invoice_id
@@ -177,13 +155,7 @@ defmodule Courier.Consumers.PaymentFailed do
     end
   end
 
-  ## ---------------------------------------------------------------------
-  ## The figure
-  ## ---------------------------------------------------------------------
 
-  # Through the one renderer the payment family shares
-  # (`Courier.Consumers.AmountDisplay`): billing builds this event and the
-  # receipt with one `amount` shape, and one figure must not read two ways.
   @spec render({integer(), String.t()}) :: String.t()
   defdelegate render(amount), to: Courier.Consumers.AmountDisplay
 end

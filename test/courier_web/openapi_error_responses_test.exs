@@ -3,7 +3,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
   `openapi.yaml` and courier's endpoint have to agree about **responses**, the way
   `CourierWeb.OpenAPIDocumentTest` holds them to agreeing about paths.
 
-  ## Why this file exists
 
   courier-12 was opened on a measurement that every operation could return a **500**
   and none of the eight declared one, that every operation could return a **406**
@@ -20,7 +19,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
   and it is the one that reads as tidiness — courier-12 found both, on the same
   file, in the same status.
 
-  ## How it works, and why it is not a list
 
   The direction *a status the endpoint can return is a status the document
   declares* is checked by **provoking** it and asking. There is no table of
@@ -54,12 +52,8 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
 
   @account "6f5d4c3b-2a18-4e8f-9c07-1b2d3e4f5061"
   @id "6f5d4c3b-2a18-4e8f-9c07-1b2d3e4f5061"
-  # A well-formed uuid courier has never issued, for the 404 case.
   @missing_id "7f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # Core's reserved list, verbatim. A code outside it needs a reason in the
-  # document; `bad_request` and `not_acceptable` are the two courier carries, and
-  # `CourierWeb.Problem`'s moduledoc argues for both.
   @reserved ~w(unauthorized forbidden not_found conflict validation_failed
                rate_limited idempotency_key_reused internal unavailable)
   @extra_codes ~w(bad_request not_acceptable)
@@ -70,25 +64,13 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
       components: Paths.component_responses!(@document),
       header: @document |> File.read!() |> String.split("openapi: 3.1.0") |> List.first(),
       router: Paths.router_operations!(),
-      # The operations the document says accept `Idempotency-Key`, read from the
-      # document rather than written down — a list here would be a check that can
-      # only fail for an operation somebody remembered to type, which is the
-      # failure mode this file's own moduledoc is about.
       idempotent: Paths.document_idempotency_keys!(@document)
     }
   end
 
-  # --- the completeness direction, one failure class at a time ----------------
 
   describe "a status the endpoint can return is a status the document declares" do
     test "401 — every operation behind the Principal plug declares it", %{responses: responses} do
-      # Proven by asking: an anonymous request to an authenticated operation is
-      # 401, and an anonymous request to an operation courier serves unauthenticated
-      # is not. So the set of operations that must declare 401 is discovered, not
-      # written — which is the only reason this half of the check has ever been
-      # able to notice the two notification-preferences operations becoming
-      # authenticated: a list written down on the day would have said they were
-      # exempt and stayed green.
       {must_declare, need_not} =
         responses
         |> Map.keys()
@@ -101,13 +83,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
       assert Enum.all?(must_declare, fn op -> Map.has_key?(responses[op], "401") end),
              undeclared(must_declare, "401", responses)
 
-      # And an operation courier really does serve unauthenticated must not claim
-      # 401, or the document is describing a security control courier does not
-      # have. That set is currently empty — every operation in this document is
-      # behind `CourierWeb.Plugs.Principal` — and the loop stays because an empty
-      # set is a fact about today, not a fact about the code: the next operation
-      # courier adds without a plug has to fail here rather than be documented
-      # honestly and shipped unauthenticated.
       for operation <- need_not do
         refute Map.has_key?(responses[operation], "401"),
                "#{label(operation)} answers #{provoke(operation, anonymous: true)} to an " <>
@@ -133,37 +108,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
 
     test "400 — the document and the parser agree, in both directions", %{responses: responses} do
-      # Nothing here is written down in advance. Every operation is asked, and the
-      # answer is compared to the document — which is the only way to get both
-      # directions, and the second one is the half that is easy to miss.
-      #
-      # `CourierWeb.Plugs.ParseBody` wraps `Plug.Parsers`, which reads a body for
-      # `POST`, `PUT`, `PATCH` and `DELETE` and ignores one on every other verb.
-      # `DELETE` is the case that reads wrong: a `DELETE` carries no body in any
-      # sensible client, so it looks bodyless and a document that omits its 400
-      # looks right — until a client that does send one is answered with a body
-      # nobody documented. A `GET` is the mirror: a 400 declared there is a case a
-      # client writes for and can never run.
-      #
-      # **And one operation is not reached by that probe at all**, which is the
-      # half worth reading. `POST /inbound/resend` authenticates by provider
-      # SIGNATURE and its body is deliberately left unparsed, so an unsigned
-      # malformed body is refused as a **401** — which is the security property
-      # (`Courier.Inbound.Signature` verifies before anything reads the bytes) and
-      # not an inconvenience. Provoking it the way every other operation is
-      # provoked would therefore report "this 400 is unreachable" and the document
-      # would have to stop declaring a status the route really can send.
-      #
-      # So the probe for that one operation is a body that is not JSON **signed
-      # correctly**, which is the only way to reach its 400. That is the whole
-      # correction: the assertion below is unchanged and still runs in both
-      # directions for every operation, and the reachability half is now measured
-      # rather than guessed for the one operation whose 400 needs a credential.
-      #
-      # Both halves of the "both directions" rule were real. courier-12's first
-      # draft of this test checked only the "declares it" half, passed, and shipped
-      # a `DELETE` with an undocumented 400 and a `GET` with a documented one that
-      # cannot happen.
       probed =
         for operation <- Map.keys(responses), into: %{} do
           {operation, provoke_malformed_body(operation) == 400}
@@ -173,11 +117,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
              "no operation answered 400 to a body that is not JSON, so this test " <>
                "proved nothing: the parser has stopped refusing one"
 
-      # And the signed probe is **known to have run for something**. A reader that
-      # found no signature-authenticated operation would fall back to the plain
-      # probe for all of them and this test would stay green while its own special
-      # case did nothing — the "a check over nothing passes" failure, in the one
-      # place this file's own moduledoc says it is worst.
       signed =
         Map.keys(responses)
         |> Enum.filter(&signed_webhook?/1)
@@ -211,8 +150,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
       responses: responses,
       router: router
     } do
-      # "Has a path parameter" is read from the ROUTER, not from the document, so
-      # the fact under test is not also the thing being checked.
       by_id =
         for {{_method, _path} = operation, route} <- router,
             String.contains?(route["path"], ":"),
@@ -237,10 +174,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
 
     test "500 — every operation declares it, because RenderErrors can render it for any of them",
          %{responses: responses} do
-      # The structural half, and it is the half that holds for all eight at once:
-      # `render_errors` is courier's own JSON module, so Phoenix renders a 500 for
-      # *any* raise on *any* route. If that stops being true the failures are not
-      # silent, because `CourierWeb.ErrorJSON` is what the next test reads.
       assert render_errors_json?(),
              "CourierWeb.Endpoint is no longer configured to render errors with " <>
                "CourierWeb.ErrorJSON, so a 500 on any route is no longer courier's " <>
@@ -252,9 +185,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
 
     test "the 500 body is courier's envelope, with a reserved code", %{responses: responses} do
-      # RenderErrors hands `CourierWeb.ErrorJSON` the request's assigns, so calling
-      # it directly IS the 500 path, and it needs no database to be taken away and
-      # no exception to be provoked.
       body =
         "500.json"
         |> CourierWeb.ErrorJSON.render(%{
@@ -281,7 +211,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # --- the envelope, attached -------------------------------------------------
 
   describe "the envelope is attached to every non-2xx the document declares" do
     test "every non-2xx names application/problem+json", %{responses: responses} do
@@ -297,7 +226,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
              these non-2xx responses do not name `application/problem+json`, so a client
              that switches on the content type cannot tell they are errors:
 
-             #{Enum.map_join(bare, "\n", &("  " <> &1))}
 
              This is courier-12's headline finding in its original form: the envelope
              was declared in `components` and wired to nothing. Every non-2xx in this
@@ -322,20 +250,14 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
              which is a content type promising courier's error shape and delivering
              something else:
 
-             #{Enum.map_join(bare, "\n", &("  " <> &1))}
              """
     end
 
     test "every reusable response names the envelope, whether or not one points at it", %{
       components: components
     } do
-      # The `components.responses` half on its own, so a component can be
-      # inspected without an operation pointing at it. A `$ref` to a component that
-      # does not exist raises inside the reader rather than arriving here; this is
-      # the assertion that the set of components is not silently empty, which is
-      # the "declared and referenced by nothing" failure wearing a different hat.
       assert map_size(components) > 0, """
-      no reusable response was read from #{@document}. Every non-2xx in this document
+      no reusable response was read from
       is written as a `$ref` into `components.responses`, so a reader that found none
       would be reporting every non-2xx as unwired and the check above would pass for
       the wrong reason.
@@ -349,58 +271,8 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # --- the direction that cannot be provoked ----------------------------------
 
   describe "the document does not declare a status courier cannot return" do
-    # Measured, not assumed. Each of these is a status core reserves or names, that
-    # courier's endpoint cannot be made to answer, and that the document therefore
-    # must not promise. The reasons live in the document's own header and are
-    # required to be there, so an omission is an admission rather than a silence.
-    #
-    # `status => {a short distinctive token, the measured reason in full}`. The
-    # assertion is on the token, because the header is a comment block and its
-    # sentences are wrapped: matching a whole sentence would fail the first time
-    # somebody reflows a comment, which teaches nobody anything. The reason is
-    # here so the token is not a mystery.
-    #
-    # **This map is a list and not a constant, and two statuses have left it.** Each
-    # departure is the same shape, and it is the shape this file exists to catch:
-    # a status courier could not return became one it does, and the document had
-    # to start declaring it. In both cases the fix was to implement the status and
-    # then say so here — never to delete the line and let the document quietly stop
-    # describing something a client can receive.
-    #
-    #   * **409 left in courier-14.** It was here on the measured reason that a
-    #     duplicate `url` is a 422 whose `errors[0].code` is `taken` — still true,
-    #     and still what the header says about *that*. What changed is that courier
-    #     began returning a 409 for a different reason entirely: `Idempotency-Key`.
-    #     The status stopped being unreachable and became declared on the
-    #     operations that accept the header.
-    #   * **503 left in courier-21**, with `POST /v1/messages`. It was here on the
-    #     measured reason that only `GET /readyz` sends it, and that is still true
-    #     — but a send has a dependency courier does not control, and a send has to
-    #     be able to say so. A provider that refuses is a 503 `unavailable` and not
-    #     a 500, because courier is fine and its dependency is not; and the
-    #     same-predicate re-check makes "courier cannot deliver through this
-    #     adapter" a 503 the caller can see rather than a 200 for mail nobody
-    #     receives. The provoke for it is the same shape as the others and lives
-    #     with the code that can reach it, because provoking it means substituting
-    #     the mailer's adapter.
-    #
-    # **AND 503 LEFT THIS LIST ENTIRELY in courier-26**, which is the second time
-    # this file has had to correct a list rather than extend it, and the reason is
-    # worth reading: authentication became a NETWORK HOP. `CourierWeb.Plugs.
-    # Principal` now resolves a caller by asking identity's introspection endpoint,
-    # so every operation behind it can answer 503 when identity is unreachable and
-    # courier answers nothing else. `test/courier_web/plugs/principal_config_test.
-    # exs` holds that against the router in both directions, and its provoke lives
-    # with the resolver that can reach the status.
-    #
-    # **403 stays on this list, and the reason beside it changed.** The plug used
-    # to be described as answering "401 and nothing else", which was true when
-    # every refusal was a 401 and is no longer — the plug now sends 503 too. The
-    # claim this list carries is narrower and is still true: courier has no role a
-    # claim could grant it, so there is no input to a 403.
     @unreachable %{
       "403" => {"Principal", "`CourierWeb.Plugs.Principal` answers 401 and 503, never 403"},
       "415" => {"pass:", "the parser is configured `pass: [\"*/*\"]` and refuses nothing"},
@@ -418,7 +290,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
              """
              these operations declare a status courier cannot return:
 
-             #{Enum.map_join(declared, "\n", &("  " <> &1))}
 
              A document that promises a 409 or a 429 is worse than one that is
              incomplete: a client generated from it will branch on a response that
@@ -445,19 +316,11 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # --- Idempotency-Key: the document and the router, both directions -------------
 
   describe "Idempotency-Key" do
     test "a 409 courier can send is a 409 the document declares", %{
       responses: responses
     } do
-      # The completeness direction, provoked rather than written down: the first
-      # request with a key succeeds and is stored, the second presents the same key
-      # with a different body, and courier answers 409. Before courier-14 this
-      # request did not exist — the header was accepted and ignored — and the
-      # document was right not to declare a 409 for it. Now the code sends one and
-      # the document has to say so, and this is the test that makes that a
-      # requirement rather than a coincidence.
       operation = {"POST", "/v1/webhook_endpoints"}
       body = idempotency_conflict(operation)
 
@@ -478,8 +341,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     test "every operation the document gives the header to is behind the plug", %{
       idempotent: idempotent
     } do
-      # The direction a document-only check cannot see: a header declared on a route
-      # the router does not guard is a retry courier is not listening for.
       for operation <- Map.keys(idempotent) do
         assert idempotent_in_router?(operation),
                "#{@document} declares `Idempotency-Key` on #{label(operation)}, and the " <>
@@ -492,9 +353,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     test "every operation behind the plug is one the document gives the header to", %{
       idempotent: idempotent
     } do
-      # And the other direction: a route courier guards but does not document is a
-      # behaviour no generated client has been told about, which is the same defect
-      # `OpenAPIDocumentTest` exists to catch for paths.
       guarded = guarded_operations()
 
       assert MapSet.size(guarded) > 0,
@@ -514,8 +372,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
       responses: responses,
       idempotent: idempotent
     } do
-      # `openapi.idempotency-conflict-documented` in core's harness is the neutral
-      # half of this; it reads a parse, so it cannot know whether the 409 is real.
       for operation <- Map.keys(idempotent) do
         assert Map.has_key?(responses[operation], "409"),
                "#{label(operation)} accepts `Idempotency-Key` and declares " <>
@@ -532,10 +388,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
 
     test "the document says the header is implemented, because it now is" do
-      # The inverse of the test courier-12 wrote, which asserted the document said
-      # courier *ignored* the header. That assertion was correct then and is a lie
-      # now, and a header that quietly says the opposite of the code is the exact
-      # failure this file exists to prevent.
       header = File.read!(@document) |> String.split("openapi: 3.1.0") |> List.first()
 
       assert header =~ "Idempotency-Key"
@@ -547,7 +399,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # --- the reserved codes ------------------------------------------------------
 
   describe "the codes are core's reserved codes, used as core says" do
     test "the document has examples to check, so the two checks below are not vacuous" do
@@ -580,14 +431,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
 
     test "every non-2xx courier really sends satisfies the same rule", %{responses: responses} do
-      # Asked of the running service rather than read out of the document, so this
-      # fails if `CourierWeb.Problem` and the document ever part ways — including
-      # in the direction no document check can see, where courier sends a code or
-      # a trace id the document never promised.
-      #
-      # One probe per status, each shaped to reach that status and no other: a
-      # request with a bad `Accept` never gets as far as being parsed, so a single
-      # probe cannot stand in for four.
       probes = [
         {400, [malformed_body: true]},
         {401, [anonymous: true]},
@@ -637,25 +480,11 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
 
     test "a 406 carries `not_acceptable`, not `internal`" do
-      # `Phoenix.NotAcceptableError` carries no conn, so the response RenderErrors
-      # sends for a 406 cannot be observed through ConnTest at all — the exception
-      # escapes before the response lands anywhere. What *is* checkable is the
-      # function the 406 is rendered from, and it is the same one every other status
-      # goes through, so this is not a weaker claim about a different thing.
-      #
-      # It is here because the 406 used to fall through to the `:internal` default
-      # and tell a client that had asked for `text/html` that courier had failed —
-      # with the one code every generated client retries. `internal` is core's
-      # reserved slug for 500.
       assert CourierWeb.Problem.for_status(406) == :not_acceptable
       assert CourierWeb.Problem.for_code(:not_acceptable) == {406, "Not acceptable"}
     end
 
     test "every status courier can answer has its own code, not the `internal` fallback" do
-      # `Problem.for_status/1` falls back to `:internal` for a status with no code
-      # of its own, which is a reasonable last resort and a bad default answer:
-      # the slug then says 500 for something that is not a 500. Every status the
-      # probes above reached is in the table, so none of them is wearing it.
       for status <- [400, 401, 404, 406, 422, 500] do
         assert CourierWeb.Problem.for_status(status) != :internal or status == 500,
                "#{status} resolves to the `internal` code, so a client branching on " <>
@@ -664,25 +493,9 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # --- Idempotency-Key helpers -------------------------------------------------
 
-  # The router's own answer to "which operations are behind the idempotency plug",
-  # read from `CourierWeb.Router.__routes__/0` rather than written down. The
-  # document's half of the same question is `Paths.document_idempotency_keys!/1`,
-  # and the two are compared against each other — neither is a list somebody
-  # maintained.
   defp guarded_operations do
     CourierWeb.Router.__routes__()
-    # `pipe_through` is **only** on `Phoenix.Router.route_info/4`. Neither
-    # `__routes__/0` nor `routes/1` carries it — the latter's route maps have keys
-    # `[:path, :metadata, :plug, :plug_opts, :verb, :helper]` and nothing else — and
-    # `route_info/4` wants a *concrete* path rather than a pattern, so the `:id` and
-    # `:user_id` segments are filled with a real uuid first.
-    #
-    # `router_test.exs` reads the same thing the same way for the same reason. It
-    # is written down here because the alternative failure is not a crash: a route
-    # guarded by nothing reads as one guarded by nothing, and this check goes green
-    # on the absence of the thing it is checking for.
     |> Enum.filter(fn route ->
       path = String.replace(route.path, ~r/:[a-z_]+/, @id)
       verb = route.verb |> to_string() |> String.upcase()
@@ -701,17 +514,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     MapSet.member?(guarded_operations(), operation)
   end
 
-  # The one operation whose malformed body has to be AUTHENTIC to reach its 400,
-  # read from the document rather than written down here. A list of exceptions is a
-  # check that can only fail for an operation somebody remembered to type — the
-  # failure mode this file's own moduledoc is about — and this one is derivable:
-  # it is every operation the document gives the `webhookSignature` scheme, and the
-  # scheme is declared once in `components.securitySchemes`.
-  #
-  # The body is signed over the malformed bytes on purpose. That is the only shape
-  # that reaches the status: `CourierWeb.Plugs.ParseBody` skips this route, so the
-  # bytes courier verifies are the bytes that arrive, and `Courier.Inbound.Resend`
-  # is what refuses them as `:invalid_json`.
   defp provoke_malformed_body(operation) do
     if signed_webhook?(operation) do
       body = "{not json"
@@ -731,17 +533,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # Whether the document gives this operation the signature scheme rather than a
-  # bearer token. Read from the document text rather than from the router's
-  # pipelines, so the two are compared against each other: a document that claimed
-  # `bearerAuth` on a signature-authenticated operation would be skipped by this
-  # probe and its 400 would be reported unreachable.
-  #
-  # A path key is at indent 2 and its operations are deeper, which is the same two
-  # levels `Courier.TestSupport.OpenAPIPaths` derives — and it is **derived from
-  # the document** rather than assumed to be two and four for the same reason: a
-  # check that hard-codes the indentation of somebody else's file is a check that
-  # reports nothing when the file is reindented.
   defp signed_webhook?(operation) do
     {_method, path} = operation
 
@@ -755,12 +546,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
   end
 
   defp operation_block(path) do
-    # The levels are derived from the document's own `paths:` block, not from the
-    # whole file: a path key is at the first level *under* `paths:`, and taking the
-    # first level of the whole document instead lands on `openapi: 3.1.0` and finds
-    # nothing. This is the same two-level derivation
-    # `Courier.TestSupport.OpenAPIPaths.levels!/1` does, for the same reason —
-    # four-space YAML has to read correctly rather than read as empty.
     lines = document_lines()
 
     with {_indent, _text, start} <-
@@ -768,10 +553,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
          block =
            lines
            |> Enum.drop_while(fn {_i, _t, n} -> n <= start end)
-           # Bounded at the next column-0 key, or the block runs on through
-           # `components:` and the derived "path level" is 0 — which finds no path
-           # and silently answers "this operation is not signature-authenticated"
-           # for every operation in the document.
            |> Enum.take_while(fn {indent, _t, _n} -> indent > 0 end),
          [path_level | _rest] <- block |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> Enum.sort() do
       case Enum.find(block, fn {indent, text, _n} ->
@@ -790,15 +571,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # `{indent, text, number}` for every line that is not a comment or blank, which
-  # is the same preprocessing `Courier.TestSupport.OpenAPIPaths.significant_lines/1`
-  # does and is needed here for the same reason: a comment in the document's header
-  # is indented like YAML and would otherwise be read as a path key.
-  #
-  # `String.trim_leading/2` strips the given string as a **unit**, not a set of
-  # characters, so `"  # a comment" |> String.trim_leading("# ")` is unchanged. The
-  # comments are therefore dropped on their own recognisable prefix, after the
-  # leading spaces are measured.
   defp document_lines do
     @document
     |> File.read!()
@@ -817,10 +589,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end)
   end
 
-  # Provokes the 409 that only exists when a key is presented twice. The first
-  # request has to *succeed*, or its claim is released and the second is a fresh
-  # request rather than a replay — which is the point of the test either way, so
-  # this asserts the first one was a 2xx before reading the second.
   defp idempotency_conflict({method, path} = operation) do
     url = fill(path, @id)
     key = "11111111-1111-1111-1111-111111111111"
@@ -834,7 +602,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
 
     unless first.status in 200..299 do
       raise """
-      #{label(operation)} answered #{first.status} to the first request carrying an \
       `Idempotency-Key`, so no response was stored and the second request cannot be a \
       replay. The 409 check below needs the first one to be a 2xx: a request that did not \
       succeed releases its key on purpose, so that a client which fixed the request and \
@@ -846,13 +613,10 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     body(second)
   end
 
-  # Two bodies that mean different things, so the second is a *reuse* rather than
-  # a retry. The url is what differs, and it is a field the create action reads.
   defp conflict_body(suffix) do
     %{url: "https://hooks.example.com/idempotency-#{suffix}"}
   end
 
-  # --- helpers ----------------------------------------------------------------
 
   defp success?("2" <> _), do: true
   defp success?(_), do: false
@@ -861,7 +625,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
 
   defp undeclared(operations, status, responses) do
     """
-    #{Enum.map_join(operations, "\n", fn op -> "  #{label(op)} answers #{status} and does not declare it (openapi.yaml declares " <> "#{inspect(Enum.sort(Map.keys(responses[op])))})" end)}
 
     A status a client can receive and the document does not describe is a case the
     client has to handle with no documentation: a generated client falls through to
@@ -870,10 +633,8 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     """
   end
 
-  # Every path parameter filled with a real uuid, mechanically.
   defp fill(path, id), do: String.replace(path, ~r/\{[^}]+\}/, id)
 
-  # Send a request to an operation, with the shape the case needs.
   defp conn_for({method, path}, opts) do
     url = fill(path, Keyword.get(opts, :id, @id))
     conn = build_conn()
@@ -901,14 +662,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # The status, and nothing else, for a provoked request.
-  #
-  # `Phoenix.NotAcceptableError` is the one status ConnTest cannot hand back: it is
-  # raised by the `:accepts` plug and carries no conn, so the response RenderErrors
-  # sends never reaches the caller. The exception carries `plug_status`, which is
-  # Phoenix's own statement of what it is about to answer, so that is read rather
-  # than guessed — and the shape the client receives for a 406 was measured over a
-  # real socket, which is the only place a rendered 406 is visible at all.
   defp safe_conn_for(operation, opts) do
     operation |> conn_for(opts)
   rescue
@@ -921,12 +674,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     error in [Phoenix.NotAcceptableError] -> error.plug_status
   end
 
-  # `Phoenix.ConnTest`'s verb helpers cannot express a `DELETE` with a body —
-  # `delete/2` takes a path and nothing else — and that is precisely the case this
-  # file has to be able to ask about, because the parser does read a `DELETE` body
-  # and answers 400 for one. So a request with a body goes through `dispatch/5`,
-  # which takes the verb as an argument, and one without goes through the verb
-  # helper, which is what every other probe wants.
   defp send(conn, method, url), do: send(conn, method, url, nil)
 
   defp send(conn, method, url, nil) do
@@ -943,8 +690,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     Phoenix.ConnTest.dispatch(conn, CourierWeb.Endpoint, method_atom(method), url, body)
   end
 
-  # `dispatch/5` wants the verb as an atom, and the operations are keyed by the
-  # uppercase string, so the conversion is here rather than at each call site.
   defp method_atom(method), do: method |> String.downcase() |> String.to_existing_atom()
 
   defp problem_json?(conn) do
@@ -957,11 +702,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
 
   defp body(conn), do: Jason.decode!(conn.resp_body)
 
-  # Every `example:` courier ships for an error, as `%{line:, type:, code:}`. Scoped
-  # to the `components.responses` block, because the same indentation inside the
-  # `Problem` schema also spells `type: object` and a schema property is not an
-  # example of an error. Line numbers are the document's own, because a failure
-  # that names line 412 of a sixty-line slice names nothing.
   defp examples do
     reusable_response_lines()
     |> Enum.reduce({[], nil}, fn
@@ -978,8 +718,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     |> elem(0)
   end
 
-  # The `responses:` block under `components:`, as `{line, number}`, keeping only
-  # what is at or below that key's own level.
   defp reusable_response_lines do
     indexed = @document |> File.read!() |> String.split("\n") |> Enum.with_index(1)
 
@@ -996,8 +734,6 @@ defmodule CourierWeb.OpenAPIErrorResponsesTest do
     end
   end
 
-  # `type: https://docs.anywaye.com/errors/<something>` at the example's own level. A
-  # `type:` that is not one of these is a schema's, not an error's.
   defp problem_type?(line) do
     trimmed = String.trim(line)
 

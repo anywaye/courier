@@ -9,7 +9,6 @@ defmodule Courier.Adapters.CloudflareEmail do
   owns the DNS — scoped to "Email Sending: Edit", revocable, no second vendor.
   That is the whole point of calling the adapter `cloudflare`.
 
-  ## The contract, and where it comes from
 
   `POST https://api.cloudflare.com/client/v4/accounts/{account_id}/email/sending/send`,
   `Authorization: Bearer <token>`, JSON body. Published at
@@ -40,7 +39,6 @@ defmodule Courier.Adapters.CloudflareEmail do
 
   **A 2xx is not always a success.** See below.
 
-  ## The failure this adapter exists to surface
 
   The brief's first failure mode is a provider path that swallows delivery
   failures: jumpstart's Cloudflare-ish route left `raise_delivery_errors` at
@@ -59,7 +57,6 @@ defmodule Courier.Adapters.CloudflareEmail do
   in. `test/courier/cloudflare_delivery_test.exs` drives each of those 2xx
   shapes against a real HTTP server that answers them.
 
-  ## Why a courier-owned adapter module
 
   Swoosh ships no Cloudflare adapter, and the rule in this repository is
   that a dependency is not added without approval. So the adapter is
@@ -68,7 +65,6 @@ defmodule Courier.Adapters.CloudflareEmail do
   from the provider table (`Courier.MailerAdapter.api_client/1`) rather than
   from a second variable an operator could forget.
 
-  ## Configuration
 
       COURIER_MAIL_ADAPTER=cloudflare
       COURIER_CLOUDFLARE_API_KEY=...      required; the Cloudflare API token
@@ -87,27 +83,6 @@ defmodule Courier.Adapters.CloudflareEmail do
 
   @base_url "https://api.cloudflare.com/client/v4"
 
-  # THE PROVIDER OWNS `Message-ID`, AND THIS LIST IS WHY COURIER NEVER SENDS IT.
-  #
-  # Cloudflare Email Sending refuses a caller-supplied `Message-ID` — in EITHER
-  # case — with `400` and exactly
-  # `{"success":false,"errors":[{"code":10202,"message":"email.sending.error.email.invalid"}],"result":null}`
-  # (measured live on anywaye.com, 2026-10-16). It assigns a Message-ID itself and
-  # returns it as `result.message_id` on every 2xx — that is what `accepted/2`
-  # now reports as the receipt id, and it is the id the provider's own bounce and
-  # delivery reports quote.
-  #
-  # `Courier.Deliver`'s `tag/2` attaches `message-id`
-  # (`<courier-<uuid>@anywaye.com>`) to EVERY message it sends, so forwarding this
-  # one header was the difference between a delivery and a refusal of the whole
-  # message. It must never be forwarded again.
-  #
-  # This is a targeted drop of a header the provider OWNS, NOT an allow-list.
-  # `headers` is `additionalProperties: string` and Cloudflare accepts real
-  # headers — `List-Unsubscribe` and `List-Unsubscribe-Post` travel through it
-  # for RFC 8058 compliance — so refusing everything not on a list would break
-  # the moment Cloudflare adds a header. Only the provider-owned ones are ours to
-  # remove.
   @provider_owned_headers ["message-id"]
 
   @doc """
@@ -128,7 +103,6 @@ defmodule Courier.Adapters.CloudflareEmail do
   `500`/`503` for transient failures. All of them are delivery failures the
   caller must be told about, and none of them is `{:ok, _}`.
 
-  ## The 2xx that is not a success
 
   A 2xx answers "your request was accepted", and the body then carries the
   per-recipient verdict. Cloudflare's `result` is `{delivered,
@@ -297,9 +271,6 @@ defmodule Courier.Adapters.CloudflareEmail do
     end
   end
 
-  # Case-insensitive because the provider refuses `Message-ID` and `message-id`
-  # alike, and `Swoosh.Email.header/3` stores the key exactly as the caller wrote
-  # it. See `@provider_owned_headers` for why only these are dropped.
   defp drop_provider_owned_headers(headers) do
     Map.reject(headers, fn {name, _value} ->
       String.downcase(to_string(name)) in @provider_owned_headers
@@ -330,10 +301,6 @@ defmodule Courier.Adapters.CloudflareEmail do
             if bounces != [] or suppressed != [] do
               {:error, {code, decoded}}
             else
-              # The provider's own Message-ID, assigned because it refuses a
-              # caller-supplied one. It is what the provider's bounce and
-              # delivery reports quote, so it is the receipt id courier must
-              # carry rather than a nil it can correlate nothing against.
               {:ok, %{id: result["message_id"]}}
             end
         end

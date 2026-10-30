@@ -3,7 +3,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
   Where identity is, and with which key: the two halves of the introspection
   seam, asserted as FILES.
 
-  ## Why this is a file-reading test
 
   The seam has two facts an operator must get right: the address courier dials
   (`COURIER_IDENTITY_URL`) and the credential it presents
@@ -22,7 +21,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
   grepped for the two wrong values — a corrected string is not a proof, a
   red-then-green agreement test is.
 
-  ## It runs with no database
 
   `use ExUnit.Case`, not `Courier.DataCase`. Every subject here is a file on
   disk, so this belongs to the no-database tier.
@@ -30,17 +28,9 @@ defmodule Courier.Principal.IntrospectionUrlTest do
 
   use ExUnit.Case, async: true
 
-  # identity's own port, and the single authoritative default. The port is
-  # identity's fact, measured from its repository: `EXPOSE 8080` in
-  # identity/Dockerfile and `PORT: "8080"` in identity/docker-compose.yml.
-  # 4000 is courier's own Phoenix port — the copy-paste source of the bug.
   @identity_port 8080
   @runtime_default "http://identity:8080"
 
-  # The two wrong statements this test exists to kill. A tree-wide grep for
-  # them, in non-test files, is the honest form of "no second default exists":
-  # it catches a wrong value in a file no thought of, which a per-file
-  # assertion cannot.
   @wrong_statements ["identity:4000", "localhost:4001"]
 
   setup_all do
@@ -83,10 +73,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
 
     test "and the configured value in this environment states the same port" do
-      # The "configured" half of the contract: config/test.exs sets
-      # :identity_url, and Introspection.url/0 reads it. Never dialled here —
-      # the transport is stubbed — so a test that reached the network would
-      # fail rather than pass quietly.
       assert URI.parse(Courier.Principal.Introspection.url()).port == @identity_port,
              "Introspection.url() is #{inspect(Courier.Principal.Introspection.url())}, " <>
                "expected port #{@identity_port}"
@@ -95,10 +81,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
 
   describe "the other statements of the same fact" do
     test "docker-compose.yml does not restate a different value", %{compose: compose} do
-      # Absent means "defers to the runtime default": the compose file points
-      # at the authority rather than restating it, which is the whole of the
-      # fix. Present, it must be EQUAL — a restated value is a future drift
-      # with a comment on it.
       env = compose |> service_block("courier") |> env_block()
       compose_value = Map.get(env, "COURIER_IDENTITY_URL")
 
@@ -109,9 +91,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
 
     test "config/deploy.yml points a production courier at identity's port", %{deploy: deploy} do
-      # The deployment path is the one that matters most: it is the only
-      # statement a production courier actually reads, and it is the one a
-      # `kamal deploy` operator cannot see past.
       assert deploy_identity_url(deploy) == @runtime_default,
              "config/deploy.yml sets COURIER_IDENTITY_URL=#{inspect(deploy_identity_url(deploy))}, " <>
                "expected #{@runtime_default}. A deployed courier dials this value, " <>
@@ -128,9 +107,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
 
   describe "no second default exists in the tree" do
     test "no non-test file states a port identity does not listen on" do
-      # A raise here rather than a nil: a reader that cannot list the tree has
-      # not checked it, and "no wrong statements found" over an unread tree
-      # is the green-check-over-nothing this repository refuses.
       wrong =
         "."
         |> walk()
@@ -158,12 +134,7 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
   end
 
-  # --- reading ---------------------------------------------------------------
 
-  # The default value of COURIER_IDENTITY_URL in config/runtime.exs, or nil if
-  # the reader cannot find it. Nil is a FAILURE, not an answer: the assertion
-  # above says so by name, because a reader that finds nothing and a file that
-  # says nothing agree with each other.
   @spec runtime_identity_url_default(String.t()) :: String.t() | nil
   defp runtime_identity_url_default(runtime) do
     case Regex.run(~r/System\.get_env\("COURIER_IDENTITY_URL",\s*"([^"]+)"/, runtime) do
@@ -172,8 +143,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
   end
 
-  # The fallback inside Introspection.url/0, or nil if the reader cannot find
-  # it. Same nil-is-a-failure rule as above.
   @spec url_fallback(String.t()) :: String.t() | nil
   defp url_fallback(source) do
     case Regex.run(
@@ -185,9 +154,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
   end
 
-  # The COURIER_IDENTITY_URL value in config/deploy.yml's `env.clear` block, or
-  # nil if the reader cannot find it. Matches the KEY LINE only — a comment
-  # mentioning the variable starts with `#` and never matches.
   @spec deploy_identity_url(String.t()) :: String.t() | nil
   defp deploy_identity_url(deploy) do
     case Regex.run(~r/^\s*COURIER_IDENTITY_URL:\s*(\S+)\s*$/m, deploy) do
@@ -196,9 +162,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
   end
 
-  # The `environment:` block of a named service in docker-compose.yml, parsed
-  # into a KEY => value map. A minimal reader for the one key this test asks
-  # about; it understands exactly the `key: value` shape compose uses here.
   @spec env_block(String.t() | nil) :: %{optional(String.t()) => String.t()}
   defp env_block(nil), do: %{}
 
@@ -232,8 +195,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
   end
 
-  # The block for a named service: the raw text from `  name:` until the next
-  # service at the same indent level.
   @spec service_block(String.t(), String.t()) :: String.t() | nil
   defp service_block(compose, name) do
     lines = String.split(compose, "\n")
@@ -256,7 +217,6 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
   end
 
-  # Strips one layer of matching double or single quotes from a value.
   @spec strip_quotes(String.t()) :: String.t()
   defp strip_quotes(value) do
     value
@@ -268,20 +228,13 @@ defmodule Courier.Principal.IntrospectionUrlTest do
     end
   end
 
-  # The files the tree-wide grep skips, and the reason is the packet's: test
-  # files are allowed to mention the wrong values (a test asserting their
-  # absence is how this file works), and deps/_build/.git are not source.
   @spec skip?(String.t()) :: boolean()
   defp skip?(path) do
     parts = Path.split(path)
     "test" in parts or "deps" in parts or "_build" in parts or ".git" in parts
   end
 
-  # --- helpers ---------------------------------------------------------------
 
-  # Every entry under a directory, recursively. Elixir's File module has no
-  # recursive ls, and adding a dependency for a tree walk is a decision this
-  # repository has not made (`AGENTS.md`: "No dependency without approval").
   @spec walk(String.t()) :: [String.t()]
   defp walk(dir) do
     dir

@@ -1,88 +1,4 @@
 #!/usr/bin/env bash
-#
-# bin/gate-self-test — courier's proof that its gate DECLARATION is able to fail.
-#
-#   bin/gate-self-test
-#
-# WHAT THIS IS FOR
-#
-#   A gate that only ever goes green is a report, not a gate. `bin/assert-suite`
-#   proves the SUITE can fail. This proves the DECLARATION can: it copies the
-#   tree to a throwaway directory, breaks exactly one thing in the copy, and
-#   asserts core's checker goes RED and names the finding it expects. Each
-#   breakage must be caught by a DIFFERENT check, so a pass means the checks are
-#   independent rather than one lucky assertion standing in for all of them.
-#
-#   The declaration it is testing is `gate.yml`, written against
-#   anywaye/core's `schemas/gate.schema.json` and checked by its
-#   `harness/bin/gate-check`. The checker is not vendored here on purpose: it
-#   is stdlib-only Python that has to agree with core's schema, and a copy in
-#   this repository is a copy that can drift. Point at a core checkout with
-#   ANYWAYE_CORE, or leave a sibling `../core` next to this repository.
-#
-# THE CONTROL RUNS FIRST, AND IT IS NOT OPTIONAL
-#
-#   Nine red runs against a repository that was already red prove nothing. The
-#   control runs the UNMODIFIED declaration, statically and then with --prove
-#   (which actually runs courier's real gate), and it must be green before any
-#   breakage counts. The control is also the only step here that runs the real
-#   535-test suite, and it is the only step that can be slow (~40s warm).
-#
-# THE NINE BREAKAGES
-#
-#   1. entrypoint names a file that does not exist      -> gate.entrypoint-missing
-#   2. miseTask resolves to a DIFFERENT file            -> gate.task-unresolvable
-#      than entrypoint. Two different gates, one repo.
-#   3. the proof regex matches nothing the gate prints  -> gate.proof-missing
-#   4. ci.workflow names a workflow not in the repo     -> gate.ci-missing
-#   5. ci.workflow exists but never invokes the gate    -> gate.ci-disagrees
-#   6. the gate exits 0 printing `534/535 passed`       -> gate.proof-missing
-#   7. selfContained: true alongside requirements      -> gate.schema
-#   8. a requirement satisfied by a missing repo file   -> gate.requirement-path-missing
-#   9. command[0] names a missing repo file             -> gate.command-missing
-#
-#   3 and 6 are the same check from two sides, and 6 is the sharpest one in
-#   this file. In 6 NOTHING IN THE DECLARATION IS WRONG: the command resolves,
-#   bin/prime exists and is executable, `mise run prime` resolves to it, CI
-#   invokes it, the schema is satisfied. The repository is ungated anyway,
-#   because the gate exits 0 without running a test — and `Result: 534/535
-#   passed` is the exact shape anywaye-rb printed for a database tier that never
-#   executed once. Only asking the gate to say what it did catches it. It is
-#   modelled on breakage 8 of core's own harness/tests/gate_self_test.sh.
-#
-#   For 3 and 6 the stub prints the summary line VERBATIM from a real courier
-#   run (captured, not invented), and the copy symlinks deps/ and _build/ to
-#   this checkout so the gate runs in seconds without a 46MB copy. That keeps
-#   these two deterministic: they must not depend on 535 real tests executing.
-#   The real suite runs exactly once, in the control, where it belongs.
-#
-# WHAT THIS IS NOT
-#
-#   It is not exhaustive mutation testing of gate.yml, and a pass here is not a
-#   claim that the declaration is optimal — only that these nine specific
-#   defects are still caught. It also cannot prove the declaration is TRUE
-#   about courier: `gate.proof-missing` says the suite ran, not that the tests
-#   touched what they claim to. That is MD12's collect-then-run machinery and
-#   it is not in this repository.
-#
-#   KNOWN FLAKE, WHICH THIS SCRIPT DOES NOT HIDE. courier's suite has one
-#   order-dependent test (deliver_test.exs:128 asserts the row order of a
-#   `Repo.all` with no `order_by`, so Postgres may return a different order).
-#   It went red in 1 of 8 measured runs on master 59247b6, before this packet
-#   changed anything. If the CONTROL fails, that is the first thing to check,
-#   and it is a pre-existing defect in the repository's own suite — not
-#   something this script retries, sleeps past, or hides. See
-#   REPORT-core-10-courier.
-#
-# EXIT CODES
-#
-#   0  the control and every breakage behaved as asserted
-#   1  at least one breakage was not caught, or the control was not green
-#   2  the check could not happen (no core checkout, no python) — never 0
-#
-# PASS AND SKIP COUNTS ARE REPORTED SEPARATELY, ALWAYS. A skipped check is not
-# a passing check. GATE_SELF_TEST_STATIC_ONLY=1 runs the static breakages
-# alone and prints how many it skipped; the default runs everything.
 
 set -euo pipefail
 
@@ -115,11 +31,6 @@ failed=0
 skipped=0
 declare -a failures=()
 
-# make_copy <dest> — a throwaway copy of this repository, tracked files only,
-# plus the declaration (which is untracked until this packet is committed).
-# deps/ and _build/ are symlinked rather than copied: they are gitignored, they
-# are 46MB between them, and symlinking them keeps a breakage that runs the
-# gate down to seconds.
 make_copy() {
   local dest="$1"
   mkdir -p "$dest"
@@ -130,9 +41,6 @@ make_copy() {
   return 0
 }
 
-# swap <file> <exact-old> <exact-new> — one-line diffs only, so a breakage is
-# exactly one edit against a green and a recipe that no longer applies fails
-# loudly instead of silently matching nothing.
 swap() {
   python3 - "$1" "$2" "$3" <<'PY'
 import sys
@@ -147,20 +55,14 @@ open(path, "w", encoding="utf-8").write(text.replace(old, new))
 PY
 }
 
-# stub_gate <dest> <line-to-print> — a bin/prime that runs no test, prints one
-# captured summary line, and exits 0. Everything the declaration claims about
-# the file stays true; only the running is gone.
 stub_gate() {
   cat > "$1/bin/prime" <<EOF
 #!/bin/sh
-# A stub installed by bin/gate-self-test. It runs no test and exits 0.
 printf '%s\\n' '$2'
 EOF
   chmod +x "$1/bin/prime"
 }
 
-# check <dest> <label> [--prove] — run the checker, capture report and status.
-# `set +e` around it is deliberate: the whole point is to read a nonzero exit.
 check() {
   local dest="$1" label="$2"
   shift 2
@@ -171,10 +73,6 @@ check() {
   set -e
 }
 
-# expect_red <label> <finding-id> — the exit code is nonzero AND the report
-# names the finding this breakage is supposed to trip. Asserting both is the
-# point: an exit code alone cannot tell you which check caught it, and a check
-# that decays silently is one nobody notices decaying.
 expect_red() {
   local label="$1" want="$2"
   if [ "$status" -eq 0 ]; then
@@ -190,8 +88,6 @@ expect_red() {
   passed=$((passed + 1)); return 0
 }
 
-# expect_green <label> — the control. Zero failures. Warnings are printed, not
-# counted as passes, and never move the exit code.
 expect_green() {
   local label="$1"
   if [ "$status" -ne 0 ]; then
@@ -212,21 +108,6 @@ echo "  declaration: gate.yml"
 echo "  checker:     ${gatecheck#"$core"/}  (core at $core)"
 echo
 
-# A dirty worktree makes the control RED, and it needs saying before the control
-# rather than after a failure line that looks like a broken declaration.
-#
-# `make_copy/1` copies `git ls-files`, so the copy holds **tracked files only** —
-# which is the point (the copy is what a CI checkout would get, so a breakage
-# proves the checks work on committed state). The cost is that an untracked
-# module a tracked file references is missing from the copy, and the gate then
-# dies at boot with something like `the module Courier.ErrorRelay was given as a
-# child to a supervisor but it does not exist`. That is a *dirty tree*, not a bad
-# declaration, and the two are indistinguishable from the failure line alone.
-#
-# `gate.yml` itself is already handled by `make_copy/1`'s explicit `cp`, which is
-# why the comment there says "untracked until this packet is committed". This is
-# the same problem for every other new file, and it is reported rather than
-# silently working around: `git add -A` and re-run.
 dirty="$(git -C "$repo" status --porcelain | grep -v '^?? ' || true)"
 if [ -n "$dirty" ]; then
   printf 'warn the worktree has MODIFIED TRACKED files; the copy takes committed\n'
@@ -244,9 +125,6 @@ if [ -n "$untracked" ]; then
   printf 'warn stage or commit them (git add -A) and re-run.\n\n'
 fi
 
-# ---------------------------------------------------------------------------
-# THE CONTROL. Two phases, and the second one runs courier's real gate.
-# ---------------------------------------------------------------------------
 echo "== the control: the unmodified declaration =="
 
 ctl_static="$work/control"
@@ -269,41 +147,30 @@ else
 fi
 echo
 
-# ---------------------------------------------------------------------------
-# THE BREAKAGES. Each one edit, in its own copy.
-# ---------------------------------------------------------------------------
 echo "== the breakages: one edit each, in a throwaway copy =="
 
-# 1. entrypoint names a file that is not there.
 d="$work/b1"; make_copy "$d"
 swap "$d/gate.yml" "  entrypoint: bin/prime" "  entrypoint: bin/not-there"
 check "$d" b1-entrypoint
 expect_red "entrypoint missing" "entrypoint-missing"
 
-# 2. the mise task resolves to a DIFFERENT file than the entrypoint: the local
-#    gate and `mise run prime` have quietly become two different gates.
 d="$work/b2"; make_copy "$d"
 printf '\n[tasks.other]\ndescription = "A second gate, which is the defect"\nrun = "./bin/assert-suite"\n' >> "$d/mise.toml"
 swap "$d/gate.yml" "  miseTask: prime" "  miseTask: other"
 check "$d" b2-misetask
 expect_red "mise task elsewhere" "task-unresolvable"
 
-# 3. the proof regex matches nothing the gate prints. The stub prints the real
-#    captured summary line; only the pattern is broken.
 d="$work/b3"; make_copy "$d"
 swap "$d/gate.yml" "      match: '^Result: ([0-9]+) passed(?: \\([^)]*\\))?$'" "      match: '^no such summary line: ([0-9]+)$'"
 stub_gate "$d" "Result: 535 passed"
 check "$d" b3-proof-regex --prove
 expect_red "proof regex matches none" "proof-missing"
 
-# 4. ci.workflow names a workflow this repository does not have.
 d="$work/b4"; make_copy "$d"
 swap "$d/gate.yml" "  workflow: ci/ci.yml" "  workflow: .github/workflows/nope.yml"
 check "$d" b4-ci-missing
 expect_red "ci workflow absent" "ci-missing"
 
-# 5. ci.workflow is a real file that never invokes the gate: the CI gate and the
-#    local gate drifting apart, which is the failure this format exists to catch.
 d="$work/b5"; make_copy "$d"
 cat > "$d/ci/decoy.yml" <<'YAML'
 name: decoy
@@ -320,38 +187,26 @@ swap "$d/gate.yml" "  workflow: ci/ci.yml" "  workflow: .github/workflows/decoy.
 check "$d" b5-ci-disagrees
 expect_red "ci never runs the gate" "ci-disagrees"
 
-# 6. THE SHARP ONE. Every field of the declaration is true and the repository
-#    is ungated: the command resolves, the entrypoint is executable, the mise
-#    task resolves to it, CI invokes it, the schema is satisfied — and the gate
-#    exits 0 having run nothing, printing the shape anywaye-rb printed for a
-#    database tier that never executed.
 d="$work/b6"; make_copy "$d"
 stub_gate "$d" "Result: 534/535 passed"
 check "$d" b6-exits-zero --prove
 expect_red "gate exits 0, ran none" "proof-missing"
 
-# 7. claiming self-containment while still enumerating requirements: the
-#    identity defect in the shape of an over-claim.
 d="$work/b7"; make_copy "$d"
 swap "$d/gate.yml" "  selfContained: false" "  selfContained: true"
 check "$d" b7-selfcontained
 expect_red "self-contained overclaim" "schema"
 
-# 8. a requirement satisfied by a command naming a file this repository does not
-#    have — a pointer to a page that does not exist, which is what the field
-#    replaced.
 d="$work/b8"; make_copy "$d"
 swap "$d/gate.yml" "        command: [mix, deps.get]" "        command: [bin/setup, --now]"
 check "$d" b8-requirement
 expect_red "requirement path absent" "requirement-path-missing"
 
-# 9. the command names a file this repository does not have.
 d="$work/b9"; make_copy "$d"
 swap "$d/gate.yml" "  command: [mise, run, prime]" "  command: [bin/not-the-gate]"
 check "$d" b9-command
 expect_red "command absent" "command-missing"
 
-# ---------------------------------------------------------------------------
 echo
 if [ "$skipped" -ne 0 ]; then
   printf 'SKIPPED %d check(s). A skipped check is not a passing check.\n' "$skipped"

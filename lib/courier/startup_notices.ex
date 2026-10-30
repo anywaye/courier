@@ -3,7 +3,6 @@ defmodule Courier.StartupNotices do
   The operator-facing notices `config/runtime.exs` composes, emitted once the
   logger can actually carry them.
 
-  ## The defect this exists on the far side of
 
   `config/runtime.exs` finished with a `Logger.info/1` on the resolved mail
   adapter and a `Logger.warning/1` when no inbound provider is configured. Both
@@ -21,7 +20,6 @@ defmodule Courier.StartupNotices do
   reader will walk into: a `Logger.*` call in that file reads as a startup line
   and is a write to nothing.
 
-  ## The mechanism, and why not the obvious call
 
   Because the failure is about WHEN `config/runtime.exs` is evaluated relative
   to the logger, no arrangement of `Logger.*` inside it can work. So the notice
@@ -35,7 +33,6 @@ defmodule Courier.StartupNotices do
   Nats.log_startup/0` and `Courier.Telemetry.log_startup/0` are called from the
   same place, for the same reason, and carry the same comment.
 
-  ## A notice names presence, never a value
 
   The mailer notice is `Courier.MailerAdapter.describe/1`'s output, which names
   the relay and whether auth is on and never the username or password; the

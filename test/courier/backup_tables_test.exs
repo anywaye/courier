@@ -3,7 +3,6 @@ defmodule Courier.BackupTablesTest do
   What a `pg_dump` of courier's one database actually carries — read from the
   live schema, not from a list somebody wrote down.
 
-  ## Why this is a database test and not a config test
 
   `config/kamal-backup.yml` declares no `paths:`, and the reason it may not need
   any is a claim about **courier's tables**: there is no `bytea` column, no
@@ -25,7 +24,6 @@ defmodule Courier.BackupTablesTest do
   row counts are not asserted at all: the claim is about the SHAPE, and a shape
   assertion that counted rows would break every time a test inserted one.
 
-  ## The list is derived from the live schema, not from the migrations
 
   Reading `information_schema` rather than parsing `priv/repo/migrations` is the
   choice that matters. Migrations are history; the schema is what a dump
@@ -39,13 +37,8 @@ defmodule Courier.BackupTablesTest do
   schema-reading one does not.
   """
 
-  # `async: true`: read-only queries against the Ecto SQL sandbox, no shared
-  # process restarted and no application environment changed.
   use Courier.DataCase, async: true
 
-  # courier's own tables, and what each one is FOR. The "for" column is why this
-  # is a list of expectations rather than a set membership test: a table whose
-  # purpose nobody can name is a table nobody has decided to back up.
   @expected %{
     "consumed_events" =>
       "the INBOUND queue: every event courier has received off the bus, keyed on " <>
@@ -69,11 +62,6 @@ defmodule Courier.BackupTablesTest do
       "a user's answer about one notification type — the thing a tenant loses first",
     "notification_types" =>
       "the catalog of messages courier can send: name, kind, required fields, subject and templates. A restore without it has no types to render",
-    # `seen_at` and `read_at` are in here and the reason is the packet this came
-    # from: the reference implementation has no equivalent, because its unread
-    # state is a counter nobody stored. An in-app inbox that is restored with its
-    # read state lost shows every notification as unread to every person who had
-    # already read it.
     "notifications" =>
       "one event addressed to one person, with WHEN THEY READ IT and WHEN THEY " <>
         "SAW IT — the only place courier can answer \"what was I told about, and " <>
@@ -98,9 +86,6 @@ defmodule Courier.BackupTablesTest do
     "webhook_endpoints" => "a tenant's URL and its SEALED signing secret"
   }
 
-  # Tables this repository does not own and does not reason about. `schema_migrations`
-  # is Ecto's, `oban_peers` is Oban's advisory-lock table (ephemeral by design:
-  # it records which nodes are up, and restoring yesterday's is meaningless).
   @not_ours ~w(schema_migrations oban_peers)
 
   describe "what the dump carries" do
@@ -112,11 +97,6 @@ defmodule Courier.BackupTablesTest do
                "agrees with a schema reader pointed at an empty database, and this test would then be " <>
                "asserting that courier stores nothing — which is the opposite of the claim."
 
-      # `Map.keys/1` and not the map itself: `MapSet.new/1` over a map builds a
-      # set of `{key, value}` TUPLES, so `MapSet.member?(ours, "email_suppressions")`
-      # is false for every table in the database and the test reports all of them
-      # as unexplained. A check that is wrong in the direction of "everything is
-      # broken" is at least loud — but only by accident.
       ours = MapSet.new(Map.keys(@expected))
       theirs = MapSet.new(@not_ours)
 
@@ -132,9 +112,6 @@ defmodule Courier.BackupTablesTest do
     end
 
     test "the tables it carries are the ones this test names, with nothing missing" do
-      # The presence half of the test above. Together: this fails when a table is
-      # added without being declared here, and the one above fails when one
-      # appears in the database without being declared at all.
       found = MapSet.new(tables())
       expected = MapSet.new(Map.keys(@expected))
 
@@ -147,10 +124,6 @@ defmodule Courier.BackupTablesTest do
     end
 
     test "the webhook signing secret column holds bytes, and it is the only one that does" do
-      # The presence assertion the absence below needs. `webhook_endpoints.secret`
-      # IS a `:text` column holding ciphertext, so "no bytea column" is not the
-      # claim — the claim is that no column holds FILE bytes or a POINTER to file
-      # bytes held somewhere the backup does not reach.
       secret_columns =
         for {table, column, _type} <- columns(),
             table == "webhook_endpoints" and column == "secret",
@@ -169,12 +142,6 @@ defmodule Courier.BackupTablesTest do
           {table, column}
         end
 
-      # The one bytea column that is allowed, and why: `idempotency_keys.
-      # response_body` is a cached HTTP RESPONSE BODY — courier's own JSON, held
-      # so a replayed request returns the first answer. It is inside Postgres, so
-      # the dump carries it, and it expires on `expires_at`. It is not an upload,
-      # and treating "there is one bytea column" as "there are files" would be
-      # exactly the sort of guess this test exists to refuse.
       assert bytea == [{"idempotency_keys", "response_body"}],
              "these columns hold bytes: #{inspect(bytea)}. Anything beyond " <>
                "`idempotency_keys.response_body` — a cached response body inside Postgres, expired on a " <>
@@ -184,17 +151,6 @@ defmodule Courier.BackupTablesTest do
     end
 
     test "no column names a bucket, a storage key or an object id" do
-      # The other shape of "state outside the database": not bytes here, but a
-      # POINTER here to bytes somewhere else. A restored database whose bucket is
-      # empty has every row pointing at nothing, and it fails as a missing object
-      # rather than as a missing backup — which is why this is asserted rather
-      # than left to a reader of the runbook.
-      #
-      # The match is on the COLUMN NAME, because that is what a migration names
-      # and what this assertion is about. The `idempotency_keys.response_body`
-      # column is deliberately not matched: `_body` is not a storage key, and a
-      # rule loose enough to catch it would be a rule that could be satisfied by a
-      # name rather than by the shape.
       storage_keys =
         for {table, column, _type} <- columns(),
             String.contains?(String.downcase(column), ~w(bucket object storage_key blob file)),
@@ -207,9 +163,6 @@ defmodule Courier.BackupTablesTest do
     end
 
     test "nothing in this repository configures an object store or an upload surface" do
-      # The third leg, and the cheapest: courier has no bucket configured, so the
-      # two assertions above are about a design courier does not have rather than
-      # about a setting somebody forgot.
       config_files = Path.wildcard("config/*.exs")
       assert config_files != [], "config/*.exs matched no files, so this test is reading nothing."
 
@@ -226,10 +179,6 @@ defmodule Courier.BackupTablesTest do
                  "failing is the signal."
       end
 
-      # And there is no upload route. `openapi.yaml` is courier's contract with a
-      # tenant and its paths are asserted against the router by
-      # `CourierWeb.OpenAPIDocumentTest`; a multipart or attachment operation would
-      # be a table the assertions above would not yet know about.
       refute Regex.match?(~r/contentType:\s*multipart/, File.read!("openapi.yaml")),
              "openapi.yaml declares a multipart operation, so courier accepts a file. Nothing in " <>
                "config/kamal-backup.yml or this repository would hold those bytes."
@@ -246,13 +195,6 @@ defmodule Courier.BackupTablesTest do
     |> List.flatten()
   end
 
-  # `List.to_tuple/1` on every row, and not the raw `rows`: Postgrex returns each
-  # row as a LIST, and `{table, column, type} <- ...` does not match a
-  # three-element list — it matches a three-element TUPLE. So a comprehension
-  # written over the raw rows silently produces an empty list rather than
-  # failing, and every assertion built on it passes for the wrong reason: three
-  # tests here reported "no bytea column anywhere" and "webhook_endpoints has no
-  # secret column" about a database that has both.
   defp columns do
     Repo.query!("""
     SELECT table_name, column_name, data_type

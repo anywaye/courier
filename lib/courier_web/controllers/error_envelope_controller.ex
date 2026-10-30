@@ -3,7 +3,6 @@ defmodule CourierWeb.ErrorEnvelopeController do
   The door every service's error path comes through, and the only place a Sentry
   envelope is accepted.
 
-  ## Why this is on its own endpoint and not on `CourierWeb.Router`
 
   Two reasons, and the second is the one that matters.
 
@@ -24,7 +23,6 @@ defmodule CourierWeb.ErrorEnvelopeController do
   surface is not reachable from the public ingress, which is a deployment
   decision an operator makes rather than a property this module can assert.
 
-  ## What it does with a body it does not like
 
   It answers `200 {}` and counts a reason. That is not politeness, it is the only
   correct answer: the Sentry SDK retries any non-2xx, so a `400` for a malformed
@@ -35,7 +33,6 @@ defmodule CourierWeb.ErrorEnvelopeController do
   experience of a discarded error is silence, which is the correct experience
   for a best-effort store.
 
-  ## Body size is bounded before anything is read
 
   `max_body_bytes` is enforced in this module rather than left to a `Plug.Parsers`
   limit, because the envelope is **not** a form and not JSON: it is
@@ -68,14 +65,6 @@ defmodule CourierWeb.ErrorEnvelopeController do
       {:ok, raw, conn} ->
         accept(conn, raw)
 
-      # The three-tuple shape, carrying the connection forward, because
-      # `read_body/2` has already read (part of) the body and a controller that
-      # answered from the *original* conn would render on a connection whose
-      # adapter had already been told the body was sent — a 200 whose body the
-      # test adapter never wrote. The first version of this clause matched a
-      # two-tuple and the oversized case raised `WithClauseError` from inside
-      # `create/2`, which is a 500 on the error path: the one surface that must
-      # never fail.
       {:error, reason, conn} ->
         discard(conn, reason)
 
@@ -87,9 +76,6 @@ defmodule CourierWeb.ErrorEnvelopeController do
   defp accept(conn, raw) do
     case Sink.parse_envelope(raw) do
       {:ok, items} ->
-        # A cast. The `200` below is written before anything is forwarded, so a
-        # store that is down cannot add a millisecond to a request in another
-        # service. See the moduledoc.
         ErrorRelay.ingest(conn.assigns.error_relay, items)
         json(conn, %{})
 
@@ -98,18 +84,11 @@ defmodule CourierWeb.ErrorEnvelopeController do
     end
   end
 
-  # `200 {}` and a log line, for every reason. Never a non-2xx: see the moduledoc.
   defp discard(conn, reason) do
     Logger.info("[error-relay] discarded an envelope: #{inspect(reason)}")
     json(conn, %{})
   end
 
-  # `read_body/2` with `:length` **truncates** rather than refusing, so the
-  # truncation has to be detected: a silently half-read envelope is a real
-  # payload that parses into a real event and gets stored missing its stack
-  # frames, which looks exactly like a service that stopped reporting file and
-  # line. `read_body/2` reports what it actually read, and comparing that with
-  # the declared length is the check.
   defp read(conn) do
     max = max_body_bytes(conn)
     declared = content_length(conn)
@@ -126,9 +105,6 @@ defmodule CourierWeb.ErrorEnvelopeController do
           end
 
         {:more, _partial, conn} ->
-          # `:more` is what `read_body/2` returns when the body is longer than
-          # `:length`. Discarding is safe: the body is still being streamed and
-          # courier has said it will not read it.
           {:error, :too_large, conn}
 
         {:error, reason} ->

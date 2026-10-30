@@ -11,7 +11,6 @@ defmodule Courier.Principal do
   identity." courier checks `account_id` for tenancy and asks identity about
   capability, so a `role` field on this struct would be a thing nothing reads.
 
-  ## `scopes` is populated and deliberately not enforced
 
   `Courier.Principal.Introspection` reads the capability set out of identity's
   introspection answer and puts it here, and **nothing in courier reads it to make
@@ -51,7 +50,6 @@ defmodule Courier.Principal.Resolver do
   deployment with no verifier configured refuses every webhook request instead of
   serving them to anyone who asks.
 
-  ## Three answers, and the third one is new
 
   `:error` was the whole vocabulary when this was written, and it was enough for
   a resolver that either knows who is calling or does not. A resolver that has to

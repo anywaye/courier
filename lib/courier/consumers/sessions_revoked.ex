@@ -3,7 +3,6 @@ defmodule Courier.Consumers.SessionsRevoked do
   `identity.session.revoked` → the notice a person is owed when their
   credentials end: "your password was changed", or "your email address moved".
 
-  ## THE EVENT, AND WHY THIS HANDLER CAN ACT ON IT
 
   identity publishes this from `internal/outbox/recovery.go`
   (`NewSessionsRevoked`), in the same transaction as the revocation it
@@ -21,7 +20,6 @@ defmodule Courier.Consumers.SessionsRevoked do
   acceptance event carried no address at all. This one carries the recipient
   and the fact, so the handler sends and nothing is looked up.
 
-  ## THE DESIGN DECISION: TWO RENDERINGS, ONE TEMPLATE, A CLOSED SET
 
   The event covers TWO reasons with one type, and the handler branches on
   `reason` into two renderings of one `account_security` template:
@@ -58,7 +56,6 @@ defmodule Courier.Consumers.SessionsRevoked do
   left alone to alert on, which is the honest shape for "this needs a decision
   in identity, not a retry".
 
-  ## THE ADDRESS, AND WHICH ADDRESS IT IS
 
   For the email-change reason, the address in the payload is the **new** one —
   `ConfirmEmailChangeNew` reads the user after `SetEmail` in the same
@@ -69,7 +66,6 @@ defmodule Courier.Consumers.SessionsRevoked do
   event carries and nothing else — the old-address-as-warning alternative is a
   payload change (the event is one field, not two), not a consumer change.
 
-  ## THE HANDLER TAKES THE ROW, NOT THE ENVELOPE
 
   `handle/1` is given the `consumed_events` row rather than the envelope as it
   arrived — the same principle as `Courier.Consumers.MemberInvited` and
@@ -78,7 +74,6 @@ defmodule Courier.Consumers.SessionsRevoked do
   on a redelivery days later, and what a peer receives is the row courier
   recorded rather than a re-rendering that could drift from it.
 
-  ## THE SEND GOES THROUGH `Courier.Deliver`, AND NOT AROUND IT
 
   Not `Courier.Mailer`, and not a provider call in this module: `Deliver` is
   where the preference check, the per-type unsubscribe check and the mailbox
@@ -88,7 +83,6 @@ defmodule Courier.Consumers.SessionsRevoked do
   `Courier.Deliver`'s moduledoc says those checks exist to prevent, reached
   from the consumer side.
 
-  ## WHAT THIS HANDLER ADDS TO COURIER'S VOCABULARY
 
   One refusal of its own — `{:error, {:unknown_reason, reason}}` — and
   everything else it returns is `Courier.Deliver`'s or `Courier.Mailers`',
@@ -96,7 +90,6 @@ defmodule Courier.Consumers.SessionsRevoked do
   dialect would put every future caller in the position of matching on strings
   nobody else produces.
 
-  ## THE CORE ENUM GAP, REPORTED AND NOT APPLIED
 
   Adding `account_security` to `Courier.Mailers.types/0` means the
   `courier.email.delivered` event's `data.notification_type` can carry a fourth
@@ -115,24 +108,8 @@ defmodule Courier.Consumers.SessionsRevoked do
           required(:reason) => String.t()
         }
 
-  # The three fields identity publishes, checked by NAME so the reason names
-  # the one that was wrong. Order is the payload's own, so the message a caller
-  # sees is the payload's rather than a hash order's.
   @fields ~w(user_id email reason)
 
-  # The closed set of reasons identity publishes, transcribed from
-  # `internal/outbox/recovery.go` (`ReasonPasswordReset`, `ReasonEmailChanged`)
-  # rather than spelled as literals a refactor could silently diverge from.
-  # The publisher validates the same set at build time; this is the consumer's
-  # own copy of the boundary, because the publisher's validation is not the
-  # consumer's.
-  #
-  # A LIST OF TWO STRINGS and not `~w(...)`: the sigil splits on whitespace, so
-  # `~w(password reset email address changed)` is five words and a reason is a
-  # phrase. The first draft had exactly that, and every valid reason was
-  # refused as unknown — the handler would not mail the one event it was
-  # written for, which reads exactly like a registry misconfiguration and is
-  # not one.
   @reasons ["password reset", "email address changed"]
 
   @event_type "identity.session.revoked"
@@ -231,13 +208,6 @@ defmodule Courier.Consumers.SessionsRevoked do
     end
   end
 
-  # THE CLOSED SET, CHECKED HERE AND NOWHERE ELSE IN THE HANDLER.
-  #
-  # `reason` is in `@fields`, so `fetch_fields/1` has already refused a missing
-  # or non-string one; this is the second question — a value outside the two
-  # identity publishes. The refusal names the value, because an operator
-  # reading the row needs to know WHICH reason was unexpected in order to find
-  # out who sent it.
   defp fetch_reason(%{reason: reason}) when reason in @reasons, do: :ok
 
   defp fetch_reason(%{reason: reason}) do

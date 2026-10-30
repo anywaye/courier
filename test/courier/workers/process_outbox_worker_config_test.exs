@@ -102,9 +102,6 @@ defmodule Courier.Workers.ProcessOutboxWorkerConfigTest do
     end
 
     test "the row is not marked published" do
-      # Marking a row published that the publisher never accepted would drop the
-      # event on the floor with nothing to retry: at-least-once means the row
-      # stays until someone says it went out.
       row = deliver!(1)
 
       assert {:error, %{reason: :nats_unavailable}} = perform_job(ProcessOutboxWorker, %{})
@@ -158,7 +155,6 @@ defmodule Courier.Workers.ProcessOutboxWorkerConfigTest do
       assert {:error, _summary} = perform_job(ProcessOutboxWorker, %{})
       assert Repo.get!(OutboxEvent, row.id).attempt_count == max_attempts()
 
-      # The next run leaves it alone rather than retrying forever.
       assert {:ok, %{published: 0}} = perform_job(ProcessOutboxWorker, %{})
       assert Repo.get!(OutboxEvent, row.id).attempt_count == max_attempts()
     end

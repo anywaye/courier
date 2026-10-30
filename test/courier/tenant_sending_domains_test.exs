@@ -2,7 +2,6 @@ defmodule Courier.TenantSendingDomainsTest do
   @moduledoc """
   The sending-domain context: registration, the two-part proof, and revocation.
 
-  ## Why this file is `async: false`
 
   Three reasons, all of them shared VM state rather than the network:
 
@@ -11,7 +10,6 @@ defmodule Courier.TenantSendingDomainsTest do
     * the DNS proof's double answers from one named ETS table;
     * the credential proof posts to one `Courier.TestSupport.CloudflareServer`.
 
-  ## What is real here
 
   The DNS answers are injected (`Courier.SendingDomains.Dns` is a seam on
   purpose — a verification that can pass on a broken resolver proves nothing),
@@ -71,9 +69,6 @@ defmodule Courier.TenantSendingDomainsTest do
     )
   end
 
-  # The exact record set Cloudflare Email Sending publishes for an onboarded
-  # domain. `mx` is the route trio, the two TXTs are the SPF authorisation and
-  # the DKIM public key.
   defp seed_cloudflare_dns(domain \\ @domain) do
     :ets.insert(
       table(),
@@ -112,9 +107,6 @@ defmodule Courier.TenantSendingDomainsTest do
     end)
   end
 
-  # ---------------------------------------------------------------------------
-  # Registration
-  # ---------------------------------------------------------------------------
 
   describe "register/2" do
     test "stores the domain unverified, with the credential sealed" do
@@ -127,9 +119,6 @@ defmodule Courier.TenantSendingDomainsTest do
       assert row.status == :enabled
       assert row.verified_at == nil
 
-      # The credential column holds ciphertext, not the token. Read it back as
-      # raw SQL so the assertion is about the COLUMN and not about whatever the
-      # schema chose to expose.
       [[stored]] =
         Repo.query!("select credential from tenant_sending_domains where id = $1", [
           Ecto.UUID.dump!(row.id)
@@ -189,7 +178,6 @@ defmodule Courier.TenantSendingDomainsTest do
       rows = TenantSendingDomains.list(@account)
       assert Enum.map(rows, & &1.domain) == [@domain]
 
-      # No read path returns the token: not the struct, not a render of it.
       refute Enum.any?(rows, &(&1.credential == @token))
       refute inspect(rows) =~ @token
     end
@@ -213,9 +201,6 @@ defmodule Courier.TenantSendingDomainsTest do
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # The proof
-  # ---------------------------------------------------------------------------
 
   describe "verify/2 — the DNS half" do
     test "a domain whose name exists but publishes no MX records is refused, and no provider is called",
@@ -231,7 +216,6 @@ defmodule Courier.TenantSendingDomainsTest do
     end
 
     test "a resolver FAILURE is a lookup failure, never a pass", %{server: server} do
-      # Nothing seeded: the double answers `{:error, :nxdomain}`.
       assert {:ok, row} = TenantSendingDomains.register(@account, attrs())
 
       assert {:error, {:dns_lookup_failed, :nxdomain}} = TenantSendingDomains.verify(row)
@@ -312,8 +296,6 @@ defmodule Courier.TenantSendingDomainsTest do
 
       assert %DateTime{} = verified_at
 
-      # The verification send was real and carried the TENANT's token and the
-      # tenant's provider account — the credential half of the proof.
       assert request_token(server) == "Bearer #{@token}"
 
       assert [request] = CloudflareServer.requests(server)
@@ -337,8 +319,6 @@ defmodule Courier.TenantSendingDomainsTest do
       seed_cloudflare_dns()
       assert {:ok, row} = TenantSendingDomains.register(@account, attrs())
 
-      # Simulate a rotation: the column now holds ciphertext the current key
-      # cannot open.
       {1, _} =
         Repo.update_all(TenantSendingDomain,
           set: [credential: SecretBox.seal(@token, :crypto.strong_rand_bytes(32))]
@@ -350,7 +330,6 @@ defmodule Courier.TenantSendingDomainsTest do
     end
 
     test "the DNS check runs BEFORE the provider is dialled", %{server: server} do
-      # No DNS seeded: the proof must fail without spending a provider request.
       assert {:ok, row} = TenantSendingDomains.register(@account, attrs())
       assert {:error, {:dns_lookup_failed, _}} = TenantSendingDomains.verify(row)
       assert CloudflareServer.requests(server) == []
@@ -361,13 +340,9 @@ defmodule Courier.TenantSendingDomainsTest do
     test "a domain another account already verified is refused", %{server: server} do
       seed_cloudflare_dns()
 
-      # Account A verifies it.
       assert {:ok, a_row} = TenantSendingDomains.register(@account, attrs())
       assert {:ok, _} = TenantSendingDomains.verify(a_row)
 
-      # Account B cannot SEE A's row (row-level security), so B is allowed to
-      # register the domain — and the partial unique index is what refuses the
-      # second verification, at the write that would create the conflict.
       assert {:ok, b_row} =
                as_account(@other_account, fn ->
                  TenantSendingDomains.register(@other_account, attrs())

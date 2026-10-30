@@ -2,7 +2,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
   @moduledoc """
   `/v1/webhook_endpoints` — the API, the envelope, and the authorization matrix.
 
-  ## Why there is an authorization section at all
 
   `NotificationPreferencesController` says in its own moduledoc that its requests
   are unauthenticated in this packet, because courier does not verify JWTs yet.
@@ -35,18 +34,12 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
 
   use CourierWeb.ConnCase, async: true
 
-  # The matrix below dispatches by method with `Phoenix.ConnTest.dispatch/4`,
-  # which the generated case does not import — it brings in the verb-specific
-  # helpers (`get/2`, `post/3`) and not the generic one.
   alias Courier.Repo
   alias Courier.WebhookEndpoint
   alias Courier.WebhookEndpoints
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account_id
   @other_account_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
@@ -59,14 +52,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     endpoint
   end
 
-  # The account the request is made as. `nil` is an anonymous request.
-  # The conn a request is made as.
-  #
-  # `Phoenix.ConnTest.build_conn/0`, not `Plug.Test.conn/3`: the verb helpers build
-  # the request conn from the method and path, and a conn made with `Plug.Test`
-  # has no `secret_key_base` or host, so everything the endpoint needs is
-  # discarded on the way through. A header set on a `build_conn/0` survives,
-  # because that is the conn the request is dispatched *from*.
   defp owner_conn, do: as(@account_id)
   defp other_conn, do: as(@other_account_id)
   defp anonymous_conn, do: as(nil)
@@ -78,17 +63,11 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
   end
 
-  # Dispatches a method the verb helpers do not cover, carrying the conn's own
-  # headers. Used by the authorization matrix, which loops over every action.
   defp dispatch(conn, method, path) do
     Phoenix.ConnTest.dispatch(conn, @endpoint, method, path)
   end
 
   describe "the authorization matrix" do
-    # Every action × every caller, asserted rather than described. The four
-    # columns are the four questions a request can be: who are you, whose
-    # resource is this, what may you do to your own, and what may you do to
-    # someone else's.
     @actions [
       {:get, "/v1/webhook_endpoints", :index},
       {:post, "/v1/webhook_endpoints", :create},
@@ -108,10 +87,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "the refusal happens before routing reaches a controller" do
-      # A 401 rather than a 404 or a 422 is itself the assertion: the plug runs in
-      # the pipeline, so an anonymous caller never reaches an action, and no
-      # action has to remember to check. `conn.assigns.action` is nil for a
-      # request that was halted in a plug.
       for {method, path, _name} <- @actions do
         conn = dispatch(anonymous_conn(), method, path)
 
@@ -130,8 +105,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "another account's token does not grant access to this one's endpoints" do
-      # The whole point of the matrix: knowing that *an* account exists is not
-      # knowing that this endpoint is yours.
       theirs =
         as_account(@other_account_id, fn -> endpoint!(%{account_id: @other_account_id}) end)
 
@@ -162,8 +135,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
       conn = owner_conn() |> post("/v1/webhook_endpoints", %{"url" => @url})
       id = json_response(conn, 201)["data"]["id"]
 
-      # There is no endpoint that returns a secret, because a GET that could is a
-      # credential endpoint.
       listed = owner_conn() |> get("/v1/webhook_endpoints") |> json_response(200)
 
       for endpoint <- listed["data"] do
@@ -311,9 +282,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "refuses a cursor that is not one courier issued" do
-      # Core: the cursor is opaque and "clients must not parse it". A cursor
-      # courier cannot decode is a 422 rather than a silent first page, because a
-      # client that sent a hand-built cursor deserves to be told it is wrong.
       conn = owner_conn() |> get("/v1/webhook_endpoints?cursor=not-a-cursor")
 
       assert %{"code" => "validation_failed", "errors" => [%{"field" => "cursor"}]} =
@@ -332,8 +300,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "answers 404 for another account's endpoint, not 403" do
-      # Core's openapi-conventions: a 403 "leaks existence". There is no 403
-      # anywhere in this file, and that is the rule.
       endpoint =
         as_account(@other_account_id, fn -> endpoint!(%{account_id: @other_account_id}) end)
 
@@ -387,8 +353,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
 
     test "re-enabling a tripped endpoint clears courier's reason" do
       endpoint = endpoint!()
-      # Trip it five times so the circuit actually opens and courier has written
-      # a reason; re-enabling is what has to clear it.
       tripped =
         Enum.reduce(1..5, endpoint, fn _n, current ->
           elem(WebhookEndpoints.trip(current, 5, "boom"), 1)
@@ -412,13 +376,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
 
       assert %{"code" => "not_found"} = json_response(conn, 404)
 
-      # READ BACK UNDER THE IDENTITY THAT OWNS THE ROW. `Repo.get!/2` reaches a
-      # protected row by primary key alone, and under the RLS `select` policy the
-      # test body's identity decides whether it is returned at all. The body's
-      # identity here is `@account_id` -- unless a request changed it, which each
-      # scoped action does, because inside the sandbox its transaction is a
-      # SAVEPOINT whose release does not discard a transaction-local setting. So
-      # the read is asked for the identity it needs rather than inheriting one.
       assert as_account(@other_account_id, fn ->
                Repo.get!(WebhookEndpoint, endpoint.id).status == :enabled
              end)
@@ -476,11 +433,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
 
       assert %{"code" => "not_found"} = json_response(conn, 404)
 
-      # READ BACK UNDER THE IDENTITY THAT OWNS THE ROW — see the identical
-      # comment on the PATCH test above. As `@account_id` this is `nil` whatever
-      # the DELETE did, because the RLS `select` policy does not return the other
-      # account's row: **an assertion that passes because the row is invisible
-      # rather than because it survived proves nothing about the DELETE.**
       assert as_account(@other_account_id, fn ->
                WebhookEndpoints.get(endpoint.id, @other_account_id)
              end)
@@ -526,10 +478,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "answers 200 with the receiver's status, because the test itself worked" do
-      # A 422 here would say courier could not test the endpoint, when what
-      # happened is that courier tested it and the endpoint answered 500. The
-      # customer needs the second fact, and it is a 200 to them either way: their
-      # request was well-formed and courier did what it was asked.
       endpoint = endpoint!()
       Courier.TestSupport.RecordingSender.answer_with(%{response_status: 500})
 
@@ -548,10 +496,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "does not count a failed test against the circuit, because the customer is asking" do
-      # A customer testing their own endpoint and getting a 500 is the endpoint
-      # being broken, not a delivery attempt. Counting it would trip the circuit
-      # on the customer's own diagnostics — and the test is not a delivery, so it
-      # has no row.
       endpoint = endpoint!()
       Courier.TestSupport.RecordingSender.answer_with(%{response_status: 500})
 
@@ -594,10 +538,6 @@ defmodule CourierWeb.WebhookEndpointsControllerTest do
     end
 
     test "echoes the trace id on every response, and in the error body when there is one" do
-      # The house convention (see `NotificationPreferencesControllerTest`): the id
-      # is a response header on every answer, and it is in the problem body too,
-      # so support can start from the same id on both. Per *request* — two
-      # requests get two ids, which is the point of one.
       ok = owner_conn() |> get("/v1/webhook_endpoints")
       refused = owner_conn() |> get("/v1/webhook_endpoints/#{Ecto.UUID.generate()}")
 

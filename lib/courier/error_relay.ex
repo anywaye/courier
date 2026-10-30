@@ -2,7 +2,6 @@ defmodule Courier.ErrorRelay do
   @moduledoc """
   The error path's chokepoint: classify, fingerprint, throttle, re-frame, hand on.
 
-  ## What this process is for, in one sentence
 
   It is the one place in the fleet where a Sentry envelope is allowed to become
   a stored error, and the only place the redaction policy is applied — because
@@ -10,7 +9,6 @@ defmodule Courier.ErrorRelay do
   and the OTel collector cannot reach the error path (GlitchTip speaks the
   Sentry protocol; it has no OTLP receiver for errors).
 
-  ## The shape, and why each piece is where it is
 
       SDK  ──envelope──▶  [ ingest/2, a cast ]  ──▶  Sender   ──bytes──▶  Sink
                              │                      (bounded queue,     (Req → GlitchTip)
@@ -39,7 +37,6 @@ defmodule Courier.ErrorRelay do
       errors by design, so this is the volume control the SDK deliberately does
       not provide.
 
-  ## The throttle, and the fact that the fingerprint is ours
 
   Sentry's protocol lets a client choose its own grouping via a `fingerprint`
   field. The relay **ignores and drops** it. If it were honoured, a caller could
@@ -51,7 +48,6 @@ defmodule Courier.ErrorRelay do
   excluded, so a deploy does not open a second group for a bug that was never
   fixed.
 
-  ## Stats are an ETS table, not the relay's state
 
   `stats/1` reads a table both this process and `Courier.ErrorRelay.Sender`
   write, because `sink_failures` and `queue_full` are the *sender's* facts and
@@ -60,7 +56,6 @@ defmodule Courier.ErrorRelay do
   either process being able to stop the other; nothing in it is a secret and it
   is bounded to a fixed set of keys.
 
-  ## A restart is a reset, and that is the right failure
 
   The throttle lives in memory, so a relay restart empties every bucket and the
   first `@burst` occurrences of a hot bug get through again. The alternative —
@@ -76,10 +71,6 @@ defmodule Courier.ErrorRelay do
   alias Courier.ErrorRelay.Sender
   alias Courier.ErrorRelay.Sink
 
-  # Every counter in `stats/1`. Written down rather than derived from a map's
-  # keys, so a counter that is never incremented is a zero in the output instead
-  # of a missing key, and so a reader of `stats/1` can see the whole shape
-  # without reading this module.
   @counters ~w(received forwarded throttled malformed unclassified undeclared
                queue_full sink_failures)a
 
@@ -88,7 +79,6 @@ defmodule Courier.ErrorRelay do
   @default_capacity 4_096
   @default_queue_size 256
 
-  # --- client ----------------------------------------------------------------
 
   @doc """
   Hand a list of decoded envelope items to the relay. Returns `:ok`, always.
@@ -104,7 +94,7 @@ defmodule Courier.ErrorRelay do
   end
 
   @doc """
-  Every counter, as a map with all of `#{inspect(@counters)}` present.
+  Every counter, as a map with all of `
 
   Read from the **stats** table, which is a *different* table from `table/1`.
   Reading the throttle table here looks right — both are named after the relay
@@ -128,7 +118,6 @@ defmodule Courier.ErrorRelay do
   @spec table(GenServer.server()) :: atom() | reference()
   def table(server \\ __MODULE__), do: server
 
-  # --- server ----------------------------------------------------------------
 
   @doc false
   def start_link(opts) do
@@ -140,13 +129,8 @@ defmodule Courier.ErrorRelay do
   def init(opts) do
     name = Keyword.get(opts, :name, __MODULE__)
 
-    # `:protected`, not `:public`: only the relay reads or writes the throttle,
-    # and a protected table is still readable by a test through `:ets.info/2`,
-    # which is all the bound assertion needs.
     :ets.new(name, [:set, :protected, :named_table, read_concurrency: true])
 
-    # `:public` because the sender writes `queue_full` and `sink_failures` into
-    # it and neither process may stop the other. See the moduledoc.
     :ets.new(stats_table(name), [:set, :public, :named_table, write_concurrency: true])
 
     sender =
@@ -156,10 +140,6 @@ defmodule Courier.ErrorRelay do
             name: sender_name(name),
             relay: name,
             sink: Keyword.get(opts, :sink, Courier.ErrorRelay.Sink.Req),
-            # `sink_mode` is a test-only key. It is in the list rather than
-            # dropped so `Courier.TestSupport.FailingSink` can be told to return
-            # an error tuple instead of raising — see that module's `mode/1`,
-            # which documents what happens when a key is *not* forwarded here.
             sink_opts: Keyword.take(opts, [:sink_target, :sink_dsn, :sink_timeout, :sink_mode]),
             size: Keyword.get(opts, :queue_size, @default_queue_size),
             timeout: Keyword.get(opts, :sink_timeout, 5_000)
@@ -185,11 +165,6 @@ defmodule Courier.ErrorRelay do
     state = count(state, :received, length(items))
     {state, admitted} = forward(state, items, [])
 
-    # **One envelope per ingest, not one per event.** The Sentry SDKs batch —
-    # fifty events in one request is normal — and re-framing each event
-    # separately would turn a batch into fifty POSTs to a single Postgres behind
-    # a single web container. `sink_failures` would then be fifty chances to lose
-    # one crash instead of one.
     enqueue(state, admitted)
 
     {:noreply, state}
@@ -200,7 +175,6 @@ defmodule Courier.ErrorRelay do
     {:noreply, count(state, key, by)}
   end
 
-  # --- the pipeline ----------------------------------------------------------
 
   defp forward(state, items, admitted) do
     now = state.now.()
@@ -218,21 +192,6 @@ defmodule Courier.ErrorRelay do
   defp event?(%{"type" => "event"}), do: true
   defp event?(_other), do: false
 
-  # The item's `payload` is **bytes**, not a map.
-  #
-  # `Courier.ErrorRelay.Sink.parse_envelope/1` deliberately does not decode: an
-  # envelope's items are typed (`event`, `session`, `transaction`, `attachment`)
-  # and only an `event` item's payload is JSON, so a reader that decoded
-  # everything would reject an envelope for containing an attachment. So the
-  # decoding happens here, once an `event` item has already been identified.
-  #
-  # This is the one place in the relay that parses, and the first version of the
-  # relay did not parse at all — it passed the raw binary to `Policy.redact/1`,
-  # which answered `{:error, :not_an_event}` and counted the event as
-  # **malformed**. The relay reported `received: 1, forwarded: 0, malformed: 1`
-  # and the caller got a `200`, so nothing anywhere was red and the store was
-  # empty. It is caught by `CourierWeb.ErrorRelayEndpointTest`, which asserts on
-  # the bytes the sink received over a real request rather than on a counter.
   defp handle(state, payload, now) when is_binary(payload) do
     case Jason.decode(payload) do
       {:ok, decoded} when is_map(decoded) -> admit_or_discard(state, decoded, now)
@@ -240,9 +199,6 @@ defmodule Courier.ErrorRelay do
     end
   end
 
-  # An already-decoded payload, which is what a caller inside this repository
-  # (a test, or `Courier.ErrorReporting` on a future in-process path) can hand
-  # over. Both shapes are accepted so neither has to know about the other.
   defp handle(state, decoded, now) when is_map(decoded) do
     admit_or_discard(state, decoded, now)
   end
@@ -259,14 +215,6 @@ defmodule Courier.ErrorRelay do
     end
   end
 
-  # Classification is a **gate**, and the gate is here rather than folded into
-  # `admit/3` because the first version piped the result of this `case` into
-  # `admit/3` — which meant `admit/3` ran on all three branches and its return
-  # value overwrote the `nil` that the unclassified branch had just produced. An
-  # event with no `error.type` at all was therefore stored anyway, with no class
-  # on it, and `stats/1` counted it as `unclassified` while the store received
-  # it. The counter and the store disagreed, which is the one thing a counter is
-  # for.
   defp classify(state, redacted) do
     case Policy.classify(redacted) do
       {:ok, _class} ->
@@ -276,16 +224,10 @@ defmodule Courier.ErrorRelay do
         {count(state, :unclassified, 1), nil}
 
       {:error, :undeclared} ->
-        # Redaction already replaced the value with `_OTHER`; this counter is how
-        # an operator learns that a service is reporting errors with a class that
-        # is not in core's vocabulary, which is what an alert on `_OTHER` is for.
         {count(state, :undeclared, 1), redacted}
     end
   end
 
-  # `nil` in, `nil` out: a dropped event is not throttled, because counting it as
-  # throttled would report a volume problem where the real answer is a
-  # classification one.
   defp admit({state, nil}, _redacted, _now), do: {state, nil}
 
   defp admit({state, redacted}, redacted, now) do
@@ -307,22 +249,11 @@ defmodule Courier.ErrorRelay do
         state
 
       {:error, _reason} ->
-        # Events that survived redaction and the throttle and then could not be
-        # encoded is a bug here rather than in the caller. It is counted under
-        # `malformed` because that is the counter an operator is already reading
-        # for "events the relay did not store", and raising would take down the
-        # process every other service's error reporting depends on.
         count(state, :malformed, length(admitted))
     end
   end
 
-  # --- the throttle ----------------------------------------------------------
 
-  # A token bucket, keyed by fingerprint, entirely in ETS.
-  #
-  # `{tokens, last_refill_ms, dropped}` per key. `tokens` is a float because a
-  # refill of one token per second accumulates in milliseconds and rounding it
-  # to an integer is how a bucket ends up either always empty or always full.
   defp allow?(state, fingerprint, now) do
     table = state.name
 
@@ -341,11 +272,6 @@ defmodule Courier.ErrorRelay do
 
       [] ->
         evict(table, state.capacity)
-        # `burst - 1`, not `burst`. The first event of a bug **consumes** a
-        # token, and storing a full bucket on the insert would hand out `burst +
-        # 1` events before the bucket ran dry — one more than the configuration
-        # says, and one more than every test in this file asserts. The off-by-one
-        # is invisible in a reading of the code and obvious in a count.
         :ets.insert(table, {fingerprint, state.burst * 1.0 - 1, now, 0})
         true
     end
@@ -353,13 +279,6 @@ defmodule Courier.ErrorRelay do
 
   defp rate(%{per_minute: per_minute}), do: per_minute / 60_000
 
-  # Prune the least recently seen fingerprint when the table is at its bound.
-  #
-  # The victim is chosen by `last_seen` rather than arbitrarily because the entry
-  # most likely to be needed again is the one for a bug that is still happening,
-  # and "still happening" is exactly what `last_refill_ms` records. A random or
-  # first-found eviction would eventually evict a hot bug's bucket and let it
-  # through again, which is the bug this table exists to prevent.
   defp evict(table, capacity) do
     if :ets.info(table, :size) >= capacity do
       case oldest(table) do
@@ -372,13 +291,6 @@ defmodule Courier.ErrorRelay do
   end
 
   defp oldest(table) do
-    # `foldl/3` rather than `select/2`, and the reason is a bug the bound test
-    # caught. A match spec whose body is `[{{:"$2", :"$1"}}]` looks like it
-    # returns a list of `{last, key}` tuples; the body of a match spec is a list
-    # and `{{…}}` in that position constructs a tuple *containing* a tuple, so
-    # `Enum.min/1` was picking a fingerprint out of a structure nobody meant to
-    # build. The key it returned was not in the table, `evict/2` deleted nothing,
-    # and the table grew to 192 entries against a bound of 64.
     {key, _last} =
       :ets.foldl(
         fn {fingerprint, _tokens, last, _dropped}, {_best, best_last} = acc ->
@@ -391,7 +303,6 @@ defmodule Courier.ErrorRelay do
     key
   end
 
-  # --- counters --------------------------------------------------------------
 
   defp count(state, key, by) do
     :ets.update_counter(stats_table(state.name), {:stat, key}, {2, by}, {{:stat, key}, 0})
@@ -403,12 +314,6 @@ defmodule Courier.ErrorRelay do
   @doc false
   def sender_name(name), do: :"#{name}.sender"
 
-  # The `Task.Supervisor` the sender runs its drains under, which is where the
-  # name `#{inspect(__MODULE__)}.Sender.init/1` builds it. It is exposed beside
-  # `sender_name/1` rather than re-derived in a test because a test that spells
-  # the string out would keep passing if the sender ever moved: the name would
-  # stop matching anything, `which_children/1` would answer `[]`, and a wait that
-  # silently waits for nothing looks exactly like a wait that found nothing to do.
   @doc false
   def tasks_name(name), do: :"#{sender_name(name)}.tasks"
 

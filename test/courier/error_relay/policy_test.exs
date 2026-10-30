@@ -12,7 +12,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
   so this module is the same chokepoint, written in the language the error path
   is written in, and it is the **only** implementation of it in the fleet.
 
-  ## The two properties this asserts, separately
 
   Every leak test here comes in a pair, and the pair is the point. The house
   pattern is muse's canary: a unique string placed where the caller put it,
@@ -22,7 +21,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
   every map, and a test that only checked the canary would pass if the key names
   were kept with the values scrubbed. Neither is the claim. Both are.
 
-  ## The consequence nobody should have to discover in an incident
 
   An error store is a **retained, indexed, widely-readable** store, and it is
   read by a human on purpose. That is exactly the threat model core's redaction
@@ -42,24 +40,12 @@ defmodule Courier.ErrorRelay.PolicyTest do
 
   alias Courier.ErrorRelay.Policy
 
-  # A string that exists nowhere else in the suite, so "the canary is absent"
-  # cannot be satisfied by a truncation that also happened to remove the value
-  # the test was checking a different assertion about.
   @canary "CANARY-4f19b2c7-do-not-store-me"
 
-  # Every one of these is a credential shape the collector already masks, kept
-  # byte-identical to `blocked_values` in kit's `redaction/anywaye_traces`
-  # processor. Two implementations of the same vocabulary is one too many, so
-  # this list is the collector's list and a change to one is a change to both.
   @jwt "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"
   @sk "sk-live-0123456789abcdefghij"
   @bearer "Bearer abcdefghijklmnopqrstuvwxyz012345"
 
-  # `Policy.redact/1` answers `{:ok, event} | {:error, :not_an_event}` because
-  # the relay parses bytes off a socket and a malformed envelope is an expected
-  # input rather than a programming error. Every test below is about the happy
-  # shape, so it unwraps here once rather than in thirty places — and the three
-  # that are about the sad shape call `Policy.redact/1` directly.
   defp redact(event) do
     assert {:ok, redacted} = Policy.redact(event)
     redacted
@@ -245,10 +231,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
     end
 
     test "a route carrying a query string is rejected, because a route is a template" do
-      # core: "`http.route` is the **template**. `/v1/users/{id}` has one value
-      # per endpoint. `/v1/users/usr_01J9Z8QK5M4N7P2R3T6V8W9X0A` has one per
-      # request". A `route` with a `?` in it is not a template at all — it is a
-      # URL somebody was called on, and the query string is where a token is.
       redacted =
         redact(event(%{"request" => %{"method" => "POST", "route" => "/v1/x?token=#{@jwt}"}}))
 
@@ -256,14 +238,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
     end
 
     test "every stored event is marked as having passed the boundary" do
-      # One constant, and it is a constant on purpose. A *count* of what was
-      # removed would be a tag whose value changes with every allowlist edit,
-      # which is a cardinality axis nobody queries and a history that breaks on
-      # a config change — the same argument the collector's
-      # `transform/anywaye_metrics_labels` makes about
-      # `redaction.redacted.count`. So the counts go to a log line and the event
-      # carries one fixed token, which is what lets a reader of a GlitchTip issue
-      # know the event is not something a service wrote straight to the store.
       redacted = redact(event())
 
       assert "true" == redacted["tags"]["anywaye.redacted"]
@@ -272,9 +246,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
 
   describe "what is removed, asserted on the value" do
     test "the canary is absent from the rendered payload, not merely from a key" do
-      # The half that a key-name check cannot make. Asserted on the ENCODED
-      # bytes, because a policy that returned a structure Jason encodes
-      # differently would pass a `Map` walk and fail here.
       redacted = redact(event())
 
       rendered = Jason.encode!(redacted)
@@ -283,10 +254,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
     end
 
     test "a credential that arrives under an allowed key is masked, not kept" do
-      # The second barrier, and a different KIND of barrier: the allowlist keeps
-      # a key out, and this masks a credential-shaped VALUE that arrived under a
-      # key the allowlist does keep. `transaction` is the realistic case — it is
-      # allowlisted, and a careless caller interpolates a tenant id into it.
       redacted = redact(event(%{"transaction" => "courier.send/#{@jwt}"}))
 
       rendered = Jason.encode!(redacted)
@@ -313,12 +280,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
     end
 
     test "a secret in the exception TYPE is masked rather than trusted" do
-      # `type` is allowlisted because it is the class and the class is what
-      # makes the error actionable. It is also a free string that a language
-      # runtime builds from the exception's own `to_string`, and an Elixir
-      # `RuntimeError` raised with a token in the message can carry one here.
-      # So the value is masked even though the key is allowed. This is the
-      # reason `blocked_values` is not redundant with the allowlist.
       redacted = redact(event(%{"exception" => %{"values" => [%{"type" => "Err:#{@jwt}"}]}}))
 
       rendered = Jason.encode!(redacted)
@@ -345,22 +306,12 @@ defmodule Courier.ErrorRelay.PolicyTest do
     end
 
     test "a value outside the vocabulary is replaced, never passed through" do
-      # `user_42_email_invalid` is snake_case, 22 characters, and validates
-      # against a `pattern` — which is exactly how core-04's first version of
-      # this rule came to permit a value per user on a dimension a dashboard
-      # groups by. The enum is the fix, so an undeclared class is replaced
-      # rather than trusted.
       redacted = redact(event(%{"tags" => %{"error.type" => "user_42_email_invalid"}}))
 
       assert "_OTHER" == redacted["tags"]["error.type"]
     end
 
     test "an event with no error.type at all is rejected by the relay, not defaulted here" do
-      # Redaction does not invent a class: an event that arrives unclassified is
-      # `{:error, :unclassified}` from `Policy.classify/1` and the relay drops it
-      # with a counted reason. Defaulting it here would put `_OTHER` in the store
-      # and make an alert on `_OTHER` — which is an alert that this service has
-      # not classified its own errors — silently unreachable.
       assert {:error, :unclassified} ==
                Policy.classify(event(%{"tags" => %{"service.name" => "courier"}}))
     end
@@ -368,9 +319,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
 
   describe "it is a function, not a process" do
     test "a value that is not a map is an error rather than a raise" do
-      # The relay parses bytes off a socket. Whatever is in them is not
-      # courier's to trust, and a parse failure that raises inside the relay is a
-      # crash in the process every other service's error reporting depends on.
       assert {:error, :not_an_event} == Policy.redact("not a map")
       assert {:error, :not_an_event} == Policy.redact(nil)
       assert {:error, :not_an_event} == Policy.redact([1, 2, 3])
@@ -383,9 +331,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
     end
 
     test "an event with no exception at all is still classifiable" do
-      # A Sentry *message* event has no `exception`; it has a log entry. The
-      # relay accepts it (a background failure logged at error level is exactly
-      # the signal this packet is for) and it still needs a class.
       assert {:ok, "internal_error"} == Policy.classify(event(%{"exception" => nil}))
     end
   end
@@ -459,10 +404,6 @@ defmodule Courier.ErrorRelay.PolicyTest do
     end
 
     test "an unredactable event fingerprints to a constant rather than raising" do
-      # The relay computes the fingerprint from the REDACTED event, so this
-      # cannot normally happen — but a constant keeps a malformed event in the
-      # throttle table under one key instead of removing it, which is the
-      # difference between "throttled" and "not in the table at all".
       assert Policy.fingerprint("garbage") == Policy.fingerprint("more garbage")
     end
   end

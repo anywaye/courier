@@ -3,7 +3,6 @@ defmodule Courier.NotificationsTest do
   `notification_events` and `notifications`: what courier can now remember about
   what a person was told.
 
-  ## WHAT THIS FILE PROVES, AND WHAT IT DELIBERATELY DOES NOT
 
   It proves the **shape of the record**: one event addressed to one recipient,
   both rows carrying the account, `seen` and `read` being different facts, and
@@ -31,9 +30,6 @@ defmodule Courier.NotificationsTest do
   @account_id "d1e2f3a4-5b60-4718-8a9b-0c1d2e3f4a51"
   @other_account_id "e2f3a4b5-6c70-4829-9bac-1d2e3f4a5b62"
 
-  # Both tables are protected, so a write with no identity is refused `42501`.
-  # See `Courier.DataCase` for the measurement behind the suite running as
-  # `courier_app` at all.
   @moduletag account: @account_id
 
   @recipient {"user", "9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a"}
@@ -56,7 +52,6 @@ defmodule Courier.NotificationsTest do
     result
   end
 
-  # The first (and, with one recipient, only) notification out of a `record/2`.
   defp notify!(overrides \\ []) do
     %{notifications: [notification | _]} = record!(overrides)
     notification
@@ -74,8 +69,6 @@ defmodule Courier.NotificationsTest do
       assert event.account_id == @account_id
 
       assert notification.id
-      # The link is the whole two-table shape: a notification is not a copy of
-      # the event, it is the event addressed somewhere.
       assert notification.notification_event_id == event.id
       assert notification.recipient_type == "user"
       assert notification.recipient_id == "9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a"
@@ -95,13 +88,6 @@ defmodule Courier.NotificationsTest do
       assert %{event: event} = record!(params: %{})
       assert event.params == %{}
 
-      # **OMITTED IS NOT THE SAME AS NIL**, and the difference is a decision
-      # rather than an accident. Omitting `:params` takes the schema's
-      # `default: %{}` and the column is `null: false`, so a bag is always
-      # stored and a consumer never has to handle `nil`. Passing `params: nil`
-      # casts an explicit `nil` OVER the default and `validate_required` refuses
-      # it — which is right: a caller that wrote `params: nil` has said
-      # something, and courier should not quietly decide it meant "empty".
       assert {:error, {:event, changeset}} =
                Notifications.record(@account_id,
                  type: "comment",
@@ -113,8 +99,6 @@ defmodule Courier.NotificationsTest do
     end
 
     test "an event with no record at all is allowed, and is the common case" do
-      # "Your trial ends tomorrow" has no row behind it. Half a reference is a
-      # reference nobody can resolve, so BOTH columns or NEITHER.
       %{event: event} = record!(record_type: nil, record_id: nil)
 
       assert event.record_type == nil
@@ -150,10 +134,6 @@ defmodule Courier.NotificationsTest do
     end
 
     test "a recipient with a blank id is refused, and NOT NULL would not have" do
-      # The database's `NOT NULL` refuses the *absence* of a recipient and says
-      # nothing about the presence of an empty one — `{"user", ""}` satisfies a
-      # `NOT NULL` column perfectly well, and would be an inbox entry addressed
-      # to nobody.
       assert {:error, {:recipients, changeset}} =
                Notifications.record(@account_id, type: "comment", recipient: {"user", ""})
 
@@ -212,11 +192,6 @@ defmodule Courier.NotificationsTest do
     end
 
     test "a refused event writes NOTHING — the transaction rolls back" do
-      # **This is the assertion the moduledoc's transaction claim rests on.**
-      # `Repo.transaction/1` whose function RETURNS `{:error, …}` COMMITS; only a
-      # rollback or a raise fails it. So a `with` that returned the error would
-      # leave the event row behind with no notification — the "fan-out that has
-      # not happened" state this module exists to make impossible.
       assert {:error, {:event, _changeset}} =
                Notifications.record(@account_id, type: "carrier_pigeon", recipient: @recipient)
 
@@ -239,8 +214,6 @@ defmodule Courier.NotificationsTest do
       assert length(result.notifications) == 2
       assert length(Enum.uniq(Enum.map(result.notifications, & &1.notification_event_id))) == 1
 
-      # The second person's inbox has one row and the first person's has one row,
-      # which is the entire reason there are two tables rather than one.
       assert length(Notifications.list(@account_id, @recipient)) == 1
       assert length(Notifications.list(@account_id, @other_recipient)) == 1
       assert Notifications.unread_count(@account_id, @recipient) == 1
@@ -248,16 +221,6 @@ defmodule Courier.NotificationsTest do
     end
 
     test "THE SAME PERSON NAMED TWICE IS ONE ROW, AND BOTH ENTRIES ARE THE STORED ROW" do
-      # **THIS IS THE ASSERTION THE UNIQUE INDEX EXISTS FOR**, and it was
-      # unreachable through a single-recipient `record/2`: every call minted a new
-      # `notification_event_id`, so
-      # `notifications_one_per_recipient_index` could never fire and the
-      # `on_conflict: :nothing` branch was dead code. A constraint that cannot be
-      # violated is not a constraint.
-      #
-      # It is also the wrong-looking answer: two entries for one person is a
-      # caller that built a list badly, and an unread count that is one too high
-      # is the kind of bug nobody reports.
       {:ok, result} =
         Notifications.record(@account_id,
           type: "comment",
@@ -271,8 +234,6 @@ defmodule Courier.NotificationsTest do
     end
 
     test "a refusal on the SECOND recipient rolls the first one back too" do
-      # Partial fan-out is the failure this design exists to prevent: three of
-      # five people told is not a state anybody can render.
       good = @recipient
       bad = {"user", String.duplicate("a", 300)}
 
@@ -281,7 +242,6 @@ defmodule Courier.NotificationsTest do
 
       assert %{recipient_id: ["should be at most 255 character(s)"]} = errors_on(changeset)
 
-      # Neither the notification NOR the event it would have pointed at.
       assert Repo.aggregate(from(n in Notification), :count) == 0
       assert Repo.aggregate(from(e in NotificationEvent, where: e.type == "comment"), :count) == 0
     end
@@ -308,9 +268,6 @@ defmodule Courier.NotificationsTest do
 
   describe "list/3" do
     setup do
-      # Three in a known order, and every assertion below reads them back
-      # newest-first, so the order they are created in and the order the list
-      # answers in are opposites.
       %{one: notify!(), two: notify!(), three: notify!()}
     end
 
@@ -323,9 +280,6 @@ defmodule Courier.NotificationsTest do
     end
 
     test "another ACCOUNT sees nothing, even for the same recipient id", %{one: one} do
-      # The same person addressed by another account is a different inbox. That is
-      # the reason `account_id` is on both tables rather than derived from the
-      # event, and it is why the predicate leads with it.
       assert one.id in ids(@recipient)
 
       assert Notifications.list(@other_account_id, @recipient) == []
@@ -334,8 +288,6 @@ defmodule Courier.NotificationsTest do
     test "unread: true filters out what has been read", %{one: one, two: two, three: three} do
       assert {:ok, _} = Notifications.mark_read(@account_id, @recipient, one.id)
 
-      # Exactly the rows with no `read_at` — which is `two` and `three` and NOT
-      # "everything but the first".
       assert ids(@recipient, unread: true) == [three.id, two.id]
       assert one.id not in ids(@recipient, unread: true)
     end
@@ -345,23 +297,16 @@ defmodule Courier.NotificationsTest do
 
       assert marked.seen_at
       assert marked.read_at == nil
-      # The distinction the two columns exist for, and the reason the filter is on
-      # `read_at` rather than on "has been touched".
       assert two.id in ids(@recipient, unread: true)
     end
 
     test ":after pages backwards, strictly, without repeating the boundary row",
          %{one: one, two: two, three: three} do
-      # STRICT `<` and not `<=`, and the difference is the whole of the cursor: a
-      # boundary that repeats its row hands a client two copies of one
-      # notification and no way to tell which is which.
       assert ids(@recipient, after: three.inserted_at) == [two.id, one.id]
       assert ids(@recipient, after: one.inserted_at) == []
     end
 
     test ":after with something that is not a DateTime is no cursor at all", %{one: one} do
-      # A query parameter that arrived as the wrong shape is not a page and is not
-      # an error — it is a first page, which is the answer a caller can render.
       assert one.id in ids(@recipient, after: "yesterday")
       assert one.id in ids(@recipient, after: nil)
     end
@@ -379,10 +324,6 @@ defmodule Courier.NotificationsTest do
 
   describe "list/3 and the page size" do
     test "defaults to 25, honours a smaller limit, and caps at 100" do
-      # Exercised against the real query rather than by asserting a constant, so
-      # the cap is a property of `list/3` and not of a number in a comment. 130
-      # rows, because a cap of 100 cannot be told from a default of 100 by
-      # anything under the ceiling.
       for _ <- 1..130, do: record!()
 
       assert length(Notifications.list(@account_id, @recipient)) == 25
@@ -409,7 +350,6 @@ defmodule Courier.NotificationsTest do
       assert {:ok, _} = Notifications.mark_read(@account_id, @recipient, one.id)
       assert Notifications.unread_count(@account_id, @recipient) == 2
 
-      # Seen is not read, and the badge does not move for it.
       assert {:ok, _} = Notifications.mark_seen(@account_id, @recipient, two.id)
       assert Notifications.unread_count(@account_id, @recipient) == 2
     end
@@ -442,8 +382,6 @@ defmodule Courier.NotificationsTest do
       assert {:ok, first} = Notifications.mark_seen(@account_id, @recipient, one.id)
       assert {:ok, second} = Notifications.mark_seen(@account_id, @recipient, one.id)
 
-      # "When did they first see it" is a fact. A call that moved it would be
-      # answering a different question with the same function.
       assert second.seen_at == first.seen_at
     end
 
@@ -478,9 +416,6 @@ defmodule Courier.NotificationsTest do
       assert {:ok, marked} = Notifications.mark_read(@account_id, @recipient, one.id)
 
       assert marked.read_at
-      # Opening something is a stronger statement than seeing it, and a deep link
-      # can open a notification that was never in a list — so `read_at` with no
-      # `seen_at` is a row `notifications_read_implies_seen_check` refuses.
       assert marked.seen_at
       assert Notification.read?(marked)
       assert Notification.seen?(marked)
@@ -503,8 +438,6 @@ defmodule Courier.NotificationsTest do
       assert {:ok, read} = Notifications.mark_read(@account_id, @recipient, one.id)
 
       assert read.seen_at == seen.seen_at
-      # An unread filter that resets on every page load is a count nobody can act
-      # on, so neither mark ever clears the other.
       assert Notifications.unread_count(@account_id, @recipient) == 0
     end
 
@@ -547,19 +480,11 @@ defmodule Courier.NotificationsTest do
     end
 
     test "it is NOT Courier.Mailers.types/0 and NOT Courier.Events.types/0" do
-      # Three lists, three questions: what courier tells a person inside the
-      # product, what it sends as mail, and what it puts on the bus for other
-      # services. Folding this one into either of the others would make every
-      # in-app event a bus event, and `anywaye.yml`'s `exposes.events` is a
-      # contract with core's frozen payload schemas.
       assert Notifications.types() != Courier.Mailers.types()
       assert Notifications.types() != Courier.Events.types()
     end
   end
 
-  # The ids, and nothing else. Every list assertion in this file is about WHICH
-  # rows came back and in WHAT order, so asserting on ids keeps a change to a
-  # column out of a test about ordering.
   defp ids(recipient, opts \\ []) do
     @account_id
     |> Notifications.list(recipient, opts)

@@ -3,14 +3,12 @@ defmodule CourierWeb.UnsubscribeControllerTest do
   `POST` and `GET /unsubscribe/:token` over real requests: the RFC 8058 one-click
   door, and everything the recipient's mail client can do to it.
 
-  ## This is the file that proves the endpoint, and it drives the real router
 
   Not `Courier.Unsubscribes` — that is `Courier.UnsubscribesTest`, and a library
   test cannot show that the route is served, that the token in the path is what is
   read, that an unauthenticated `POST` is not a 401, or that no `Location` header
   comes back. Those are all facts about HTTP.
 
-  ## The body is exercised the way RFC 8058 §8.1 spells it
 
   The RFC's own worked example sends
   `Content-Type: application/x-www-form-urlencoded` with the body
@@ -19,7 +17,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
   request is one of the tests: an endpoint that only worked for an empty body
   would work for nobody.
 
-  ## The `POST` that acts on the path rather than on the body
 
   `Plug.Parsers` merges a request body into `conn.params`, so a body carrying its
   own `token` could name a different mailbox than the path did — and the whole
@@ -27,7 +24,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
   request, with a real token in the body and a real one in the path, and asserts
   the path won.
 
-  ## What is deliberately NOT tested here
 
   **No 401.** RFC 8058 §3.1 forbids this request from carrying authorization at
   all, and `openapi.yaml` declares no 401 for either operation; a token courier
@@ -38,10 +34,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
 
   use CourierWeb.ConnCase, async: true
 
-  # `from/2` only: `ConnCase` imports the connection helpers and nothing from
-  # `Ecto.Query`, so the one query macro this file needs is imported by name
-  # rather than dragging in `update/3`, which `CourierWeb.Plugs.Idempotency`'s
-  # tests would then have to work around.
   import Ecto.Query, only: [from: 2]
 
   alias Courier.OutboxEvent
@@ -54,8 +46,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
   @account "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # An address the changeset refuses, written straight past it: what a deployment
-  # gets when an address rule tightens under a token minted years ago.
   @unusable_email "not an address"
 
   defp address, do: "unsubscribe-#{System.unique_integer([:positive])}@example.com"
@@ -70,9 +60,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
 
   describe "the one-click POST" do
     test "unsubscribes with no session, no header and no body", %{conn: conn, path: path} do
-      # RFC 8058 §3.1: the request "MUST NOT include cookies, HTTP
-      # authorization, or any other context information" — so this is the shape the
-      # MUA is *forbidden* to deviate from, and the one every mail client sends.
       response = post(conn, path)
 
       assert response.status == 200
@@ -84,11 +71,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
       path: path,
       token: token
     } do
-      # The RFC's own worked example, verbatim: urlencoded, with the key/value
-      # pair as the body. §3.2 also says "Since there is no provision for extra
-      # POST arguments, any information about the message or recipient is encoded
-      # in the URI" — so courier reads none of it, and this proves it reads none
-      # of it rather than merely not requiring it.
       response =
         send_request(
           conn,
@@ -104,8 +86,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     end
 
     test "and a multipart body reaches it too", %{conn: conn, path: path} do
-      # §3.2 gives `multipart/form-data` as the SHOULD and urlencoded as the MAY,
-      # so the endpoint has to survive the one browsers send.
       boundary = "----courierunsubscribe"
 
       payload =
@@ -149,15 +129,9 @@ defmodule CourierWeb.UnsubscribeControllerTest do
       first = post(conn, path)
       second = post(build_conn(), path)
 
-      # Byte for byte, not merely the same status: a mail client that retried must
-      # not be able to tell a retry from a first attempt, and a body that said
-      # "already_unsubscribed" would be a body a client has to understand.
       assert body(first) == body(second)
       assert second.status == 200
 
-      # Scoped, never counted over the table: `email_suppressions` and
-      # `outbox_events` are shared by every test in this repository, and a whole-
-      # table count is a claim about all of them.
       assert 1 ==
                Repo.one(from s in Suppression, where: s.email == ^email, select: count(s.id))
 
@@ -174,9 +148,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
       path: path,
       email: email
     } do
-      # The whole authority of this route is the path segment, and
-      # `Plug.Parsers` merges the body into `conn.params` — so a body naming its
-      # own `token` is a way to act on a mailbox the URL did not.
       other = address()
       {:ok, other_token} = Unsubscribes.issue(@user_id, "password_reset", other)
 
@@ -195,11 +166,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     end
 
     test "and it is not a redirect, which RFC 8058 §3.1 forbids", %{conn: conn, path: path} do
-      # "The mail sender MUST NOT return an HTTPS redirect, since redirected
-      # POST actions have historically not worked reliably, and many browsers have
-      # turned redirected HTTP POSTs into GETs." A redirect is the one thing here
-      # that would work for a browser and silently break the mail client that
-      # matters, and its absence is not something a client would report.
       response = post(conn, path)
 
       assert response.status == 200
@@ -207,9 +173,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     end
 
     test "and no response quotes an address or a user", %{path: path, email: email} do
-      # An unauthenticated surface: anything echoed back is available to whoever
-      # found the URL, and the token is not a session. Both answers and both
-      # refusals are checked, because the refusal is the one a forger can iterate on.
       for request <- [
             fn -> post(build_conn(), path) end,
             fn -> get(build_conn(), path) end,
@@ -228,8 +191,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
 
   describe "the GET fallback" do
     test "unsubscribes too, and answers the same body", %{conn: conn, path: path} do
-      # RFC 8058 §3.2: the POST target is "the same as the one in the GET action
-      # for a manual unsubscription", and some clients only ever follow a link.
       response = get(conn, path)
 
       assert response.status == 200
@@ -248,9 +209,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
       conn: conn,
       path: path
     } do
-      # The shape of the document is asserted in `openapi.yaml` and checked in
-      # `openapi_error_responses_test.exs`: the `GET` declares no 400, and this
-      # is the request that makes that true rather than a claim about a parser.
       assert send_request(conn, :get, path, "{not json", "application/json").status == 200
     end
   end
@@ -273,9 +231,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     end
 
     test "and a token that is not a token's shape is the SAME answer" do
-      # One answer, so the endpoint is not an oracle that can be used to test
-      # tokens. Anything that distinguishes "no such token" from "not a token" is
-      # a distinction a forger can use.
       for garbage <- ["nope", "x", String.duplicate("z", 43), "a/b", "1"] do
         response = post(build_conn(), "/unsubscribe/#{garbage}")
 
@@ -285,9 +240,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     end
 
     test "and it is a 404 rather than a 401, because the token is an address" do
-      # Asserted here as well as in the document, because the temptation to reach
-      # for 401 is exactly what would make this endpoint's refusals legible: a 401
-      # says "your credential is not acceptable" and there is no credential here.
       response = post(build_conn(), "/unsubscribe/#{UnsubscribeToken.generate()}")
 
       refute response.status == 401
@@ -315,10 +267,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     end
 
     test "503 when courier could not write the answer, and nothing was written" do
-      # The row's address is one the changeset refuses — which is what a deployment
-      # gets after an address rule tightens under a token minted years ago. The
-      # transaction unwinds, so there is no answer without its announcement and no
-      # announcement about an answer courier does not hold.
       insert_token_for("welcome", @unusable_email)
 
       response = post(build_conn(), "/unsubscribe/#{stale_token()}")
@@ -327,10 +275,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
       assert problem_json?(response)
       assert body(response)["code"] == "unavailable"
 
-      # Scoped to this user's own rows rather than counted over the table: a
-      # `Repo.aggregate(T, :count) == 0` is a claim about every other test in the
-      # repository as much as about this one, which is the shape REPORT-courier-15
-      # documents.
       assert Repo.all(from s in Suppression, where: s.email == @unusable_email) == []
       assert Repo.all(from event in OutboxEvent, where: event.subject == @user_id) == []
     end
@@ -389,26 +333,13 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     end
   end
 
-  # --- helpers ---------------------------------------------------------------
 
-  # A connection courier will authenticate: the header
-  # `Courier.TestSupport.HeaderResolver` reads, named through the plug's own
-  # accessor so a rename of it cannot leave this test sending a header nothing
-  # looks at. The content type is set here rather than per call because
-  # `Phoenix.ConnTest` refuses a binary body without one, and every request in
-  # this file that has a body is JSON.
   defp authenticated do
     build_conn()
     |> Plug.Conn.put_req_header(CourierWeb.Plugs.Principal.account_header(), @account)
     |> Plug.Conn.put_req_header("content-type", "application/json")
   end
 
-  # `Phoenix.NotAcceptableError` is raised by the `:accepts` plug and carries no
-  # conn, so the response RenderErrors would send never reaches a caller — the
-  # status is read off the exception's own `plug_status`, which is Phoenix
-  # stating what it is about to answer. The same reading is in
-  # `CourierWeb.OpenAPIErrorResponsesTest` and it is the only place a 406 is
-  # visible at all.
   defp status_refusing_json(verb, path) do
     build_conn()
     |> Plug.Conn.put_req_header("accept", "text/html")
@@ -417,9 +348,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     error in Phoenix.NotAcceptableError -> error.plug_status
   end
 
-  # `Phoenix.ConnTest` has no helper for a body with a content type, and the two
-  # requests that matter here (RFC 8058's urlencoded example and the
-  # parameter-injection attempt) both need one.
   defp send_request(conn, verb, path, body, content_type, opts \\ []) do
     conn =
       conn
@@ -446,9 +374,6 @@ defmodule CourierWeb.UnsubscribeControllerTest do
     is_binary(content_type) and String.starts_with?(content_type, "application/problem+json")
   end
 
-  # The address a token was minted for, read back out of the row rather than
-  # carried beside the token — so an assertion about "the address this token
-  # unsubscribed" cannot pass by agreeing with a local variable.
   defp address_for(token_or_path) do
     token = token_or_path |> to_string() |> String.split("/") |> List.last()
     {:ok, %UnsubscribeToken{email: email}} = Unsubscribes.find(token)

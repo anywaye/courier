@@ -15,7 +15,6 @@ defmodule Courier.TestSupport.FakeResend do
   `test/courier/inbound/signature_test.exs`, not this fake. This fake makes the
   tests convenient; the vector makes them true.
 
-  ## Payloads are built from the documented shape
 
   `bounce/1`, `complaint/1` and `delivery_delayed/1` construct the JSON Resend
   documents at <https://resend.com/docs/webhooks/emails/bounced> and its
@@ -24,7 +23,6 @@ defmodule Courier.TestSupport.FakeResend do
   that could build an impossible payload is a fake whose tests pass for reasons
   that do not exist in production.
 
-  ## What it does not do
 
   It does not verify. There is nothing here that checks a signature, because the
   only honest check of a signature is `Courier.Inbound.Signature.verify/4` and a
@@ -224,10 +222,6 @@ defmodule Courier.TestSupport.FakeResend do
     )
   end
 
-  # Encoded rather than built with `Jason.encode!` so the bytes are the ones a
-  # test reads in its own source. A test asserting against a fake's own encoder is
-  # asserting against a re-serialization, which is precisely the thing spec
-  # §Signature scheme says breaks signature verification.
   defp envelope(type, data, created_at) do
     """
     {"type":"#{type}","created_at":"#{created_at}","data":#{encode(data)}}\

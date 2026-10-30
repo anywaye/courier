@@ -14,7 +14,6 @@ defmodule CourierWeb.Plugs.Idempotency do
   | "Replay with the same key but a different body returns 409 `idempotency_key_reused`" | `reused/1` |
   | "Requests without the key are processed normally" | the first clause of `call/2` |
 
-  ## The fourth case, which core does not describe
 
   Two requests with one key arriving **at the same time** is not a retry — the
   first has not answered yet, so there is no response to give back. core's five
@@ -28,7 +27,6 @@ defmodule CourierWeb.Plugs.Idempotency do
   client that hits it knows to retry the same key shortly rather than to change
   anything.
 
-  ## The hash is over the decoded body
 
   `request_hash/1` hashes the **parsed** params, not the bytes on the wire. Two
   bodies that mean the same thing are therefore the same request, and a client
@@ -41,7 +39,6 @@ defmodule CourierWeb.Plugs.Idempotency do
   is an **endpoint** plug, so it has already read and parsed the body by the time
   any router pipeline runs.
 
-  ## Nothing here logs the key or the body
 
   A stored `response_body` on `POST /v1/webhook_endpoints` is the 201 carrying the
   `whsec_` signing secret. A log line carrying it would be a credential in a log,
@@ -89,8 +86,6 @@ defmodule CourierWeb.Plugs.Idempotency do
 
   def call(conn, _opts) do
     case present(conn) do
-      # core: "Requests without the key are processed normally." No row, no
-      # lookup, no response the client did not ask for.
       nil -> conn
       key -> keyed(conn, key)
     end
@@ -104,21 +99,6 @@ defmodule CourierWeb.Plugs.Idempotency do
     end
   end
 
-  # The claim is taken *here*, before the controller, and the answer is stored in
-  # `before_send` — the only ordering in which a second request with this key can
-  # find a row rather than run the action again.
-  #
-  # Each database call below runs inside its own `Tenancy.with_account/3`: the
-  # claim, the lookup, and the store each open the transaction that carries the
-  # caller's account to the row-level-security policies on `idempotency_keys`.
-  # A plug cannot hold one transaction open across the plugs and the controller
-  # that run after it returns — `CourierWeb.Plugs.TenantIdentity` tried exactly
-  # that, and every authenticated request's protected-table access died on the
-  # first write with a 42501 — so the scope lives where a transaction can
-  # legitimately wrap the work: around each unit of it. `conn.assigns.
-  # current_account` is the tenancy key in every case, put there by
-  # `CourierWeb.Plugs.Principal`, which runs before this plug and halts a 401
-  # for a caller that has none.
   defp guarded(conn, key) do
     account_id = conn.assigns.current_account
     endpoint = conn.request_path
@@ -139,14 +119,6 @@ defmodule CourierWeb.Plugs.Idempotency do
     end
   end
 
-  # `{:error, _}` from `with_account/3` means the scoped transaction itself
-  # failed to commit — a genuine rollback, not a refusal carried as data.
-  # Refusals that are data (`{:error, :taken}`, changesets) arrive inside the
-  # `{:ok, …}` wrap: `Repo.transaction/1` commits on any normal return, so the
-  # wrap only keeps the two shapes distinct. A security control that raises
-  # `MatchError` on a shape it cannot explain is one whose failure nobody has
-  # diagnosed, and the answer is the same shape the rest of courier uses for
-  # "a dependency did not work": a 503 the caller may retry.
   defp scoped(conn, fun) do
     case Tenancy.with_account(Repo, conn.assigns.current_account, fn -> {:ok, fun.()} end) do
       {:ok, {:ok, value}} -> value
@@ -176,13 +148,6 @@ defmodule CourierWeb.Plugs.Idempotency do
         unavailable(conn)
 
       nil ->
-        # Not reachable, and the reason is worth writing down rather than
-        # handling as though it were. `claim/1` deletes this triple's expired rows
-        # in the same transaction as the insert that reported `:taken`, so the row
-        # that blocked the insert was unexpired microseconds ago and cannot have
-        # become expired since. If it ever does, refusing is the safe direction: a
-        # caller that gets a 409 retries, and one that is let through would run a
-        # mutation nobody can deduplicate.
         Logger.error(
           "idempotency claim lost with no row to read: row=#{Ecto.UUID.generate()} " <>
             "endpoint=#{endpoint} status=409"
@@ -197,11 +162,6 @@ defmodule CourierWeb.Plugs.Idempotency do
   end
 
   defp store(conn, claim) do
-    # The store runs in `before_send`, after the controller's own scoped
-    # transaction has committed, so it opens its own — same account, new
-    # transaction. The result is deliberately ignored: the response is already
-    # built, and nothing here may turn it into a 500 (see `complete/3`'s
-    # rescue, which is the same rule one layer down).
     scoped(conn, fn ->
       case body(conn) do
         nil -> Idempotency.release(claim.id)
@@ -222,10 +182,6 @@ defmodule CourierWeb.Plugs.Idempotency do
     end
   rescue
     error ->
-      # A failure here must not turn a 201 into a 500: the mutation already
-      # happened and the caller has already been told it did. The worst case of
-      # not storing is a retry that re-runs, which is the behaviour courier had
-      # before this plug and is not a failure of the request in front of us.
       report(claim, conn.status, "raised while storing the response", error)
   end
 
@@ -243,8 +199,6 @@ defmodule CourierWeb.Plugs.Idempotency do
     |> halt()
   end
 
-  # Same key, different body. The message is specific about the two things that
-  # differ, because "conflict" on its own tells a client nothing it can act on.
   defp reused(conn) do
     Problem.send(
       conn,
@@ -257,8 +211,6 @@ defmodule CourierWeb.Plugs.Idempotency do
     |> halt()
   end
 
-  # Same key, same body, still running. See the moduledoc: core does not describe
-  # this case, and this is the code it is answered with.
   defp in_flight(conn) do
     Problem.send(
       conn,
@@ -300,22 +252,8 @@ defmodule CourierWeb.Plugs.Idempotency do
     |> halt()
   end
 
-  # `2xx`, by the status the controller actually produced.
   defp successful?(status), do: status in 200..299
 
-  # **The body is iodata, not a binary.** `Phoenix.Controller.json/2` encodes to
-  # iodata and hands that straight to `send_resp`, and `Plug.Conn` stores whatever
-  # it is given — so `conn.resp_body` inside a `before_send` callback is a deep
-  # list of binaries and byte lists, and `is_binary/1` is false for it.
-  #
-  # The first draft of this plug required a binary and so released every claim,
-  # which is the one failure mode with no error message: nothing raised, the
-  # request answered 201, and the retry simply created a second endpoint. It is
-  # written down here because the symptom points nowhere near the cause.
-  #
-  # `nil` means there is no body to store, and the claim is released instead: a
-  # 204 has already removed the resource, and a response with nothing in it is not
-  # one a retry should be answered with.
   defp body(conn) do
     if successful?(conn.status), do: flatten(conn.resp_body)
   end
@@ -345,14 +283,6 @@ defmodule CourierWeb.Plugs.Idempotency do
     :sha256 |> :crypto.hash(sha) |> Base.encode16(case: :lower)
   end
 
-  # Sorted, so the encoding of a given request is a property of the request
-  # rather than of the order a JSON object happened to arrive in.
-  #
-  # An empty map and no body at all are the same request, and they hash the same
-  # way: a JSON body of `{}` carries no fields, so treating it as different from
-  # sending nothing would make `POST /:id/test` — which has no body — conflict
-  # with itself depending on whether a client's HTTP library bothered to send an
-  # empty object.
   defp canonical(%Plug.Conn.Unfetched{}), do: ""
   defp canonical(params) when is_map(params) and map_size(params) == 0, do: ""
   defp canonical(%{__struct__: _} = struct), do: inspect(struct)

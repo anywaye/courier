@@ -2,14 +2,12 @@ defmodule CourierWeb.Plugs.IngestToken do
   @moduledoc """
   The shared secret on the error-ingestion surface, and a refusing default.
 
-  ## Why a shared secret rather than a principal
 
   The callers are three services holding a DSN, not three people holding a JWT.
   A Sentry SDK authenticates an envelope with the public key in its DSN, and there
   is no identity service in that path to mint one. So the surface takes a
   **shared secret**, and this plug is the whole of that authorisation.
 
-  ## The secret arrives where the SDK puts it, not where courier would prefer
 
   The token is read from **`X-Sentry-Auth`, as `sentry_key`** — the header every
   Sentry SDK builds from its DSN's userinfo
@@ -34,7 +32,6 @@ defmodule CourierWeb.Plugs.IngestToken do
   auth header. It is not a second secret and adds no surface; when both headers
   are present they must agree.
 
-  ## Every ambiguity is a refusal, not a resolution
 
   A repeated `X-Sentry-Auth`, a repeated `sentry_key` inside one header, a header
   with no `Sentry ` scheme prefix, a repeated `x-anywaye-error-token`, and two
@@ -51,7 +48,6 @@ defmodule CourierWeb.Plugs.IngestToken do
   and for the same reason — a default here would be a secret in version control
   that every deployment which forgot to set one would accept error reports from.
 
-  ## What it compares, and why
 
   `Plug.Crypto.secure_compare/2`. A `==` on a secret is a timing oracle, and the
   value being compared is the only thing standing between the public internet (in
@@ -61,14 +57,12 @@ defmodule CourierWeb.Plugs.IngestToken do
   signature verification uses — `Courier.Webhooks.Signature` is the precedent, and
   the reason is the same.
 
-  ## The failure answer is `401` with a body that says nothing
 
   `CourierWeb.Problem`, with core's reserved `unauthorized` code. Not a bare 401,
   not a JSON body describing which header was wrong: a caller with a wrong secret
   learns that the endpoint exists and nothing else, which is the same posture the
   rest of courier takes (see `CourierWeb.Plugs.Principal`).
 
-  ## A missing token is a *configuration* error, and it is logged as one
 
   A deployment that starts the relay without a token gets a log line naming
   `COURIER_ERROR_RELAY_TOKEN` on the first refused request, and every request is
@@ -86,10 +80,6 @@ defmodule CourierWeb.Plugs.IngestToken do
 
   require Logger
 
-  # The Sentry auth-header scheme prefix. Required rather than optional because a
-  # header that merely *contains* `sentry_key=` is not a Sentry auth header, and
-  # accepting one widens the set of things that authenticate without widening the
-  # set of things that are authenticated.
   @auth_scheme "Sentry "
 
   @impl Plug
@@ -123,26 +113,6 @@ defmodule CourierWeb.Plugs.IngestToken do
     end
   end
 
-  # The token arrives in **`X-Sentry-Auth`, as `sentry_key`** — not in a
-  # courier-invented header. This is the second thing this plug had wrong, and
-  # both the wrongness and the fix are in the SDKs rather than here: a Sentry SDK
-  # authenticates an envelope with the public key out of its DSN's userinfo,
-  # formatted as `X-Sentry-Auth: Sentry sentry_version=7, sentry_client=…,
-  # sentry_key=<key>` (see `deps/sentry/lib/sentry/transport.ex`, `get_endpoint_and_headers/0`,
-  # and the same convention in `sentry-go` and `sentry-ruby`). A relay that reads a
-  # header no SDK sends refuses every envelope of every client it exists to serve.
-  #
-  # So `COURIER_ERROR_RELAY_TOKEN` is the *key half* of what an operator writes as
-  # the DSN's userinfo — `http://<token>@courier:4003/1` — and it arrives here
-  # exactly as the SDK sends it. That is the whole reason the relay can be fed by
-  # three unmodified SDKs with no bespoke HTTP client on any of them.
-  #
-  # `x-anywaye-error-token` is still read, and deliberately: an operator debugging a
-  # deployment with `curl` should not have to hand-assemble a Sentry auth header to
-  # find out whether the relay is up. It is a **second** accepted presentation of
-  # one secret rather than a second secret, so it adds no surface — and when both
-  # headers are present they must agree, which is asserted in
-  # `CourierWeb.ErrorRelayEndpointTest`.
   defp presented(conn) do
     with {:ok, header} <- one_header(conn, "x-sentry-auth"),
          {:ok, key} <- sentry_key(header) do
@@ -155,16 +125,6 @@ defmodule CourierWeb.Plugs.IngestToken do
     end
   end
 
-  # `"Sentry "` is the required scheme prefix from the Sentry auth-header spec, and
-  # the parameters are `name=value` pairs joined by `", "`. Only `sentry_key` is
-  # read: `sentry_version`, `sentry_client` and `sentry_timestamp` are the SDK's
-  # business, and a relay that validated them would refuse a working client over a
-  # version bump.
-  #
-  # A **repeated** `sentry_key` in one header is refused rather than resolved,
-  # for the same reason the repeated-header case below is: `sentry_key=wrong,
-  # sentry_key=right` is a header-injection shape on a shared secret, and
-  # "the last one wins" is exactly the behaviour that makes it work.
   defp sentry_key(header) do
     with true <- String.starts_with?(header, @auth_scheme),
          params <- parse_params(header),
@@ -183,9 +143,6 @@ defmodule CourierWeb.Plugs.IngestToken do
     |> String.replace_prefix(@auth_scheme, "")
     |> String.split(",")
     |> Enum.map(&String.trim/1)
-    # `String.split(pair, "=", parts: 2)` so a value containing `=` survives: a
-    # base64 key can contain one, and splitting it would compare a prefix of the
-    # secret and always refuse.
     |> Enum.flat_map(fn pair ->
       case String.split(pair, "=", parts: 2) do
         [name, value] -> [{String.trim(name), value}]
@@ -194,9 +151,6 @@ defmodule CourierWeb.Plugs.IngestToken do
     end)
   end
 
-  # A **repeated header** is refused rather than resolved, for the reason in the
-  # comment on the test: a plug that took `List.first/1` would accept
-  # `token: wrong, token: right`, and last-one-wins is a header-injection surface.
   defp one_header(conn, name) do
     case get_req_header(conn, name) do
       [value] -> {:ok, value}
@@ -204,9 +158,6 @@ defmodule CourierWeb.Plugs.IngestToken do
     end
   end
 
-  # Constant-time, and the lengths are compared first because
-  # `Plug.Crypto.secure_compare/2` returns false for a length mismatch without
-  # doing the work — which is fine, because a length mismatch is not a secret.
   defp secure?(presented, expected) do
     Plug.Crypto.secure_compare(presented, expected)
   end
@@ -219,10 +170,5 @@ defmodule CourierWeb.Plugs.IngestToken do
     |> halt()
   end
 
-  # The reason is for the log line, not for the caller. The body says the same
-  # thing for all three, which is the point: a caller must not be able to
-  # distinguish "no token configured" from "wrong token", because the first is a
-  # fact about the deployment and the second is a fact about the caller, and only
-  # the second is any use to an attacker.
   defp detail(_reason), do: "a valid error relay token is required"
 end

@@ -1,9 +1,3 @@
-# Toolchain pins for this repository. Elixir and Erlang are pinned here and in
-# the Dockerfile, and nowhere else: mix.exs carries a `~>` floor for library
-# consumers, not a second exact version.
-#
-#   mise install        # install the pinned toolchain
-#   mise run prime      # the gate: deps, database, tests
 [tools]
 elixir = "1.20.4-otp-29"
 erlang = "29.1.1"

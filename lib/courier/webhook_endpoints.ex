@@ -3,7 +3,6 @@ defmodule Courier.WebhookEndpoints do
   The context over `webhook_endpoints`: registering an endpoint, changing it,
   removing it, and the two states the delivery pipeline asks about.
 
-  ## The URL is checked here, not in the changeset
 
   `create/1` and `update/2` run `Courier.Webhooks.UrlGuard` before touching the
   database. That ordering is the whole security property: an SSRF target is
@@ -16,7 +15,6 @@ defmodule Courier.WebhookEndpoints do
   call — `config :courier, :dns_resolver`. That is also what makes the SSRF tests
   possible without a network.
 
-  ## The secret
 
   Generated on create, returned once, sealed at rest. `create/1` answers
   `{:ok, endpoint, secret}` — the plaintext is handed back here and nowhere else,
@@ -56,9 +54,6 @@ defmodule Courier.WebhookEndpoints do
     with {:ok, url} <- fetch_url(attrs) do
       changeset = WebhookEndpoint.changeset(%WebhookEndpoint{}, attrs)
 
-      # The shape is validated before the guard so a malformed url costs no DNS
-      # lookup, and a well-formed-looking one cannot be waved past the shape by
-      # resolving before anyone noticed it was nonsense.
       case valid?(changeset) do
         false -> {:error, changeset}
         true -> create_validated(changeset, url)
@@ -70,13 +65,6 @@ defmodule Courier.WebhookEndpoints do
     with :ok <- check_url(url) do
       secret = Signature.generate_secret()
 
-      # `mode: :savepoint` is the failure containment: a refused insert (a
-      # duplicate url) is a STATEMENT error, and Postgres aborts the enclosing
-      # transaction on one — without the savepoint the changeset would poison
-      # the request's own scoped commit and turn a 422 into a 500. An inner
-      # `Repo.transaction/1` with `Repo.rollback/1` is NOT the remedy: nested
-      # Ecto transactions are not savepoints, and an inner rollback fails the
-      # outer commit (measured as `{:error, :rollback}`).
       case changeset |> put_secret(secret) |> Repo.insert(mode: :savepoint) do
         {:ok, endpoint} -> {:ok, endpoint, secret}
         {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
@@ -130,9 +118,6 @@ defmodule Courier.WebhookEndpoints do
     |> Repo.all()
   end
 
-  # Core's openapi-conventions: "Cursor-based everywhere… `limit` defaults to 25
-  # and is capped at 100. `cursor` is an opaque base64url string; clients must not
-  # parse it, and its encoding may change without notice."
   @default_limit 25
   @max_limit 100
 
@@ -161,8 +146,6 @@ defmodule Courier.WebhookEndpoints do
         |> order_by([endpoint], asc: endpoint.inserted_at, asc: endpoint.id)
         |> limit(^Kernel.+(limit, 1))
 
-      # `limit + 1` rows is how `has_more` is answered without a second query: ask
-      # for one more than was asked for, and if it arrives there is another page.
       rows = query |> after_row(after_row) |> Repo.all()
       has_more? = length(rows) > limit
       page = Enum.take(rows, limit)
@@ -203,14 +186,6 @@ defmodule Courier.WebhookEndpoints do
 
   defp validate_limit(_limit), do: {:error, :invalid_limit}
 
-  # Opaque to the client, per core: the encoding is courier's and may change. What
-  # it has to carry is the row's position, because the comparison is a lower bound
-  # on `(inserted_at, id)` rather than an offset.
-  #
-  # The timestamp goes in as ISO 8601 rather than as a `DateTime` struct, because
-  # `Jason.encode!/1` on a struct writes its `Inspect` representation — which is not
-  # what `DateTime.from_iso8601/1` reads back. A cursor that does not survive its
-  # own round trip is a cursor that 422s on the second page of every list.
   defp encode_cursor(%WebhookEndpoint{} = endpoint) do
     [DateTime.to_iso8601(endpoint.inserted_at), endpoint.id]
     |> Jason.encode!()
@@ -243,18 +218,10 @@ defmodule Courier.WebhookEndpoints do
 
     if valid?(changeset) do
       with :ok <- check_url(Ecto.Changeset.get_field(changeset, :url)) do
-        # `mode: :savepoint`, for the same reason as `create_validated/2`: a
-        # refused update must not poison the request's own scoped commit.
-        # (An inner `Repo.transaction/1` with `Repo.rollback/1` is not the
-        # remedy — see above.)
         case changeset |> Repo.update(mode: :savepoint) do
           {:ok, updated} -> {:ok, updated}
           {:error, %Ecto.Changeset{} = changeset} -> {:error, changeset}
         end
-        # A customer re-enabling an endpoint clears courier's failure count and
-        # reason with it: they looked at the endpoint courier gave up on and said
-        # to try again, and leaving "5 consecutive failures, last: connection
-        # refused" on a row that is now enabled is courier second-guessing them.
         |> clear_reason_when_reenabled(endpoint)
       end
     else
@@ -263,11 +230,6 @@ defmodule Courier.WebhookEndpoints do
   end
 
   defp clear_reason_when_reenabled({:ok, updated}, endpoint) do
-    # The count goes with the reason. A customer who re-enables an endpoint that
-    # courier tripped has been told "5 consecutive failures" and has decided to
-    # try again; carrying the count forward means the circuit re-opens on their
-    # very next failure, before the new attempt has had a chance to succeed, which
-    # is not what "try again" can reasonably mean to them.
     if endpoint.status == :disabled and updated.status == :enabled and
          is_binary(updated.disabled_reason) do
       updated
@@ -306,15 +268,6 @@ defmodule Courier.WebhookEndpoints do
   """
   @spec trip(WebhookEndpoint.t(), pos_integer(), String.t()) :: result()
   def trip(%WebhookEndpoint{} = endpoint, threshold, reason) do
-    # The count is read from the row, not from the struct that was passed in. A
-    # delivery worker holds one endpoint struct across several deliveries, and
-    # incrementing a stale copy means every one of them writes the same number —
-    # so the counter never reaches the threshold and the circuit never opens. That
-    # is the shape of bug this is here to prevent, not a theoretical one.
-    #
-    # `Repo.reload/1` is not enough on its own: it answers the struct it was given
-    # when the struct is already loaded, which is the case this is guarding. So
-    # the row is fetched by id instead.
     case fetch(endpoint.id) do
       %WebhookEndpoint{} = current -> record_failure(current, threshold, reason)
       nil -> {:error, :not_found}
@@ -401,10 +354,6 @@ defmodule Courier.WebhookEndpoints do
     end
   end
 
-  # Re-enables only when courier is the one that disabled it, which it records by
-  # writing a `disabled_reason`. A customer-disabled endpoint has none, because
-  # courier did not write one — and a single lucky delivery must not undo a
-  # decision the customer made about their own endpoint.
   defp maybe_reenable(changeset) do
     if changeset.data.status == :disabled and is_binary(changeset.data.disabled_reason) do
       Ecto.Changeset.change(changeset, status: :enabled, disabled_reason: nil)
@@ -417,8 +366,6 @@ defmodule Courier.WebhookEndpoints do
     Ecto.Changeset.put_change(changeset, :secret, SecretBox.seal(secret))
   end
 
-  # `nil` is allowed through: `update/2` falls back to the row's own url, and a
-  # changeset with no url at all fails on its own `validate_required/2`.
   defp fetch_url(attrs) do
     case attrs[:url] || attrs["url"] do
       url when is_binary(url) -> {:ok, url}

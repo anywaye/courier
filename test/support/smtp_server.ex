@@ -17,7 +17,6 @@ defmodule Courier.TestSupport.SmtpServer do
       `RCPT TO` / `DATA` / `QUIT`;
     * `handle_DATA/4` receiving the bytes a provider would have received.
 
-  ## It is `:gen_smtp_server`, not a hand-rolled socket
 
   `gen_smtp` ships a server as well as a client, on top of `ranch`. Using it
   rather than a `:gen_tcp` accept loop that replies `"250 ok\\r\\n"` to anything
@@ -27,7 +26,6 @@ defmodule Courier.TestSupport.SmtpServer do
   body that arrives empty are all failures rather than things the test cannot
   see.
 
-  ## The port
 
   `start_link/1` passes `port: 0` and reads the assigned port back. A written-down
   port is a port another process can hold: two workers running this suite at once
@@ -37,7 +35,6 @@ defmodule Courier.TestSupport.SmtpServer do
   to, because courier's other services and their tests are running at the same
   time.
 
-  ## How a test reads what arrived
 
   The listener is a ranch supervisor and each session is its own process, so the
   process running a test cannot simply `assert_receive` what `handle_DATA/4`
@@ -52,9 +49,6 @@ defmodule Courier.TestSupport.SmtpServer do
 
   use GenServer
 
-  # The ranch listener name. `ranch` registers listeners globally, so it has to
-  # be the same on every start — and the same means a leftover listener from an
-  # earlier test is recoverable rather than fatal.
   @listener :courier_smtp_test_server
 
   @typedoc "One message as the server received it on the wire."
@@ -110,14 +104,8 @@ defmodule Courier.TestSupport.SmtpServer do
 
   @impl true
   def init(options) do
-    # `:ordered_set` so `messages/1` reads oldest-first without sorting on a
-    # timestamp that two messages in the same millisecond would tie.
     table = :ets.new(__MODULE__, [:ordered_set, :public])
 
-    # A plain `GenServer.start_link/3` here, not `start_supervised!/1` in the
-    # caller: the caller needs the port, and `start_supervised!/1` returns only
-    # the pid. Handing the port back from `init/1` is what lets a test configure
-    # the adapter against a real listener without knowing a port in advance.
     case start_listener(table, options) do
       {:ok, port} ->
         {:ok, {table, port}}
@@ -127,27 +115,12 @@ defmodule Courier.TestSupport.SmtpServer do
     end
   end
 
-  # `:gen_smtp_server.start/3`, NOT `start_link/3` — there is no `start_link`, and
-  # that is deliberate on its part rather than an omission: a ranch listener is
-  # already supervised by `ranch_sup`, so a link from this GenServer would put a
-  # listener's exit reason into this process's own termination and make a failed
-  # test look like a failed server.
-  #
-  # `start/3` rather than `start/2` because `start/2` registers the listener as
-  # `:gen_smtp_server`, and the name has to be the same one `stop/1` below and
-  # `:ranch.get_port/1` ask about. Using `start/2` registers under one name and
-  # then fails to find the port under another, which is the `{:error, :not_found}`
-  # from `stop/1` below — a mismatch that reads like a ranch bug.
   defp start_listener(table, options) do
     case :gen_smtp_server.start(@listener, __MODULE__.Callback, listener_options(table, options)) do
       {:ok, _pid} ->
         {:ok, :ranch.get_port(@listener)}
 
       {:error, {:already_started, _pid}} ->
-        # A listener from an earlier test in this VM is still registered, because
-        # the ranch listener is supervised independently of the server process
-        # that started it. The name is global; the port is the only thing it
-        # holds, and taking it back is what makes these tests re-runnable.
         :ok = :gen_smtp_server.stop(@listener)
         start_listener(table, options)
 
@@ -160,13 +133,9 @@ defmodule Courier.TestSupport.SmtpServer do
     [
       domain: "courier.test",
       address: {127, 0, 0, 1},
-      # Zero means "the kernel picks a free ephemeral port". See the moduledoc.
       port: 0,
       sessionoptions: [
         protocol: :smtp,
-        # `callbackoptions` is handed verbatim to the session's `init/4`, which is
-        # how a session process that knows nothing about this test finds the ETS
-        # table and the credentials it is meant to check.
         callbackoptions: [
           {:table, table},
           {:username, Keyword.get(options, :username)},
@@ -202,13 +171,6 @@ defmodule Courier.TestSupport.SmtpServer do
     :ok
   end
 
-  # --------------------------------------------------------------------------
-  # The SMTP callback module.
-  #
-  # Separate because `:gen_smtp_server` dispatches to it by name, and because its
-  # state is a session's state — the ETS table is the only thing the session and
-  # the server share.
-  # --------------------------------------------------------------------------
 
   defmodule Callback do
     @moduledoc false
@@ -232,15 +194,6 @@ defmodule Courier.TestSupport.SmtpServer do
 
     @impl true
     def handle_EHLO(_hostname, extensions, state) do
-      # Advertise AUTH always, so a test can drive a real authenticated session
-      # and one can drive an unauthenticated one.
-      #
-      # The names are CHARLISTS, not binaries — `gen_smtp_server_session` calls
-      # `:string.to_upper/1` on each extension name while rendering the EHLO
-      # reply, and that function is undefined for a binary. The example module
-      # in gen_smtp uses strings for the same reason; `{"AUTH", "PLAIN LOGIN"}`
-      # with a binary name crashes the session on the first EHLO, which is a
-      # spectacularly unhelpful way to learn this.
       {:ok, extensions ++ [{~c"AUTH", ~c"PLAIN LOGIN"}], state}
     end
 
@@ -282,11 +235,6 @@ defmodule Courier.TestSupport.SmtpServer do
 
     @impl true
     def handle_AUTH(_type, username, credential, state) do
-      # Checked against the credentials the SERVER was started with rather than
-      # against a hard-coded pair, so a test can prove courier sent the username
-      # and password it was configured with — which is the whole claim. Absent
-      # credentials accept anything: some tests only need the AUTH exchange to
-      # happen, not to be verified.
       expected = {state.username, state.password}
       offered = if is_tuple(credential), do: credential, else: {username, credential}
 

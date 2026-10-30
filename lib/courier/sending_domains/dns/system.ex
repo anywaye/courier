@@ -5,14 +5,13 @@ defmodule Courier.SendingDomains.Dns.System do
   `:inet_res` is OTP's own DNS client — no dependency, no socket library, no
   second resolver dialect in the fleet. It answers MX as
   `{preference, exchange}` and TXT as a list of strings, both off the
-  `#dns_rr.data` field, and both are normalised by this module so the proof
+  `
   compares values.
 
-  ## The return shape, measured rather than remembered
 
   `:inet_res.resolve/3` answers `{:ok, {dns_rec, header, query, answers,
   authority, additional}}` — the answers are the FOURTH element of the inner
-  tuple, and each is a `#dns_rr{}` record whose `data` field (element 7) is
+  tuple, and each is a `
   the payload. Measured on OTP 29.1.1 against a real resolver:
 
       {ok,{dns_rec,{dns_header,...},
@@ -24,7 +23,6 @@ defmodule Courier.SendingDomains.Dns.System do
   match because the `dns_rr` fields are positional and an extract-and-defrecord
   in a hot path is ceremony the proof does not need.
 
-  ## What a lookup failure means here
 
   `:inet_res` answers `{:error, reason}` for a name that does not resolve, a
   resolver that is unreachable, and a response it cannot parse. All of them
@@ -35,9 +33,6 @@ defmodule Courier.SendingDomains.Dns.System do
 
   @behaviour Courier.SendingDomains.Dns
 
-  # The `#dns_rr{}` field positions in OTP 29's `inet_dns.hrl`: domain, type,
-  # class, cnt, ttl, data, tm, bm, func. `data` is the sixth field after the
-  # record name, i.e. element 7 of the tuple.
   @dns_rr_data 7
 
   @impl Courier.SendingDomains.Dns
@@ -61,16 +56,8 @@ defmodule Courier.SendingDomains.Dns.System do
   end
 
   @doc false
-  # Exposed for the seam's own test: the parsing of `:inet_res`'s record shapes
-  # is the untested half, and a test that cannot control the answer cannot test
-  # it. This function is the answer side without the network.
   def parse_records(answers, type) when type in [:mx, :txt], do: parse(answers, type)
 
-  # MX: `data` is `{Prefer, Exchange}`, both charlists. The exchange is
-  # normalised the same way the schema normalises a domain — lowercased,
-  # trailing dot removed — because the proof compares it against a literal
-  # and `route1.mx.cloudflare.net.` is not the same string as
-  # `route1.mx.cloudflare.net`.
   defp parse(answers, :mx) do
     Enum.map(answers, fn rr ->
       {preference, exchange} = :erlang.element(@dns_rr_data, rr)
@@ -78,8 +65,6 @@ defmodule Courier.SendingDomains.Dns.System do
     end)
   end
 
-  # TXT: `data` is a list of charlists (one per string in the record). Each
-  # becomes a string; the proof searches them by content.
   defp parse(answers, :txt) do
     Enum.flat_map(answers, fn rr ->
       :erlang.element(@dns_rr_data, rr) |> Enum.map(&to_string/1)

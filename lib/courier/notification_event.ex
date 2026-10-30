@@ -76,35 +76,6 @@ defmodule Courier.NotificationEvent do
     end)
   end
 
-  # **A POLYMORPHIC REFERENCE IS TWO HALVES AND THE HALVES TRAVEL TOGETHER.**
-  #
-  # `record_type = "Order"` with no `record_id` names an order courier cannot
-  # find, and a consumer rendering that row produces a link that 404s — so the
-  # pair is validated here rather than by a CHECK constraint, because the
-  # constraint and the changeset would be the same rule written twice, and two
-  # copies of one rule can only disagree by somebody remembering to update one.
-  #
-  # **`add_error/4` rather than returning the error list, and this was a real
-  # bug rather than a style.** The first draft returned the keyword list the
-  # `case` produced, which is the shape `validate_change/3` expects from *its*
-  # function and not the shape `changeset/2` returns from *this* one — so
-  # `changeset/2` answered with a **list**, and
-  # `Courier.Notifications.insert_event/2` piped that straight into
-  # `Ecto.Changeset.put_change/3`, which would have raised on the first
-  # `record_type`/`record_id` that reached this clause.
-  #
-  # **The type checker caught it before a test did**, which is the claim worth
-  # keeping: `mix compile --warnings-as-errors` reported
-  #
-  #     expected one of: %Ecto.Changeset{data: map(), types: map()}, term(), term()
-  #     where "attrs" was given the types:
-  #       dynamic(%{..., __struct__: not_set()})
-  #
-  # It names the shape and not the cause, so it is not a pleasant error — but a
-  # test asserting `{:error, {:event, changeset}}` for a bad `type` would have
-  # failed first, and the **valid** path (no record at all) would not have
-  # reached this clause on a record-carrying test until somebody wrote one. The
-  # checker refused to compile a shape that could not work.
   defp validate_record_reference(changeset) do
     type = get_change(changeset, :record_type)
     id = get_change(changeset, :record_id)

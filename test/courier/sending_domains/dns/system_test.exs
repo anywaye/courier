@@ -5,7 +5,7 @@ defmodule Courier.SendingDomains.Dns.SystemTest do
   side: the shipped `Courier.SendingDomains.Dns.System` (`:inet_res`) itself.
 
   The untested half is the parsing of `:inet_res`'s record shapes — the
-  `#dns_rr.data` field for MX (`{preference, exchange}` charlist) and TXT
+  `
   (list of charlists) and the normalisation the module does on top (lowercase,
   trailing-dot-free). That parsing is what would silently mis-verify a domain
   if it were wrong, so that is the subject.
@@ -21,8 +21,6 @@ defmodule Courier.SendingDomains.Dns.SystemTest do
 
   alias Courier.SendingDomains.Dns.System
 
-  # A dns_rr is a 10-tuple: {dns_rr, domain, type, class, cnt, ttl, data, tm, bm, func}
-  # Only `data` (element 7, 1-indexed) matters for parsing; the rest is ignored.
   defp rr(data) do
     {:dns_rr, ~c"example.com", :mx, :in, 0, 0, data, :undefined, :undefined, false}
   end
@@ -167,7 +165,6 @@ defmodule Courier.SendingDomains.Dns.SystemTest do
     end
 
     test "trims trailing dot from domain before querying" do
-      # The stub only answers the trimmed name; a trailing dot is stripped.
       Application.put_env(:courier, :sending_domain_inet_res, StubOk)
       assert {:ok, _} = System.mx("mx.example.com.")
       assert {:ok, _} = System.txt("txt.example.com.")

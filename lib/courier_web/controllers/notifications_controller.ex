@@ -3,7 +3,6 @@ defmodule CourierWeb.NotificationsController do
   The JSON API over in-app notifications: `GET /v1/notifications`,
   `GET /v1/notifications/unread_count`, and the two marks.
 
-  ## THE RECIPIENT COMES FROM THE PRINCIPAL, AND THAT IS THE WHOLE DESIGN
 
   A notification is addressed to `{"user", <a user id>}`, and the user id is the
   **caller's own identity subject** — the `sub` claim identity's introspection
@@ -24,7 +23,6 @@ defmodule CourierWeb.NotificationsController do
   account from the principal, and the same failure this surface refuses by taking
   the user id from the token and never from the request at all.
 
-  ## THE ACCOUNT COMES FROM THE PRINCIPAL, NEVER FROM THE REQUEST
 
   `conn.assigns.current_account` is the tenancy key, and it is the account
   `CourierWeb.Plugs.Principal` resolved from the caller's token. An `account_id`
@@ -34,7 +32,6 @@ defmodule CourierWeb.NotificationsController do
   account is the caller's because the token says so, and a caller that could name
   an account would be a caller who could read another tenant's inbox.
 
-  ## A ROW IN ANOTHER ACCOUNT, OR ONE THAT IS NOT THIS RECIPIENT'S, IS A 404
 
   Not a 403, and not a 422. Core's conventions forbid a 403 that leaks the
   existence of a resource the caller cannot see, and `Courier.Notifications`
@@ -44,7 +41,6 @@ defmodule CourierWeb.NotificationsController do
   answer for an id that is not a uuid at all, so the error shape leaks nothing
   about whether the row exists.
 
-  ## THE MARKS ARE IDEMPOTENT BY CONSTRUCTION, AND SO TAKE NO IDEMPOTENCY-KEY
 
   `Courier.Notifications.mark_seen/3` and `mark_read/3` set `seen_at`/`read_at`
   with `coalesce`, so a second call returns the same row with the **first**
@@ -145,27 +141,10 @@ defmodule CourierWeb.NotificationsController do
     end)
   end
 
-  # The recipient is the caller's own identity subject, and it is read from the
-  # principal the plug assigned — never from the request. A `nil` subject (a
-  # token that carried no `sub`, or the test resolver's stand-in) addresses
-  # `{"user", nil}`, which matches no row: an inbox for a caller courier cannot
-  # place is an empty inbox, not an error and not a guess.
   defp recipient(conn) do
     {"user", conn.assigns.current_principal.subject}
   end
 
-  # The whole action runs inside one transaction carrying the caller's account,
-  # so the row-level-security policies on `notification_events` and
-  # `notifications` have an identity to key on. A plug cannot hold such a
-  # transaction open across the controller — see `Courier.Tenancy` — so each
-  # action opens its own, with the account `CourierWeb.Plugs.Principal`
-  # stashed.
-  #
-  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable
-  # by construction: the context rolls back only inside its own inner
-  # transaction. Handled as a 503 rather than matched away, on the same rule
-  # as `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller
-  # retries.
   defp scoped(conn, fun) do
     case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
       {:ok, conn} -> conn
@@ -183,15 +162,6 @@ defmodule CourierWeb.NotificationsController do
     |> halt()
   end
 
-  # The five fields the API promises, and no others. `id` is courier's row id,
-  # which a client needs to mark a row; `notification_event_id` is the event the
-  # row is about, which a client needs to correlate; `seen_at` and `read_at` are
-  # the two facts the marks write. `account_id` is courier's tenancy key rather
-  # than the caller's to read, so it is not in the body — a caller that already
-  # holds the account knows it. `recipient_type`/`recipient_id` are the
-  # addressing, and they are the caller's own by construction, so they are not
-  # echoed either: a response that echoed the recipient would be a response that
-  # confirmed a fact the request never established.
   defp notification_json(notification) do
     %{
       id: notification.id,
@@ -201,26 +171,13 @@ defmodule CourierWeb.NotificationsController do
     }
   end
 
-  # A row in another account, or one that is not this recipient's, is the same
-  # answer a webhook endpoint in another account gets and for the same reason: a
-  # 403 would tell a caller that this id has a notification at all, which is the
-  # only fact the 404 exists to withhold.
   defp not_found(conn) do
     Problem.send(conn, 404, :not_found, "No notification with that id.")
   end
 
-  # `"true"` and nothing else. The context's `unread/2` filters on the boolean
-  # `true`, so the string `"true"` would be ignored if it were passed through —
-  # and a client that sent `?unread=true` and got every row back would have no
-  # way to tell the filter was not applied from the fact that it was not.
   defp parse_unread("true"), do: true
   defp parse_unread(_other), do: nil
 
-  # An integer or `nil`, and the context does the rest: `nil` and a non-positive
-  # integer are the default of 25, and anything above 100 is capped. Parsing here
-  # rather than passing the string through is what makes `?limit=50` mean 50 —
-  # the context's `page_size/2` treats a non-integer as the default, so a string
-  # would silently become 25.
   defp parse_limit(nil), do: nil
 
   defp parse_limit(limit) do
@@ -230,11 +187,6 @@ defmodule CourierWeb.NotificationsController do
     end
   end
 
-  # A `%DateTime{}` or `nil`, and the context applies the cursor only to a
-  # `DateTime`. RFC 3339 is the format the `after` cursor is documented in, and a
-  # value that does not parse is ignored rather than refused — the same rule
-  # `limit` follows, and the same reason: a query parameter is not a mistake
-  # anybody is helped by a 422 for.
   defp parse_after(nil), do: nil
 
   defp parse_after(cursor) do

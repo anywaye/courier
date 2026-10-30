@@ -3,7 +3,6 @@ defmodule CourierWeb.WebhookEndpointsController do
   The JSON API over webhook endpoints: `POST`, `GET`, `PATCH`, `DELETE` and
   `POST /:id/test` under `/v1/webhook_endpoints`.
 
-  ## Authorization
 
   Every action reads the account from `conn.assigns.current_account`, which
   `CourierWeb.Plugs.Principal` put there, and never from the body. An
@@ -17,7 +16,6 @@ defmodule CourierWeb.WebhookEndpointsController do
   existence." A 403 would tell a caller that `8f3c…` exists and is not theirs,
   which is the only fact the 404 exists to withhold.
 
-  ## The secret is in the create response and nowhere else
 
   `POST` answers with the `whsec_` signing secret, once. No other action can
   produce it, and there is no action that returns it: a `GET` that could hand out
@@ -25,14 +23,12 @@ defmodule CourierWeb.WebhookEndpointsController do
   registers a new endpoint rather than asking courier to re-issue one that might
   have been read on the way.
 
-  ## Pagination
 
   Cursor-based, per core: `?limit=` (default 25, capped at 100) and an opaque
   `?cursor=`, answered with `data` and `page`. The cursor is courier's encoding and
   clients must not parse it; one that courier cannot decode is a 422 rather than a
   silent first page.
 
-  ## The test action
 
   `POST /:id/test` sends a signed `ping` and answers with the status the receiver
   gave, so a customer can find out whether their endpoint works without waiting for
@@ -177,9 +173,6 @@ defmodule CourierWeb.WebhookEndpointsController do
     end)
   end
 
-  # A signed ping, sent on the same path a real delivery uses: the same signature,
-  # the same headers, the same sender. A test action with its own signing would
-  # pass here and fail on the first real event.
   defp ping(%WebhookEndpoint{} = endpoint) do
     with {:ok, secret} <- WebhookEndpoints.secret(endpoint) do
       webhook_id = Courier.Webhooks.Signature.new_id()
@@ -201,17 +194,6 @@ defmodule CourierWeb.WebhookEndpointsController do
     end
   end
 
-  # The whole action runs inside one transaction carrying the caller's account,
-  # so the row-level-security policies on `webhook_endpoints` have an identity
-  # to key on. A plug cannot hold such a transaction open across the
-  # controller — see `Courier.Tenancy` — so each action opens its own, with the
-  # account `CourierWeb.Plugs.Principal` stashed.
-  #
-  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable
-  # by construction: the context rolls back only inside its own inner
-  # transactions. Handled as a 503 rather than matched away, on the same rule
-  # as `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller
-  # retries.
   defp scoped(conn, fun) do
     case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
       {:ok, conn} -> conn
@@ -229,12 +211,8 @@ defmodule CourierWeb.WebhookEndpointsController do
     |> halt()
   end
 
-  # The seven fields the API promises, and no others.
   defp endpoint_json(%WebhookEndpoint{} = endpoint), do: endpoint_json(endpoint, nil)
 
-  # The secret is the eighth field, and it is only ever present here — on a
-  # create. Every other action renders without it, so there is no code path that
-  # can put a signing secret in a response body by accident.
   defp endpoint_json(%WebhookEndpoint{} = endpoint, secret) do
     %{
       id: endpoint.id,
@@ -267,10 +245,6 @@ defmodule CourierWeb.WebhookEndpointsController do
     )
   end
 
-  # A refusal from the SSRF guard rather than a validation failure. The url is a
-  # well-formed url that courier will not send to, and the field error says which
-  # class it was so the customer is told their host resolves to a private address
-  # rather than that they typed it wrong.
   defp blocked(conn, reason) do
     Problem.send(
       conn,

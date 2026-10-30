@@ -71,11 +71,6 @@ defmodule Courier.WebhookDelivery do
     )
   end
 
-  # `status` is settable at insert only so a row can be written in a state other
-  # than `pending` — a delivery whose first attempt already happened, which is
-  # what a crash between the request and the record looks like. It is not a
-  # caller-facing field: `Courier.WebhookDeliveries` is the only thing that
-  # decides what a delivery's status is.
   defp put_status(changeset, attrs) do
     Ecto.Changeset.put_change(changeset, :status, Map.get(attrs, :status, :pending))
   end

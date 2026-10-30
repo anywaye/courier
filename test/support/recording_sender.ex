@@ -59,8 +59,6 @@ defmodule Courier.TestSupport.RecordingSender do
       body: request.payload
     })
 
-    # The queued answer wins over the one in the request, so a test that asked
-    # for a 500 gets a 500 even when the caller had already filled in a 200.
     response = Process.delete(:courier_recording_sender_response) || Map.new(request)
 
     answer(response)
@@ -85,9 +83,6 @@ defmodule Courier.TestSupport.RecordingSender do
 
     {:ok,
      %Sender.Result{
-       # §Delivery success and failure: "A webhook delivery is considered
-       # successful if it was responded to with a `2xx` status code (status codes
-       # 200-299), and it is considered a failure in any other scenario."
        success?: status in 200..299,
        status_code: status,
        duration_ms: Map.get(response, :duration_ms, 12),
@@ -95,8 +90,6 @@ defmodule Courier.TestSupport.RecordingSender do
      }}
   end
 
-  # Only the delta-seconds form, which is what the spec's example consumer sends.
-  # A date form is read as absent rather than misread as a number of seconds.
   defp retry_after(%{response_headers: headers}) when is_map(headers) do
     case Map.get(headers, "retry-after") do
       value when is_binary(value) ->

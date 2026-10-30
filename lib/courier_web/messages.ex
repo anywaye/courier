@@ -13,7 +13,6 @@ defmodule CourierWeb.Messages do
   accepted with no sign that anything was ignored. So every key is checked against
   the list below, and an unknown one is a 422.
 
-  ## Why the sender is not a request field
 
   The brief for this surface asked for a `from`, and there is not one. courier's
   sender is `config :courier, :mailing[:from]` and the subjects beside it, because
@@ -29,7 +28,6 @@ defmodule CourierWeb.Messages do
   because `user_id` really is a field and this request's own `type` overwrites
   what a payload would have carried.
 
-  ## Why the bodies are templates rather than request fields
 
   The same argument one layer in. courier sends *transactional* mail that it
   renders from `lib/courier/mailers/templates/`, and a raw `text`/`html` pair on
@@ -39,7 +37,6 @@ defmodule CourierWeb.Messages do
   message rather than on the request — `Courier.Mailers.body?/1`, called from
   `Courier.Deliver` where the message is the only thing in hand.
 
-  ## `to` is `email`, and the mapping is here rather than in the controller
 
   `Courier.Mailers` has always keyed the recipient as `email`, because that is
   what the platform's event payloads carry. Over HTTP the same field reads as
@@ -50,15 +47,8 @@ defmodule CourierWeb.Messages do
 
   alias Courier.Mailers
   alias Courier.Notifiers
-  # The keys a body may carry, in the order `openapi.yaml` lists them.
   @wire_fields ~w(type user_id to name url account_name invited_by role reason previous_email)
 
-  # The subset that becomes a `Courier.Deliver` payload, paired with its atom
-  # rather than derived from its string: `type` is deliberately absent (the
-  # context takes it as an argument, not as payload) and `to` is absent because
-  # it is spelled `email` there. Written as literal pairs rather than through
-  # `String.to_existing_atom/1`, so this module cannot fail to compile on an atom
-  # a dependency happens not to have interned yet.
   @payload_fields [
     user_id: "user_id",
     name: "name",
@@ -97,7 +87,6 @@ defmodule CourierWeb.Messages do
   a body in one round trip is a caller who will; a caller who has to guess which
   of five fields was wrong will fix the wrong one.
 
-  ## What is checked here, and what is deliberately not
 
   Only the three things a cast through `Courier.Mailers` cannot catch:
 
@@ -124,12 +113,6 @@ defmodule CourierWeb.Messages do
     end
   end
 
-  # `type` gets two checks, and they are different questions. Absent or blank is a
-  # missing field; present and not a type courier sends is a value courier refuses
-  # to guess at. Both are caught here rather than left to
-  # `Courier.Deliver`'s `:unknown_notification_type`, because a body that is wrong
-  # in two ways should say so in one 422 — and because the second case has to name
-  # a field, which the context's bare atom cannot.
   defp type_error(params) do
     case params["type"] do
       type when is_binary(type) ->
@@ -148,19 +131,6 @@ defmodule CourierWeb.Messages do
     end
   end
 
-  # The per-type required fields and the address's own format, from
-  # `Courier.Mailers`' cast rather than from a second list here.
-  #
-  # This runs the render, which is wasted work on a request that was already
-  # refused — and the cost is paid on an error path, where one render is cheaper
-  # than a caller making a second round trip to be told the next thing that is
-  # wrong with its body. Every error is collected from both validators and rendered
-  # as one `errors[]`.
-  #
-  # Only the changeset's own failures are collected. Every other answer
-  # `build/2` can give is about courier rather than about this request — an unknown
-  # type is named above, where it can be attached to a field, and the two
-  # configuration errors are a 500 that belongs to the controller.
   defp payload_errors(params) do
     case Mailers.build(params["type"], payload(params)) do
       {:error, {:invalid_payload, changeset}} -> field_errors(changeset)
@@ -168,11 +138,6 @@ defmodule CourierWeb.Messages do
     end
   end
 
-  # The changeset's keys are courier's payload fields, and the caller's are the
-  # request's. `:email` is the only one the two spell differently, so it is mapped
-  # back here rather than leaving a 422 to name a field the caller never sent —
-  # core says `errors[].field` is the path in the *request*, because that is what
-  # the caller can fix.
   defp field_errors(changeset) do
     Enum.map(changeset.errors, fn {field, {_message, opts}} ->
       %{"field" => requested(field), "code" => Keyword.get(opts, :code, "invalid_format")}
@@ -182,9 +147,6 @@ defmodule CourierWeb.Messages do
   defp requested(:email), do: "to"
   defp requested(field), do: to_string(field)
 
-  # Sorted, so a body carrying two unknown keys names them in the same order on
-  # every run. A 422 whose `errors[]` reorders between runs is a 422 a caller
-  # cannot diff against the one it stored.
   defp unknown(params) do
     params
     |> Map.keys()
@@ -195,9 +157,6 @@ defmodule CourierWeb.Messages do
 
   defp missing(name), do: %{"field" => name, "code" => "required"}
 
-  # Trimmed before the cast as well as before the emptiness check, so `" {uuid} "`
-  # is accepted and `nil` is refused — both halves matter and they are separate
-  # questions about the same field.
   defp user_id_error(params) do
     case params["user_id"] do
       user_id when is_binary(user_id) and byte_size(user_id) > 0 ->
@@ -211,8 +170,6 @@ defmodule CourierWeb.Messages do
     end
   end
 
-  # Strings throughout, because that is what a decoded JSON body is and
-  # `Courier.Mailers.normalize/1` takes either spelling.
   defp payload(params) do
     Enum.reduce(@payload_fields, %{}, fn {field, key}, acc ->
       Map.put(acc, field, params[key])

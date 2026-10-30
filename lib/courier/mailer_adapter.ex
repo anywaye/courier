@@ -9,7 +9,6 @@ defmodule Courier.MailerAdapter do
   every send and mailed nobody. No error, no warning, no email — the worst
   failure a paid product can have, because it looks like success.
 
-  ## The three options, and why this is the third
 
   The brief offered three ways to stop the silent default:
 
@@ -33,7 +32,6 @@ defmodule Courier.MailerAdapter do
   setting. The prod path below therefore has no `Local` fallback to remove
   later — there is nothing there to remove.
 
-  ## What is configured, and from where
 
   Everything is read from the environment by `config/runtime.exs`, which is the
   only place that runs in a release before the application starts. The rule
@@ -58,7 +56,6 @@ defmodule Courier.MailerAdapter do
                                    the Cloudflare account id that owns the
                                    sending domain
 
-  ## A credential is never in a log line
 
   `describe/1` is the only function in courier that renders adapter
   configuration for a human, and it prints the host, the port and whether auth is
@@ -70,7 +67,6 @@ defmodule Courier.MailerAdapter do
   asserts the credential is absent from a captured log rather than trusting this
   comment.
 
-  ## The provider set is data
 
   `providers()` is the one table a third provider is added to. Each entry names
   the Swoosh adapter module, the Swoosh HTTP client it posts through (or `nil`
@@ -82,9 +78,6 @@ defmodule Courier.MailerAdapter do
 
   @default_port 587
 
-  # The adapters that do not reach a provider. `Local` renders into memory;
-  # `Test` hands the message to the process that sent it. Both are correct in
-  # the environment that configures them and both are a defect in `:prod`.
   @silent_adapters [Swoosh.Adapters.Local, Swoosh.Adapters.Test]
 
   @doc "The adapters that cannot deliver. Asserted directly by the test file."
@@ -120,7 +113,6 @@ defmodule Courier.MailerAdapter do
   Returns a keyword list suitable for
   `config :courier, Courier.Mailer, <that list>`.
 
-  ## The refusal
 
   Raises when the adapter is unset, or names one that cannot deliver. Both are
   refused rather than defaulted, and the messages say what to do:
@@ -182,11 +174,10 @@ defmodule Courier.MailerAdapter do
              end) do
           nil ->
             raise """
-            COURIER_MAIL_ADAPTER=#{inspect(other)} is not an adapter courier ships.
+            COURIER_MAIL_ADAPTER=
 
             Supported values:
 
-            #{supported_values()}
                 none    Local, development only. Refused in production.
 
             See Courier.MailerAdapter.
@@ -219,7 +210,6 @@ defmodule Courier.MailerAdapter do
   send through — rather than the environment, so it judges the outcome rather than
   the intent.
 
-  ## Why this is not the same check as `adapter!/1`
 
   `adapter!/1` runs in `config/runtime.exs` and raises on an unset or silent
   adapter named in the environment. That is the earlier refusal and on its own it
@@ -229,7 +219,6 @@ defmodule Courier.MailerAdapter do
   `config/dev.exs` and in `runtime.exs`), and a release built from a tree where
   somebody has configured the silent adapter directly.
 
-  ## Why it is silent outside `:prod`
 
   Test configures `Swoosh.Adapters.Test` on purpose — it is the right adapter for
   a suite, and `assert_email_sent/1` depends on it. A check that fired in every
@@ -243,7 +232,7 @@ defmodule Courier.MailerAdapter do
 
     if env == :prod and not deliverable?(adapter) do
       raise """
-      courier refuses to start: #{describe(adapter: adapter)} cannot deliver mail.
+      courier refuses to start:
 
       A courier that cannot send is worse than one that will not start. Running
       anyway means every send reports a message id, every send writes an outbox
@@ -271,7 +260,6 @@ defmodule Courier.MailerAdapter do
   @doc """
   A one-line description of the adapter for a startup log.
 
-  ## The password is not in here and must never be
 
   This is the function that exists so an operator can confirm which relay courier
   is pointed at without reading a config file. A username is left out too, and
@@ -297,29 +285,19 @@ defmodule Courier.MailerAdapter do
     end
   end
 
-  # One describer per provider, named by the provider table, so `describe/1`
-  # has no per-provider branch. Each prints the facts that tell two deployments
-  # apart and none of the facts that are credentials.
 
-  # SMTP: the host, the port, whether auth is on. Never the username and never
-  # the password — at SMTP a "username" is very often the API key.
   defp describe_smtp(config) do
     "adapter=smtp host=#{Keyword.get(config, :relay, "?")} " <>
       "port=#{Keyword.get(config, :port, @default_port)} " <>
       "auth=#{Keyword.get(config, :auth, :always)}"
   end
 
-  # Postmark: the provider and whether its token is set. The token itself is
-  # never rendered — "set" is the fact an operator needs, and the token is the
-  # credential.
   defp describe_postmark(config) do
     token = if Keyword.get(config, :api_key), do: "set", else: "unset"
 
     "adapter=postmark token=#{token}"
   end
 
-  # Cloudflare: the provider and whether its token and account id are set.
-  # Both are needed to form the request URL; neither value is ever printed.
   defp describe_cloudflare(config) do
     token = if Keyword.get(config, :api_key), do: "set", else: "unset"
     account = if Keyword.get(config, :account_id), do: "set", else: "unset"
@@ -327,10 +305,6 @@ defmodule Courier.MailerAdapter do
     "adapter=cloudflare token=#{token} account_id=#{account}"
   end
 
-  # The provider list in the unknown-adapter refusal, generated from the table
-  # rather than written out. A hand-written list would go stale the day a
-  # provider is added, and the staleness would be invisible — the refusal would
-  # keep naming the old set and every deployment would believe it.
   defp supported_values do
     providers()
     |> Enum.map(fn {name, module, _api_client, blurb, _build, _describe} ->
@@ -361,58 +335,6 @@ defmodule Courier.MailerAdapter do
     auth = auth()
     credentials = credentials(auth)
 
-    # The TLS handshake the hosted stack failed to complete, 2026-10-15:
-    # `{:retries_exceeded, {:temporary_failure, _, :tls_failed}}` on
-    # `smtp.resend.com:587` (STARTTLS), while the same pod's `openssl
-    # s_client -starttls smtp` verified `0 (ok)` with the same host, port and
-    # credentials. The failure was not the environment and not the config shape
-    # — `tls: :always`, `ssl: false`, port 587 and `auth: :always` were correct
-    # — but what the SMTP client put on the wire during STARTTLS.
-    #
-    # `gen_smtp` 1.3.0's `DEFAULT_OPTIONS` is
-    # `[{tls_options, [{versions, ['tlsv1', 'tlsv1.1', 'tlsv1.2']}] }]`.
-    # On OTP 29 `supported: [:"tlsv1.2", :"tlsv1.3"]` — `tlsv1` and `tlsv1.1`
-    # are `available` but not `supported`, and a modern endpoint that has
-    # disabled them has no overlap with what the client offered. Measured on
-    # this machine against `smtp.gmail.com:587` (the same STARTTLS shape as
-    # Resend): the old defaults answer `:tls_failed`, the new versions alone
-    # with `verify: :verify_none` still answer `:tls_failed`, and only a
-    # complete `verify: :verify_peer` chain succeeds past the handshake.
-    # `openssl` succeeded for the same reason a complete chain does — it
-    # verified against the OS store and presented SNI — while `gen_smtp` was
-    # offering the wrong versions and verifying nothing.
-    #
-    # So the options below are not a preference and not a hardening tweak:
-    # they are the reason the deployment could not sign up a user. Each has a
-    # failure it prevents, and weakening any of them is the defect class this
-    # fleet refuses — a mailer that skips peer verification is silent in the
-    # opposite direction, delivering mail to an attacker nobody can see.
-    #
-    #   `versions: [:"tlsv1.2", :"tlsv1.3"]` — the only versions OTP 29
-    #     supports; the old defaults cannot negotiate with an endpoint that
-    #     requires 1.2 or 1.3.
-    #   `verify: :verify_peer` — a mailer that does not verify the relay is
-    #     sending every transactional email to whoever answers STARTTLS.
-    #   `cacerts: :public_key.cacerts_get()` — the OS store, available since
-    #     OTP 25; the pod has it (161 entries on this build), and it is what
-    #     `openssl s_client` consulted while `gen_smtp` consulted nothing.
-    #   `server_name_indication` — set to the relay hostname as a charlist,
-    #     because without SNI the peer certificate is for the hostname but OTP
-    #     validates it against the IP (measured:
-    #     `{:bad_cert, {:hostname_check_failed, {:requested, {IP}},
-    #     {:received, [dNSName: ~c"host"]}}}`), and a hostname check that fails
-    #     on every deployment is a handshake that always fails closed.
-    #   `depth` and `customize_hostname_check` — the path-length and the HTTPS
-    #     name-matching rules the bootstrap would otherwise enforce with nothing
-    #     to enforce against (measured: `:max_path_length_reached` without them
-    #     when `verify: :verify_peer` without a depth).
-    #
-    # `tls_options` is the STARTTLS upgrade (`ssl: false` on 587, the shipped
-    # default); `sockopts` is the immediate TLS on 465 (`ssl: true`). Both are
-    # seeded so a deployment that flips `COURIER_SMTP_SSL=true` (port 465) is
-    # not the one that discovers its credentials travel in the clear. Each is
-    # appended after `tls`/`ssl` so the names the operator chose remain visible
-    # while the handshake courier actually sends is described here, once.
     tls_options =
       [
         versions: [:"tlsv1.2", :"tlsv1.3"],
@@ -432,24 +354,12 @@ defmodule Courier.MailerAdapter do
 
     cond do
       ssl_value ->
-        # Implicit TLS on 465: the initial `ssl:connect` reads `sockopts`, not
-        # `tls_options`. STARTTLS is not offered on an already-TLS connection,
-        # so `tls_options` there would be bytes nobody reads. Seed `sockopts`
-        # instead, and keep `tls_options` absent so a reader does not assume
-        # STARTTLS is still the path.
         base ++ [sockopts: tls_options]
 
       tls_value == :never ->
-        # `tls: :never` is explicit: no STARTTLS will be attempted, so the
-        # upgrade options are not consulted. Not seeding them keeps the
-        # configuration honest — a reader sees `tls: :never` and no
-        # `tls_options` pretending otherwise.
         base
 
       true ->
-        # The common and the previously broken path: STARTTLS on 587. The TLS
-        # upgrade reads `tls_options` directly, and `sockopts` would be an
-        # initial-TCP option nobody would ever pass to `ssl:connect` here.
         base ++ [tls_options: tls_options]
     end
   end
@@ -495,27 +405,6 @@ defmodule Courier.MailerAdapter do
     ]
   end
 
-  # The provider set, as data. One entry per provider courier can send through,
-  # and a third provider is an entry here plus the two functions its entry names
-  # — not a branch in `adapter!/1`, `describe/1` or the refusal messages.
-  #
-  #   name       — the value of COURIER_MAIL_ADAPTER
-  #   module     — the Swoosh adapter courier configures
-  #   api_client — the Swoosh HTTP client this provider posts through, or nil
-  #                for one that speaks its own protocol (SMTP dials `gen_smtp`
-  #                directly and never calls Swoosh's HTTP client)
-  #   blurb      — one line for the "supported values" refusal
-  #   build      — reads this provider's variables from the environment and
-  #                returns the Swoosh adapter configuration
-  #   describe   — renders the resolved configuration for the startup line
-  #
-  # A FUNCTION and not a module attribute, and that is forced rather than
-  # stylistic: a module attribute is expanded where it is written, and a capture
-  # of a local function inside one is a compile error no matter how the
-  # definitions are ordered (measured on Elixir 1.20.4 — `def bar; @f &bar/0`
-  # fails with "undefined function bar/0"). A function body is compiled with the
-  # whole module in scope, so the captures below resolve. It is read only at
-  # runtime, so nothing else about its position matters.
   defp providers do
     [
       {:smtp, Swoosh.Adapters.SMTP, nil,
@@ -529,9 +418,6 @@ defmodule Courier.MailerAdapter do
     ]
   end
 
-  # `auth: :always` needs both halves or `gen_smtp` refuses the options before it
-  # dials anything — `{error, :no_credentials}` from its own validation. Asking
-  # for it and getting a clear message here beats an opaque error at the socket.
   defp credentials(:never), do: []
 
   defp credentials(_auth) do
@@ -541,22 +427,17 @@ defmodule Courier.MailerAdapter do
     ]
   end
 
-  # The provider name is a parameter rather than a hard-coded "smtp" because
-  # the refusal is raised for either provider's variables, and an operator
-  # reading "COURIER_POSTMARK_API_TOKEN is missing, and COURIER_MAIL_ADAPTER is
-  # smtp" would be looking at the wrong deployment.
   defp required!(name, provider) do
     case env_string(name) do
       nil ->
         raise """
-        #{name} is missing, and COURIER_MAIL_ADAPTER is #{provider}.
 
         courier will not guess a relay or a credential. Without them the adapter
         has nowhere to connect and cannot authenticate, and a send would fail at
         the socket rather than at boot — which is the silent-default failure this
         module exists to end, one layer further out.
 
-        Set #{name} in the deployment's environment.
+        Set
         """
 
       value ->
@@ -564,14 +445,6 @@ defmodule Courier.MailerAdapter do
     end
   end
 
-  # The port is read as a string and converted here rather than by Swoosh, which
-  # would accept `"587"` and `String.to_integer/1` it. Doing the conversion
-  # ourselves means a non-numeric port is a boot failure naming the variable.
-  #
-  # `String.to_integer/1`'s own error is an `ArgumentError` whose message is
-  # "not a textual representation of an integer" — which names neither the
-  # variable nor the value, and reads as a bug in courier rather than as a
-  # typo in a deployment. Wrapped so the refusal is actionable.
   defp port do
     case env_string("COURIER_SMTP_PORT") do
       nil ->
@@ -584,9 +457,9 @@ defmodule Courier.MailerAdapter do
 
           _other ->
             raise """
-            COURIER_SMTP_PORT=#{inspect(value)} is not a port number.
+            COURIER_SMTP_PORT=
 
-            courier will not guess. The default is #{@default_port}, and an
+            courier will not guess. The default is
             unparseable value here would otherwise become an adapter error at the
             socket, once per send, for the life of the deployment.
             """
@@ -594,11 +467,6 @@ defmodule Courier.MailerAdapter do
     end
   end
 
-  # The enum-shaped options, all with the same rule: a value outside the set is a
-  # boot failure naming both the variable and the choices. Swoosh would accept
-  # these strings and `:string.to_atom/1` them into an atom nobody can grep for,
-  # so a typo would surface as an adapter behaving strangely at the socket rather
-  # than as a message naming `COURIER_SMTP_TLS`.
   defp auth, do: enum!("COURIER_SMTP_AUTH", [:always, :never, :if_available], :always)
 
   defp tls, do: enum!("COURIER_SMTP_TLS", [:always, :never, :if_available], :always)
@@ -611,15 +479,12 @@ defmodule Courier.MailerAdapter do
         default
 
       value ->
-        # Downcased because `COURIER_SMTP_TLS=Always` is obviously meant and
-        # `TLS=ALWAYS` is a reasonable thing for a shell to have produced.
         normalised = value |> String.downcase() |> String.trim()
 
         if normalised in Enum.map(allowed, &to_string/1) do
           Enum.find(allowed, &(to_string(&1) == normalised))
         else
           raise """
-          #{name}=#{inspect(value)} is not one of #{inspect(allowed)}.
 
           courier will not guess. An unrecognised value here would reach the
           socket as an atom nothing can grep for, and the send would fail with a
@@ -644,10 +509,6 @@ defmodule Courier.MailerAdapter do
   end
 
   defp env_string(name) do
-    # An EMPTY string is treated as unset rather than as a value. `FOO=` in a
-    # compose file or a Dockerfile produces `""`, and an empty host would be
-    # dialed and an empty password would be sent — both worse than the clear
-    # refusal this gives instead.
     case System.get_env(name) do
       nil -> nil
       "" -> nil
@@ -656,10 +517,6 @@ defmodule Courier.MailerAdapter do
   end
 
   @doc false
-  # `config_env/0` exists so `adapter!/1` has a default that tests can override by
-  # passing an environment. `Mix.env/0` is not the right source: it is not set
-  # inside a RELEASE, and a release that read it would treat itself as `:dev` and
-  # happily configure the Local adapter in production.
   def config_env do
     case Application.get_env(:courier, :environment, nil) do
       nil -> :prod

@@ -23,9 +23,6 @@ defmodule Courier.WebhookEndpointsConfigTest do
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account_id
 
   setup do
@@ -44,15 +41,6 @@ defmodule Courier.WebhookEndpointsConfigTest do
     WebhookEndpoints.create(%{url: url, account_id: account_id})
   end
 
-  # How many endpoint rows exist for one account.
-  #
-  # Scoped to the tenancy key on purpose. `Repo.aggregate(WebhookEndpoint, :count)`
-  # is a claim about every other test in the repository as much as about this one:
-  # it is green only while nothing else has ever written a row, and it turns red
-  # the instant one is visible — a statement about the order the suite happened to
-  # run in, not about `Courier.WebhookEndpoints`. Each test below that asserts
-  # "no row was written" mints its own account, so it is counting only what its
-  # own call could have written.
   defp rows_for(account_id) do
     Repo.aggregate(from(e in WebhookEndpoint, where: e.account_id == ^account_id), :count)
   end
@@ -80,8 +68,6 @@ defmodule Courier.WebhookEndpointsConfigTest do
   end
 
   test "a name that does not resolve is refused rather than stored" do
-    # Storing it and finding out later would leave a row courier has to remember
-    # is undeliverable; the customer gets the answer at the moment they ask.
     resolve_to(:nxdomain)
     account_id = Ecto.UUID.generate()
 
