@@ -56,6 +56,7 @@ defmodule Courier.Principal.Introspection.Transport.Req do
         {:ok, status, to_string(response_body)}
 
       {:error, exception} ->
+        Courier.ErrorReporting.capture(exception, :identity_unreachable, [])
         Logger.warning("[principal] identity is unreachable: #{inspect(exception.__struct__)}")
 
         {:error, :unreachable}
