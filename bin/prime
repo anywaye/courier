@@ -4,4 +4,8 @@ set -eu
 mix local.hex --force
 mix deps.get
 mix ecto.setup
+if [ -f ../platform/scripts/commentlint.py ]; then
+  python3 ../platform/scripts/commentlint.py . || exit 1
+fi
+
 mix test

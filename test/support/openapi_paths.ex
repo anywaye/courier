@@ -583,7 +583,7 @@ defmodule Courier.TestSupport.OpenAPIPaths do
   defp component_ref(body) do
     body
     |> Enum.find_value(fn {_indent, text, _n} ->
-      case Regex.run(~r/#\/components\/responses\/([A-Za-z0-9_.-]+)/, text) do
+      case Regex.run(~r/
         [_, name] -> name
         _ -> nil
       end
