@@ -3,7 +3,6 @@ defmodule CourierWeb.UnsubscribeController do
   `POST` and `GET /unsubscribe/:token` — the door RFC 8058 §3.1 points every bulk
   message's `List-Unsubscribe` header at.
 
-  ## Who calls this, and it is not a customer
 
   **A mail client, on the recipient's behalf.** Not a tenant, not a provider, not
   a browser session. So this route is deliberately outside `/v1` and behind no
@@ -14,7 +13,6 @@ defmodule CourierWeb.UnsubscribeController do
   information", and behind `CourierWeb.Plugs.Principal` every unsubscribe would
   be a 401.
 
-  ## The token in the path IS the authorization, and that is not a shortcut
 
   RFC 8058 §3.1 asks for "an opaque identifier or another hard-to-forge component"
   in the URI and §6 says why, in the plainest terms in the RFC: a malicious mailer
@@ -31,7 +29,6 @@ defmodule CourierWeb.UnsubscribeController do
   different mailbox than the path did — and the whole authority of this route is
   the path segment. `UnsubscribeControllerTest` drives exactly that request.
 
-  ## A wrong token is a 404, and it is the only refusal that names a resource
 
   `404 not_found` for a token courier never issued, a token of the wrong shape,
   and a token that is not a string. One answer, no oracle: a caller that could
@@ -46,7 +43,6 @@ defmodule CourierWeb.UnsubscribeController do
   what `openapi.yaml` declares for every other operation addressing one resource
   by id.
 
-  ## No redirect, and that is §3.1's rule rather than a style choice
 
   "The mail sender MUST NOT return an HTTPS redirect, since redirected POST
   actions have historically not worked reliably, and many browsers have turned
@@ -55,7 +51,6 @@ defmodule CourierWeb.UnsubscribeController do
   The test asserts the absence, because a redirect is the one thing here that
   would work for a browser and silently break the mail client that matters.
 
-  ## The `GET`, and why it returns JSON
 
   RFC 8058 §3.2 says the POST target is "the same as the one in the GET action for
   a manual unsubscription", and some clients and some corporate link-scanners only
@@ -68,7 +63,6 @@ defmodule CourierWeb.UnsubscribeController do
   a browser sees a small JSON object that says the same thing the mail client's
   button would have done, and there is no pretty version of it.
 
-  ## What the response says, and what it must not
 
   `{"data": {"status": "unsubscribed"}}` and nothing else. **No address, no user
   id, no notification type**, on any status: this is an unauthenticated surface, so
@@ -100,9 +94,6 @@ defmodule CourierWeb.UnsubscribeController do
   def show(conn, _params), do: unsubscribe(conn)
 
   defp unsubscribe(conn) do
-    # `path_params` and not `params`: see the moduledoc. The token is the whole
-    # of this route's authority, and a body that named its own would be a way to
-    # act on a mailbox the path did not.
     case Unsubscribes.unsubscribe(conn.path_params["token"]) do
       {:ok, _outcome} -> unsubscribed(conn)
       {:error, :unknown_token} -> no_such_token(conn)
@@ -110,23 +101,12 @@ defmodule CourierWeb.UnsubscribeController do
     end
   end
 
-  # One body for both outcomes, and the reason is in the moduledoc: `:recorded`
-  # and `:already_unsubscribed` are the same fact to a mail client, and a second
-  # `POST` is entitled to the answer the first one got.
   defp unsubscribed(conn), do: json(conn, %{data: %{status: "unsubscribed"}})
 
-  # No value from the request in the detail, and no distinction between "no such
-  # token" and "not a token". The token itself is a credential, so the response
-  # says nothing about how it failed.
   defp no_such_token(conn) do
     Problem.send(conn, 404, :not_found, "No unsubscribe with that token.")
   end
 
-  # 503 and not 500, on the reasoning `POST /inbound/resend` uses: the
-  # transaction unwound, so nothing was half-written, the unsubscribe has not
-  # happened, and the same `POST` is safe to repeat. The reason is logged rather
-  # than returned — it is PostgreSQL's own error string and this repository is
-  # public.
   defp not_recorded(conn, reason) do
     Logger.error("unsubscribe could not be recorded, and nothing was written: #{inspect(reason)}")
 

@@ -3,7 +3,6 @@ defmodule Courier.InboundConfigTest do
   The inbound signing secret: how it is stored, and the shape assertions that
   stand in for a boot this suite does not perform.
 
-  ## Why the shape is asserted and not just read
 
   Both of these were wrong at least once while this surface was being built, and
   neither is visible in a config file:
@@ -23,7 +22,6 @@ defmodule Courier.InboundConfigTest do
   `config/runtime.exs` refuses to boot without the variable, and this file holds
   it to the two shapes that would pass that refusal and still not work.
 
-  ## The production refusal itself is not tested here
 
   `config/runtime.exs` is not evaluated in the test environment — it is guarded by
   `config_env() == :prod` and running it would need a `DATABASE_URL` and a
@@ -63,31 +61,16 @@ defmodule Courier.InboundConfigTest do
     end
 
     test "carries a Svix secret, with the prefix `Courier.Inbound.Signature` requires" do
-      # A bare base64 key — which is what an operator pasting the wrong field out
-      # of the provider's dashboard gets — is `:invalid_secret`, and the route
-      # answers 500. Cheap to assert here rather than in production.
       assert "whsec_" <> _ = InboundConfig.secret("resend")
     end
   end
 
   describe "the test secret" do
     test "is the one `Courier.TestSupport.FakeResend` signs with" do
-      # This is the assertion that keeps the fixture from drifting. The value is
-      # written out in `config/test.exs` because the config reader runs before the
-      # application's modules are loaded, so it cannot call `FakeResend.secret/0`.
-      # Two copies of a secret is a real duplication, and the failure it invites is
-      # the quiet kind: a fixture the suite signs with and the application does not
-      # verify with turns every positive inbound test green for the wrong reason —
-      # except that a mismatch would make them 401, so this assertion is the thing
-      # that says which of the two is wrong.
       assert InboundConfig.secret("resend") == FakeResend.secret()
     end
 
     test "and the positive suite would notice if they stopped matching" do
-      # The mutation, stated as a test: a fake that signed with a different secret
-      # would make every positive assertion in `inbound_controller_test.exs` a
-      # 401, which is a red suite rather than a green one. Asserted here so the
-      # coupling is visible in the file that owns the fixture.
       assert FakeResend.signed(FakeResend.bounce()) |> elem(1) |> Map.values() |> Enum.any?()
       assert FakeResend.other_secret() != FakeResend.secret()
     end
@@ -99,8 +82,6 @@ defmodule Courier.InboundConfigTest do
     end
 
     test "answers nil for no provider at all" do
-      # A path the router matched nothing on, so `:inbound_provider` was never
-      # assigned. A missing assign must be a refusal and not a crash.
       assert InboundConfig.secret(nil) == nil
     end
 
@@ -111,10 +92,6 @@ defmodule Courier.InboundConfigTest do
 
   describe "configured_providers/0" do
     test "names the provider and never the secret" do
-      # A boot line an operator reads, and the reason it is a separate function
-      # rather than an `inspect/1` of the config: at a provider the secret IS the
-      # key, and the repository's rule about credentials reaching logs is the same
-      # one `Courier.MailerAdapter.describe/1` follows.
       assert InboundConfig.configured_providers() == ["resend"]
       refute inspect(InboundConfig.configured_providers()) =~ "whsec_"
     end

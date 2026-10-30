@@ -12,7 +12,6 @@ defmodule CourierWeb.SendingDomains do
   sign anything was ignored. So every key is checked against the list below and
   an unknown one is a 422.
 
-  ## Why `account_id` is in that set
 
   The account is `conn.assigns.current_account` — the account
   `CourierWeb.Plugs.Principal` resolved from the caller's token — and never the
@@ -24,7 +23,6 @@ defmodule CourierWeb.SendingDomains do
   it gives a genuinely-ignored extra, because this one is asking courier to
   attribute a credential to somebody else.
 
-  ## Why `credential` is a wire field but never a response field
 
   The credential is required on the way IN — the context seals it and stores
   ciphertext — and there is deliberately no read path that returns it:
@@ -34,9 +32,6 @@ defmodule CourierWeb.SendingDomains do
   with it, and this module is where the first of those is spelled.
   """
 
-  # The keys a body may carry, in the order `openapi.yaml` lists them. Every one
-  # of them is a field the context can act on: three it casts, and the credential
-  # it seals. Anything else is refused by name rather than dropped.
   @wire_fields ~w(domain provider provider_account_id credential)
 
   @doc """
@@ -67,9 +62,6 @@ defmodule CourierWeb.SendingDomains do
     end
   end
 
-  # Sorted, so a body carrying two unknown keys names them in the same order on
-  # every run. A 422 whose `errors[]` reorders between runs is a 422 a caller
-  # cannot diff against the one it stored.
   defp unknown(params) do
     params
     |> Map.keys()
@@ -78,11 +70,6 @@ defmodule CourierWeb.SendingDomains do
     |> Enum.map(&%{"field" => &1, "code" => "unknown_field"})
   end
 
-  # The three castable fields and the credential, keyed as `register/2` reads
-  # them. `provider` is left as the caller spelled it: the schema's `Ecto.Enum`
-  # is what decides whether it is a provider courier speaks, and a second list
-  # here would be a second place to keep in step with
-  # `Courier.TenantSendingDomain.providers/0`.
   defp attrs(params) do
     %{
       domain: params["domain"],

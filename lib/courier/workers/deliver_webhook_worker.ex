@@ -3,7 +3,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
   The sender: takes a due delivery, signs it, POSTs it, and records what came
   back — then decides whether that is worth another attempt.
 
-  ## What this worker is responsible for
 
   Everything between "a delivery is due" and "a delivery has an outcome": the
   signature, the request, the classification of the answer, the retry schedule,
@@ -11,7 +10,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
   `Courier.Webhooks.Sender` owns the classification, and this is the loop that
   puts them together and updates the endpoint's state.
 
-  ## The four outcomes, and what each does to the endpoint
 
   | answer | delivery | endpoint |
   | ------ | -------- | -------- |
@@ -26,7 +24,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
   threshold, because a consumer that is briefly down should not lose its endpoint
   over one bad minute.
 
-  ## Bounded, and bounded in two places
 
   A delivery is attempted at most `max_attempts` times and then left alone, and
   an endpoint is disabled after `circuit_threshold` consecutive failures. Both
@@ -34,7 +31,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
   retries, and the two bounds do different jobs: the first stops one delivery, the
   second stops all of them.
 
-  ## Concurrency
 
   Deliveries are claimed with `for update skip locked`, and the request is made
   inside that transaction. Holding the lock across the call is the same trade
@@ -93,16 +89,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
     {:ok, summary}
   end
 
-  # A delivery is attempted only if it is due, still inside its budget, and its
-  # endpoint is still enabled. `WebhookDeliveries.due/1` narrows by time and
-  # status; `claimable?/1` is what stops a delivery that has spent its budget from
-  # being picked up one more time.
-  #
-  # The endpoint check is not a filter for efficiency — it is the circuit
-  # breaker. A delivery dispatched before an endpoint was disabled still has a
-  # due `next_attempt_at`, and without this check the next run would send it,
-  # which is exactly what "stop sending it messages" says not to do. The delivery
-  # row is left alone rather than deleted: it is the record of what was owed.
   defp due_deliveries(limit) do
     enabled_endpoint_ids =
       WebhookEndpoint
@@ -116,20 +102,12 @@ defmodule Courier.Workers.DeliverWebhookWorker do
     |> lock_claimed()
   end
 
-  # The whole attempt. The endpoint and the event are loaded here rather than in
-  # the claim because a delivery row only points at them, and following those
-  # pointers inside the claim would mean holding three tables' locks for the
-  # length of a network call.
   defp attempt(%WebhookDelivery{} = delivery) do
     with {:ok, endpoint} <- fetch(WebhookEndpoint, delivery.endpoint_id),
          {:ok, event} <- fetch(OutboxEvent, delivery.event_id),
          {:ok, secret} <- WebhookEndpoints.secret(endpoint) do
       send_to(endpoint, delivery, event, secret)
     else
-      # A delivery whose endpoint is gone, whose event is gone, or whose secret
-      # cannot be opened is one courier cannot make. It is exhausted rather than
-      # retried: none of the three will fix itself, and retrying an unreadable
-      # secret is a hot loop against the sealing key.
       {:error, reason} -> {:skipped, %{delivery: delivery, reason: reason}}
     end
   end
@@ -162,9 +140,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
   end
 
   defp record_failure(%WebhookDelivery{} = delivery, %{endpoint: endpoint, result: result}) do
-    # The verdict on whether to try again is `Sender.retryable?/1`'s, and it is
-    # passed to the delivery rather than recomputed here: two modules deciding
-    # "is a 404 worth retrying" is one more place for the policy to drift.
     WebhookDeliveries.fail!(
       endpoint,
       delivery.event_id,
@@ -175,9 +150,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
     )
 
     if Sender.gone?(result) do
-      # §Delivery success and failure: a 410 receiver "should disable the webhook
-      # endpoint, and stop sending it messages". No counting to a threshold, and no
-      # waiting for one — the receiver has said what it wants.
       {:ok, _endpoint} =
         WebhookEndpoints.disable(
           endpoint,
@@ -189,15 +161,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
     end
   end
 
-  # A delivery courier could not attempt at all: its endpoint was deleted, its
-  # event was deleted, or its secret could not be opened. Recorded so the row is
-  # not left claiming to be pending, and marked non-retryable so the budget is not
-  # spent on something that will not change.
-  #
-  # If the endpoint row is really gone the delivery row is gone too — the foreign
-  # key cascades — so this only ever fires for a delivery whose endpoint is
-  # present but unusable, which in practice means a secret that will not open
-  # under the configured sealing key.
   defp record_undeliverable(%WebhookDelivery{} = delivery, reason) do
     WebhookDeliveries.fail!(endpoint_stub(delivery), delivery.event_id,
       status_code: nil,
@@ -207,8 +170,6 @@ defmodule Courier.Workers.DeliverWebhookWorker do
     )
   end
 
-  # `WebhookDeliveries.fail!/3` reads only `endpoint.id`, to find the row it is
-  # about to write, so a stub carrying the id is enough.
   defp endpoint_stub(%WebhookDelivery{endpoint_id: id}), do: %WebhookEndpoint{id: id}
 
   defp lock_claimed(deliveries) do

@@ -2,7 +2,6 @@ defmodule Courier.WebhookEndpoint do
   @moduledoc """
   One account's subscription to courier's events at one URL.
 
-  ## The secret
 
   `secret` holds the sealing ciphertext, never the secret: `Courier.SecretBox`
   seals it on the way in and opens it on the way out, and no other module is
@@ -15,7 +14,6 @@ defmodule Courier.WebhookEndpoint do
   `NotificationPreference` does not cast `user_id`: a field the caller controls
   that names a credential is a field the caller owns.
 
-  ## The status column and why it is not just a boolean
 
   Two values, `enabled` and `disabled`, and `Courier.WebhookEndpoints` keeps them
   apart in `disabled_reason`. A customer disabling their own endpoint and courier
@@ -92,15 +90,6 @@ defmodule Courier.WebhookEndpoint do
     |> unique_constraint(:url, name: :webhook_endpoints_account_id_url_index)
   end
 
-  # `account_id` is set here rather than cast: it comes from the authenticated
-  # principal, never from the body, so a request cannot register an endpoint
-  # against an account it does not belong to.
-  #
-  # It is cast rather than `put_change`d, so a principal carrying something that
-  # is not a uuid produces a changeset error instead of an `Ecto.ChangeError`
-  # raised out of the insert. An account id that is malformed is a 422; a
-  # service that crashes on it is a 500 for a caller's typo, and the trace tells
-  # the operator nothing about whose account it was.
   defp put_account(changeset, attrs) do
     case Map.get(attrs, :account_id) || Map.get(attrs, "account_id") do
       nil -> changeset
@@ -127,8 +116,6 @@ defmodule Courier.WebhookEndpoint do
     end)
   end
 
-  # Absolute, http(s), and with a host. Whether the host is *reachable* is the
-  # guard's question; whether it is a url at all is this one's.
   defp validate_absolute(url) do
     case URI.parse(url) do
       %URI{scheme: scheme, host: host}

@@ -28,7 +28,6 @@ defmodule CourierWeb.Problem do
   `field` is the path in the *request* (`preferences[0].notification_type`), not
   the changeset key: the caller sent a body, and the body is what they can fix.
 
-  ## Codes
 
   Core's reserved list, plus `bad_request` and `not_acceptable`. Core names the
   reserved list for the statuses it enumerates and says 400 is for malformed
@@ -134,7 +133,6 @@ defmodule CourierWeb.Problem do
     |> send_resp(status, Jason.encode!(build(conn.assigns, status, code, detail, fields)))
   end
 
-  # Core: `errors[]` appears only when there are per-field failures to list.
   defp put_fields(envelope, []), do: envelope
   defp put_fields(envelope, fields), do: Map.put(envelope, "errors", fields)
 end

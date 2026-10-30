@@ -2,7 +2,6 @@ defmodule Courier.WebhookDeliveries do
   @moduledoc """
   The delivery record and the retry budget around it.
 
-  ## The budget
 
   PLAN.md §7 adopted bounded budgets and forbade naive retries, so the numbers
   here are the packet's answer and every one of them is configuration rather than
@@ -17,7 +16,6 @@ defmodule Courier.WebhookDeliveries do
   | jitter | ¼ of the wait | the spec asks for jitter "to prevent cases where the failures are due to recurring load caused by the webhook attempts themselves" |
   | total | ≈16 h | the spec's "spanning multiple days" in a shape one service can defend |
 
-  ## The jitter is bounded by the base, not added on top
 
   This is the detail that matters and the one that is easy to get wrong. Jitter
   added to an exponential schedule can make attempt N+1's wait *shorter* than
@@ -27,7 +25,6 @@ defmodule Courier.WebhookDeliveries do
   added to a wait that is already ≥ the previous attempt's floor, and the ordering
   property is asserted in the test rather than assumed.
 
-  ## What is not retried
 
   Per the spec §Delivery success and failure and the brief: a `4xx` other than
   `408` and `429` is a failure that will fail again, so it is recorded and the
@@ -65,17 +62,11 @@ defmodule Courier.WebhookDeliveries do
         |> Map.merge(%{endpoint_id: endpoint.id, event_id: event_id})
       )
       |> Repo.insert(
-        # A concurrent dispatch of the same event for the same endpoint is not an
-        # error; it is the same delivery, and the row that won is the one to use.
         on_conflict: :nothing,
         conflict_target: [:endpoint_id, :event_id]
       )
 
     case result do
-      # `on_conflict: :nothing` answers with the struct that was *proposed*, id
-      # and all — it never says "this conflicted", it just inserts nothing. So
-      # every path re-reads the row, and the row that is actually in the table is
-      # the only one whose `webhook_id` can be trusted for a retry.
       _inserted_or_conflicted ->
         case existing(endpoint.id, event_id) do
           %WebhookDelivery{} = delivery ->
@@ -185,9 +176,6 @@ defmodule Courier.WebhookDeliveries do
     end)
   end
 
-  # The whole budget policy, in one place: a failure that will fail again is not
-  # retried, neither is one that has run out of attempts, and a consumer that sent
-  # a `Retry-After` is waited for at least that long.
   defp put_next_attempt(changes, attempt, retryable?, retry_after) do
     if retryable? and attempt < config()[:max_attempts] do
       Keyword.merge(changes,
@@ -199,15 +187,6 @@ defmodule Courier.WebhookDeliveries do
     end
   end
 
-  # §Delivery success and failure: a `retry-after` "should be taken into
-  # consideration when scheduling the next attempt". Considered as a *floor*, not
-  # a replacement: a receiver asking for five seconds does not get courier
-  # hammering it in five seconds when the schedule already said five minutes, and
-  # a receiver asking for an hour is not retried before the hour is up.
-  #
-  # Capped at the backoff ceiling, because a `Retry-After` is a number a consumer
-  # wrote and courier is not obliged to obey one that is longer than courier's
-  # whole budget — a typo of `36000` would otherwise park a delivery for ten hours.
   defp wait(attempt, retry_after) do
     scheduled = backoff(attempt)
 
@@ -244,11 +223,6 @@ defmodule Courier.WebhookDeliveries do
     end
   end
 
-  # The jitter is drawn from the *remaining* headroom under the cap, not from a
-  # fraction of the wait and then added on top. Adding it on top would make the
-  # cap a floor for the largest attempts rather than a ceiling: a 6h wait plus
-  # 25% is a 7.5h wait, and the "capped at" in the table above would be a lie
-  # that only shows up as an over-long retry on the attempts that matter most.
   defp jitter(wait) do
     headroom = config()[:backoff_cap_seconds] - wait
 
@@ -267,16 +241,6 @@ defmodule Courier.WebhookDeliveries do
     for attempt <- 1..config()[:max_attempts], do: backoff(attempt, jitter: false)
   end
 
-  # Records against the row that exists, not against the caller's copy: a
-  # delivery worker holds one struct across attempts and the attempt count has to
-  # come from the row or every attempt writes the same number.
-  #
-  # A missing row is created rather than refused, at `attempt: 0`. The real
-  # caller is a worker that has just sent an attempt for a delivery it was handed,
-  # and a crash here would be a failed webhook *after* the request already went
-  # out — the one outcome that cannot be retried, because nothing recorded that it
-  # happened. Counting the attempt is the change function's job, so a delivery
-  # that is created here still records its first attempt as attempt 1.
   defp record(%WebhookEndpoint{} = endpoint, event_id, change) do
     delivery =
       case existing(endpoint.id, event_id) do

@@ -8,7 +8,6 @@ defmodule Courier.Principal.IntrospectionTest do
   composition is wrong authenticates nobody, and that failure looks exactly like
   a misconfigured identity.
 
-  ## The transport is a double, and that is a deliberate boundary
 
   `Courier.Principal.Introspection.Transport` is the seam and
   `Courier.TestSupport.IntrospectionTransport` answers from a table a test
@@ -31,10 +30,6 @@ defmodule Courier.Principal.IntrospectionTest do
   @other_account "ab000000-0000-0000-0000-0000000000c2"
   @caller_token "anywaye_caller-token-for-the-suite"
 
-  # The credential courier presents to ask about the caller's. A fixture and
-  # never a default, on the same terms as `COURIER_SECRET_BOX_KEY` in
-  # `config/test.exs`: `config/runtime.exs` requires a real one from the
-  # environment and refuses to boot without it.
   @service_token "anywaye_couriers-own-service-credential"
 
   defp conn(token, headers \\ []) do
@@ -71,10 +66,6 @@ defmodule Courier.Principal.IntrospectionTest do
     end
 
     test "and the scopes travel with it, from either claim name" do
-      # Parsed and carried, deliberately not enforced — see `Courier.Principal`'s
-      # moduledoc for why enforcing them today would refuse every credential
-      # identity can mint. The assertion here is that the set is populated from
-      # both names, so the day the check lands it is reading something.
       IntrospectionTransport.stub(200, live(%{"scopes" => "a:read", "scope" => "a:read"}))
 
       assert {:ok, %Principal{scopes: ["a:read"]}} = Introspection.resolve(conn(@caller_token))
@@ -98,9 +89,6 @@ defmodule Courier.Principal.IntrospectionTest do
       assert request.method == "POST"
       assert request.url == "#{Introspection.url()}/v1/introspections"
 
-      # courier's OWN credential, in the header, and the caller's only in the
-      # body. Reversed, this is an endpoint where a customer's token is the thing
-      # authenticating courier.
       assert {"authorization", "Bearer " <> @service_token} in request.headers
       assert {"authorization", "Bearer " <> @caller_token} not in request.headers
     end
@@ -114,10 +102,6 @@ defmodule Courier.Principal.IntrospectionTest do
     end
 
     test "the four reasons a token cannot be used are indistinguishable to courier" do
-      # identity collapses them upstream on purpose. This asserts courier does not
-      # re-expand them: a caller who can tell "revoked" from "never existed"
-      # learns whether a leaked value is live, which is the second question an
-      # attacker asks after "does this work".
       for body <- [
             %{"active" => false},
             Map.put(live(), "active", false),
@@ -145,9 +129,6 @@ defmodule Courier.Principal.IntrospectionTest do
 
   describe "no credential, no call" do
     test "a request with no `Authorization` header is refused without asking identity" do
-      # Not an optimisation. An unauthenticated endpoint that dials a dependency
-      # per request is an unauthenticated load generator pointed at identity by
-      # anybody who finds courier's URL — and it is the 401 that costs nothing.
       assert Introspection.resolve(conn(nil)) == :error
 
       assert IntrospectionTransport.requests() == []
@@ -167,11 +148,6 @@ defmodule Courier.Principal.IntrospectionTest do
     end
 
     test "the test-only account header does not authenticate anybody here" do
-      # `x-courier-account` is `Courier.TestSupport.HeaderResolver`'s stand-in for
-      # the verified claim. Asserting that this resolver ignores it is the
-      # difference between "it is configured only in test" (a convention) and
-      # "a request carrying it is refused" (a property) — and the property is what
-      # stops somebody adding `x-courier-account` back as a fast path.
       IntrospectionTransport.stub(200, live())
 
       c =
@@ -187,10 +163,6 @@ defmodule Courier.Principal.IntrospectionTest do
   end
 
   describe "identity unreachable, refusing or misbehaving is a closed door" do
-    # Every one of these is the same answer, and the reason is the packet's: a
-    # resolver that fails OPEN under load is worse than `Reject`, because it fails
-    # silently. Nothing here is `:error`, because `:error` is a 401 and a 401
-    # tells a caller with a good token that their token is the problem.
     test "a 5xx is `{:error, :unavailable}`, never a pass" do
       for status <- [500, 502, 503, 504] do
         IntrospectionTransport.stub(status, %{"error" => "boom"})
@@ -204,12 +176,6 @@ defmodule Courier.Principal.IntrospectionTest do
     end
 
     test "identity's own 401 and 403 are courier's problem, so also a 503" do
-      # The load-bearing correction. identity answers 401 when the CREDENTIAL
-      # courier presented is not one it accepts, and 403 when that credential may
-      # not ask about the token it named — both are facts about **courier**, not
-      # about the caller. Reporting either as a 401 tells a customer to rotate a
-      # token that was never the problem, and an operator reads a wall of "invalid
-      # credentials" when the real fault is one environment variable.
       for status <- [401, 403, 404, 405, 422] do
         IntrospectionTransport.stub(status, %{"error" => "nope"})
 
@@ -232,13 +198,6 @@ defmodule Courier.Principal.IntrospectionTest do
     end
 
     test "a body courier cannot read is `{:error, :unavailable}` rather than a 401" do
-      # The whole reason `Document` has three answers. identity not answering in a
-      # shape courier reads is courier's outage, and a 401 here is a lie that costs
-      # a customer a credential rotation.
-      #
-      # Note what is NOT in this list: `{"active": true}` with no account is a
-      # **401**, because that is a shape courier reads and the answer it reads is
-      # "no account". Only the shapes it cannot read at all are here.
       for body <- [
             "",
             "not json",
@@ -268,9 +227,6 @@ defmodule Courier.Principal.IntrospectionTest do
 
   describe "nothing here can put a token in a log" do
     test "a refused token and courier's own credential are both absent from the log" do
-      # The assertion worth more than "it logged something": a boundary that
-      # deletes everything passes that. So the pair is asserted together — the
-      # failure line IS there, and neither secret is.
       IntrospectionTransport.stub(200, %{"active" => false})
 
       log = capture_log(fn -> Introspection.resolve(conn(@caller_token)) end)
@@ -293,10 +249,6 @@ defmodule Courier.Principal.IntrospectionTest do
     test "is read from configuration, never from the request" do
       IntrospectionTransport.stub(200, live())
 
-      # Two callers, two different service credentials would be a bug; the point
-      # is that the header courier sends is the CONFIGURED one whatever the
-      # caller sent, which is what makes a stolen `COURIER_IDENTITY_TOKEN` the only
-      # thing an operator has to rotate.
       assert {:ok, _principal} = Introspection.resolve(conn(@caller_token))
       assert [%{headers: headers}] = IntrospectionTransport.requests()
 

@@ -25,28 +25,6 @@ defmodule Courier.TestSupport.FailingSink do
     fail(opts)
   end
 
-  # Tell the test the sink was reached. The relay's counters are in ETS, so a
-  # test can poll them — and polling is what made this file flaky, because two
-  # hundred `:sys.get_state/1` calls are a *count* rather than a duration and so
-  # race whatever the drain happens to take.
-  #
-  # `assert_receive` is the primitive the house rules name for waiting, it cannot
-  # pass by accident, and it makes the assertion *stronger*: the counter going up
-  # proves the accounting, this message proves the sink was actually called, and
-  # a relay that counted a failure it never had would fail the second and pass
-  # the first.
-  #
-  # **This message is sent on the way IN, and that is load-bearing.** It cannot be
-  # the barrier for `sink_failures`, which the sender writes after this function
-  # has *returned*: measured on a machine at load average 30 across 8 cores, that
-  # write lands anywhere from 0.4 ms to 36 ms after this `send`, depending on
-  # nothing the code does. So `error_relay_test.exs` waits for the drain **process
-  # to exit** instead — see `await_drain/1` there — and this message's job is only
-  # to prove the sink was reached at all.
-  #
-  # Recorded because the note this replaced claimed the flake had been fixed by
-  # `assert_receive` alone. It had not been: the counter read was still a spin, and
-  # the file still failed about one run in three.
   defp notify(opts) do
     case Keyword.get(opts, :sink_target) do
       pid when is_pid(pid) -> send(pid, {:sink_attempted, mode(opts)})
@@ -54,17 +32,6 @@ defmodule Courier.TestSupport.FailingSink do
     end
   end
 
-  # The mode this sink fails in, read from the options the relay forwards.
-  #
-  # The relay passes `:sink_target`, `:sink_dsn`, `:sink_timeout` and
-  # `:sink_mode` through to `forward/2` (`Courier.ErrorRelay.init/1`), so a mode
-  # configured in a test's relay options arrives. The reason this is written down
-  # is that the first version of the error-tuple test set `:sink_mode` on the
-  # relay, watched the sink **raise** anyway, and passed for the wrong reason: the
-  # counter went up either way, so the assertion could not tell which of the two
-  # failures it was proving — and `notify/1` above now makes that mistake fail
-  # loudly instead, because the message would say `:raise` where the test
-  # expected `{:sink_attempted, :error}`.
   defp fail(opts) do
     case mode(opts) do
       :raise -> raise "the sink is unreachable"

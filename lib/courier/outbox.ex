@@ -9,7 +9,6 @@ defmodule Courier.Outbox do
   and the next one tomorrow — so "a row was written and nothing will publish it"
   cannot be reached by forgetting a line at a call site.
 
-  ## Why the enqueue is inside the caller's transaction
 
   Because that is what closes the window, and the window is the whole argument.
   The outbox exists so that "the state changed and nobody was told" is impossible
@@ -27,7 +26,6 @@ defmodule Courier.Outbox do
   published (`Courier.Workers.ProcessOutboxWorker`), which is at-least-once's
   ordinary condition rather than a second design.
 
-  ## Why the job is unique on the event id, and why that is not belt and braces
 
   `unique: [period: :infinity, keys: [:event_id], states: :incomplete]` reads as
   "one pending relay job per event, ever", which is the invariant. Two properties
@@ -52,7 +50,6 @@ defmodule Courier.Outbox do
   what core's loop asks for. So the args are the key and nothing else, and the
   worker's `perform/1` ignoring them is correct rather than an oversight.
 
-  ## A kick that fails never fails the send
 
   `insert/1` logs an `{:error, _}` kick and returns the row. The provider has
   already accepted the mail by the time this runs, so refusing the send because
@@ -68,15 +65,6 @@ defmodule Courier.Outbox do
 
   require Logger
 
-  # The uniqueness of the relay's kick. `:infinity` with the incomplete states is
-  # "no pending job for this event, in any amount of time" — see the moduledoc for
-  # why the default `:successful` states would be wrong.
-  #
-  # `:states` is the bare group and NOT `[:incomplete]`: `Oban.Job.cast_unique_group/1`
-  # expands an atom and passes a list through untouched
-  # (deps/oban/lib/oban/job.ex:611), so the wrapped form reaches PostgreSQL as
-  # the literal state `"incomplete"` and is refused by the `oban_job_state` enum.
-  # Measured, not read off the docs: 22P02, one line of this attribute.
   @unique [period: :infinity, keys: [:event_id], states: :incomplete]
 
   @doc """

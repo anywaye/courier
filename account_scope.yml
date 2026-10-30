@@ -1,106 +1,15 @@
-# account_scope.yml — every entry point courier mounts, and which of them can
-# reach another account's data.
-#
-# Checked by anywaye/core's contract harness:
-#
-#     cd anywaye/core && python3 harness/account_scope_check.py ../wt-m39-courier-scope-01
-#
-# THE SIBLING FILE IS tenancy.yml, AND THE TWO ANSWER DIFFERENT QUESTIONS.
-# `tenancy.yml` declares the STATEMENTS that constrain on `account_id` and the
-# tests that prove another account is refused. This file declares the ENTRY POINTS
-# a caller arrives through, and the line at which each resolves the caller's
-# account. Neither is derivable from the other: `POST /v1/messages` scopes four
-# statements and reaches them through a plug, and `GET /unsubscribe/{token}`
-# reaches two tables and resolves no account at all.
-#
-# ---------------------------------------------------------------------------
-# THE THINGS IN THIS FILE THAT ARE A DECISION, NOT A READING
-# ---------------------------------------------------------------------------
-#
-# 1. `surface.minimum: 16` IS WHAT THE CHECKER FINDS IN THE TWO FILES BELOW, and
-#    it is a decrease-detector rather than the number of routes courier serves.
-#    It is also not the number of routes courier serves: that is 16 too, and the
-#    reason it can be one number is that courier's whole HTTP surface is two
-#    Phoenix routers and every route in both is a string literal on one line.
-#    Nothing here is registered through a constant, so the gap between "routes
-#    courier serves" and "registrations the checker can see" is zero — MEASURED,
-#    not assumed, and `REPORT-courier-account-scope-01` prints the command that
-#    measures it (`route_defs=0` was D18's own number for a service the checker
-#    could not read, and a floor is only a floor while it means something about
-#    the thing it floors).
-#
-# 2. `surface.sources` NAMES BOTH ROUTERS, AND THE SECOND ONE IS ON ITS OWN PORT.
-#    `lib/courier_web/error_router.ex` is `CourierWeb.ErrorRouter` behind
-#    `CourierWeb.ErrorEndpoint` on its own listener — the Sentry-compatible error
-#    ingest. It is courier's surface exactly as `/v1` is, it holds a route no
-#    other file registers, and leaving it out would make `undeclared` structurally
-#    unable to see a whole endpoint. Two files rather than the `lib/courier_web`
-#    directory: a directory would drag in the endpoint and the plugs, and a route
-#    added to a plug would move a floor that is supposed to mean something about
-#    routes.
-#
-# 3. `via: with_account` IS `Courier.Tenancy.with_account/3`, WRITTEN BARE.
-#    The schema's `accountFrom.via` is `^[A-Za-z_][A-Za-z0-9_]*$` — one
-#    identifier, because the checker matches it on two lines of text and a path
-#    through the code is not text. So the module-qualified name the packet asked
-#    for cannot be spelled in the field, and the bare function name is what is
-#    written. The reason it is the right symbol and not the plug is in courier's
-#    own words: `lib/courier/tenancy.ex` says "`with_account/3` is the only way to
-#    obtain an identity", and it is the only function in the tree that opens the
-#    transaction the identity lives in. Each `/v1` controller action and the
-#    `:idempotent` plug calls it around its own database work — there is no
-#    single call site, because a plug cannot hold one transaction open across
-#    the controller — and `via` names the function rather than any one of them.
-#    It is the function that resolves the account as the DATABASE sees it, which
-#    is what "this entry point resolves the caller's account" has to mean on a
-#    service whose row-level-security policies key on that GUC.
-#
-# 4. `POST /inbound/resend` AND BOTH HALVES OF `/unsubscribe/{token}` ARE
-#    `unauthenticated-callback`, AND THEY ARE THE ROWS THIS FILE MOST WANTS TO BE
-#    WRONG ABOUT. The first is a provider's signed webhook and the second is an
-#    RFC 8058 one-click door; between them they reach `email_suppressions`,
-#    `unsubscribe_tokens` and `outbox_events`. Both resolve NO account, and that
-#    is not a claim — it is measured: `with_account/3` is called only on the
-#    authenticated paths (each `/v1` controller action, and the `:idempotent`
-#    plug's claim/lookup/store), and neither route reaches any of those call
-#    sites. core's checker re-derives the same answer from the router and is the
-#    reason these three rows are `false`: `REPORT-courier-account-scope-01`
-#    shows it reading courier's sixteen routes and naming nine as
-#    account-resolving and five as not, which is the same nine and the same five
-#    this file declares.
-#
-# 5. THE THREE OBAN WORKERS ARE `system`, AND THAT IS THE ROW GROUP MOST LIKELY TO
-#    BE MISREAD. Nothing enqueues them (see the report: `Oban.insert` appears zero
-#    times in this repository), they carry no caller identity, and none of them
-#    calls `with_account/3`. Two of them DO read one account's rows —
-#    `DispatchWebhooksWorker` reads `webhook_endpoints` by `event.account_id` — so
-#    `false` here means "resolves no account", not "reaches no customer data", and
-#    the report says so with the file and line. The closed reason vocabulary has no
-#    member for the third thing this is ("reaches one account's rows, resolved from
-#    a row rather than from a caller"), which is a contract gap and is written up
-#    rather than worked around.
 version: 1
 service: courier
 
 surface:
   kind: both
-  # TWO FILES. See note 2 above.
   sources:
     - lib/courier_web/router.ex
     - lib/courier_web/error_router.ex
-  # 16 registrations: 14 in `router.ex`, 2 in `error_router.ex`.
   minimum: 16
-  # courier's own spelling, and the same one `tenancy.yml`'s `scope.key` and the
-  # protection migration use. Declared here anyway: it makes the file independent
-  # of the sibling, and a service that spells it `accountId` must not have to say
-  # so twice.
   accountKey: account_id
 
 entryPoints:
-  # ==========================================================================
-  # THE CUSTOMER API — `/v1`, behind `CourierWeb.Plugs.Principal` (401); the
-  # database identity is each action's own `with_account/3` transaction.
-  # ==========================================================================
   - id: messages-create
     kind: http
     method: POST
@@ -173,12 +82,6 @@ entryPoints:
     accountFrom: { via: with_account, file: lib/courier/tenancy.ex, line: 129 }
     registeredAt: { file: lib/courier_web/router.ex, line: 137 }
 
-  # ==========================================================================
-  # THE PROBES — outside every pipeline but `:api`, on purpose: they run before
-  # routing, auth and the rest of the platform exist, so they must not depend on
-  # any of it. `/readyz` runs `SELECT 1`, which is not one of the three protected
-  # tables, and `/healthz` runs no query at all.
-  # ==========================================================================
   - id: healthz
     kind: http
     method: GET
@@ -195,22 +98,6 @@ entryPoints:
     reason: public
     registeredAt: { file: lib/courier_web/router.ex, line: 113 }
 
-  # ==========================================================================
-  # THE PROVIDER SURFACE — outside `/v1`, because an operation filed under `/v1`
-  # that cannot take a bearer token is a method a generated client will call
-  # wrongly. Authenticated by a SIGNATURE (`Courier.Inbound.Signature`, verified
-  # before the body is parsed), which is why the closed reason is
-  # `unauthenticated-callback` and not `public`: the request carries an authority,
-  # courier just does not look one up.
-  #
-  # It resolves no account, and it is not a gap: `Courier.Inbound.handle/5` writes
-  # `email_suppressions` and `outbox_events`, and of those only `outbox_events`
-  # has an `account_id` — which the protection migration deliberately left
-  # unprotected, because a user courier cannot place in an account records
-  # `email.delivered` there and a per-account policy would refuse every such
-  # insert. Giving this route an account would be inventing a tenancy claim for a
-  # provider.
-  # ==========================================================================
   - id: inbound-resend
     kind: http
     method: POST
@@ -219,22 +106,6 @@ entryPoints:
     reason: unauthenticated-callback
     registeredAt: { file: lib/courier_web/router.ex, line: 212 }
 
-  # ==========================================================================
-  # THE ONE-CLICK UNSUBSCRIBE — RFC 8058 §3.1 forbids authorization on this
-  # request, so there is no `:authenticated` pipeline and there could not be. The
-  # credential is the token in the path: a resource ADDRESS rather than a
-  # presented secret, 32 bytes of `:crypto.strong_rand_bytes/1` stored as a
-  # digest. A token courier did not issue is a 404, not a 401.
-  #
-  # **This route holds a customer's mailbox and still resolves no account**, which
-  # is the shape `unauthenticated-callback` exists for and the false positive this
-  # check is shaped to avoid: a signal that fired on "reaches customer data" would
-  # be right about the fact, wrong about the verdict, and still green on a liar,
-  # because everything it said would be true.
-  #
-  # Both verbs, one path: §3.2's own sentence, plus "some clients only ever follow
-  # a link".
-  # ==========================================================================
   - id: unsubscribe-show
     kind: http
     method: GET
@@ -251,14 +122,7 @@ entryPoints:
     reason: unauthenticated-callback
     registeredAt: { file: lib/courier_web/router.ex, line: 274 }
 
-  # ==========================================================================
-  # THE ERROR-INGEST ENDPOINT — `CourierWeb.ErrorRouter` on its own listener.
-  # ==========================================================================
 
-  # Deliberately OUTSIDE `:ingest`: a probe behind the auth middleware answers
-  # 401 whatever calls it concludes the component is down. It touches nothing —
-  # not even the store, because a relay that cannot reach GlitchTip has LOST
-  # errors rather than being unhealthy.
   - id: error-relay-healthz
     kind: http
     method: GET
@@ -267,14 +131,6 @@ entryPoints:
     reason: none
     registeredAt: { file: lib/courier_web/error_router.ex, line: 114 }
 
-  # The path is the Sentry SDK's, not ours: `Sentry.DSN.parse/1` splits the DSN's
-  # path and rebuilds `<base>/api/<project_id>/envelope/`, so this is the only URL
-  # an unmodified SDK can reach. `:project_id` is the sender's framing — all three
-  # services report into ONE project and the relay does not route on it.
-  #
-  # `system`, not `unauthenticated-callback`: the callers are courier's own SDK,
-  # identity's and billing's, and the authority is a shared ingest secret rather
-  # than a signature a third party produced.
   - id: error-envelope-ingest
     kind: http
     method: POST
@@ -283,24 +139,10 @@ entryPoints:
     reason: system
     registeredAt: { file: lib/courier_web/error_router.ex, line: 124 }
 
-  # ==========================================================================
-  # THE QUEUE — courier's only non-HTTP entry points. All three are Oban workers
-  # on the two queues `config/config.exs` names. Declared here because a route
-  # grep cannot see them, which is D18's second half, and because declaring them
-  # is what makes "nothing enqueues them" a finding somebody can read.
-  #
-  # `registeredAt` is each worker's `defmodule` line: Oban has no registration
-  # site in Elixir — a job names its worker module and the module IS the
-  # registration — and `account-scope.stale` therefore fires when one is renamed,
-  # which is the property `registeredAt` is for.
-  # ==========================================================================
   - id: process-outbox-worker
     kind: job
     name: Courier.Workers.ProcessOutboxWorker
     accountScoped: false
-    # Reads `outbox_events` and publishes to NATS. The table is deliberately
-    # UNPROTECTED (`tenancy.yml` and the protection migration both say so) and it
-    # carries no caller identity: the relay is the fleet's own machinery.
     reason: system
     registeredAt: { file: lib/courier/workers/process_outbox_worker.ex, line: 1 }
 
@@ -308,17 +150,6 @@ entryPoints:
     kind: job
     name: Courier.Workers.DispatchWebhooksWorker
     accountScoped: false
-    # THE ROW MOST LIKELY TO BE MISREAD, so the file says it here: this worker
-    # DOES reach one account's rows. `lib/courier/workers/dispatch_webhooks_worker.ex:80`
-    # reads `webhook_endpoints` by `event.account_id` — a protected table.
-    #
-    # `false` means "resolves no account", and that is literally true: the account
-    # is read out of the `outbox_events` row the worker claimed, not from a
-    # caller, and `with_account/3` is not on this path (one call site in the tree,
-    # and it is the plug). The closed vocabulary has no member for "reaches one
-    # account's rows, resolved from a row", which is a gap in the contract and is
-    # written up in the report rather than papered over with a `true` row whose
-    # `accountFrom` would name a function this worker never calls.
     reason: system
     registeredAt: { file: lib/courier/workers/dispatch_webhooks_worker.ex, line: 1 }
 
@@ -326,9 +157,5 @@ entryPoints:
     kind: job
     name: Courier.Workers.DeliverWebhookWorker
     accountScoped: false
-    # Reads `webhook_deliveries`, which has NO `account_id` at all (the protection
-    # migration names this as the reason it stays unprotected), and signs and
-    # sends. Its authority is an endpoint row reached from a delivery row, not a
-    # caller and not an account identity.
     reason: system
     registeredAt: { file: lib/courier/workers/deliver_webhook_worker.ex, line: 1 }

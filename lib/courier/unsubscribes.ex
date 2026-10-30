@@ -12,7 +12,6 @@ defmodule Courier.Unsubscribes do
       iex> message.headers["List-Unsubscribe-Post"]
       "List-Unsubscribe=One-Click"
 
-  ## What RFC 8058 requires, and where each half lives here
 
   | § | requirement | this module |
   | --- | --- | --- |
@@ -35,7 +34,6 @@ defmodule Courier.Unsubscribes do
   is on the wire and the mail client ignores it.** That is an operational fact
   about the relay, and the header is not a substitute for it.
 
-  ## The URL is courier's own public URL, and it is built from the endpoint
 
   `base_url/0` reads `CourierWeb.Endpoint.url/0` rather than taking a setting, and
   the reason is that there is no other honest source: the one an operator sets is
@@ -48,7 +46,6 @@ defmodule Courier.Unsubscribes do
   `Courier.UnsubscribeHeadersTest` asserts the scheme from **production's
   configuration** rather than from this paragraph.
 
-  ## What an unsubscribe writes
 
   It writes a row in `email_suppressions` with `provider: "unsubscribe"`, a
   `reason`, the address, the notification type, the user, and **no `state`** — plus
@@ -57,7 +54,6 @@ defmodule Courier.Unsubscribes do
   provider report uses, keyed on the token's id, so a second `POST` is a
   `:duplicate` rather than a second row.
 
-  ### The state-less row is the whole mechanism, and it is the load-bearing part
 
   A bounce and a complaint carry a `state` and refuse **every** notification type
   courier sends, because they are facts about the MAILBOX. `Courier.Deliver`
@@ -87,7 +83,6 @@ defmodule Courier.Unsubscribes do
   where the table has no tenancy column at all is the direction in which the worst
   case is "the user stops getting this one kind of mail".
 
-  ### What it costs, stated rather than discovered
 
   **The answer is immutable and no route removes it.** `Courier.Suppressions`'s
   rows are immutable by design and this is one of them, so a recipient who
@@ -104,7 +99,6 @@ defmodule Courier.Unsubscribes do
   The `reason` is what makes the row readable to an operator: it says who wrote it
   and why, which is the same reason `reason` exists for a provider's own words.
 
-  ## Why the event is `courier.notification.suppressed` and not a new type
 
   `Courier.Events` has carried a builder for `courier.notification.suppressed`
   since courier-01, and `anywaye.yml` has declared the type, with no caller — the
@@ -122,7 +116,6 @@ defmodule Courier.Unsubscribes do
   not own, and would have left the one courier already declares with its first
   caller still empty.
 
-  ## Idempotency is the unique index, and the second POST is a 200
 
   An MUA is entitled to retry: a `POST` that timed out is a `POST` courier cannot
   distinguish from one that worked. So the second call answers the **same 200 with
@@ -137,7 +130,6 @@ defmodule Courier.Unsubscribes do
   none: the header is scoped to a principal, and this route has none by RFC 8058
   §3.1's own instruction that the request carry no authorization at all.
 
-  ## A token is minted per message, and lives in the send's transaction
 
   `decorate_for/3` is called by `Courier.Deliver` inside the transaction that sends
   the mail, so a provider that refuses rolls the token row back with the send. A
@@ -145,7 +137,6 @@ defmodule Courier.Unsubscribes do
   nobody was ever offered, which is the same "row that lies" the outbox exists to
   prevent.
 
-  ## And no bulk message goes out today
 
   All three of courier's types are `:transactional` — see `Courier.Mailers.kinds/0`
   for why, which includes that adding a bulk type is a change in **core** rather
@@ -168,41 +159,15 @@ defmodule Courier.Unsubscribes do
 
   require Logger
 
-  # The header names are **spelled** rather than derived, because they are
-  # constants of RFC 2369 and RFC 8058 §5 and not courier's to name. Lowercase
-  # here would be wrong in one direction only: SMTP header names are
-  # case-insensitive but the ABNF in §5 is a literal, and a reviewer comparing this
-  # against the RFC should not have to work out whether `list-unsubscribe-post`
-  # matches.
   @list_unsubscribe "List-Unsubscribe"
   @list_unsubscribe_post "List-Unsubscribe-Post"
 
-  # §5: `postarg = "List-Unsubscribe=One-Click"`, and §3.1 says the header "MUST
-  # contain the single key/value pair". One string, written once, and asserted in
-  # the tests against the section rather than against itself.
   @one_click "List-Unsubscribe=One-Click"
 
-  # core/schemas/events/courier/notification/suppressed.schema.json:
-  # properties.reason.enum. Transcribed, not invented — the same treatment
-  # `Courier.Events` gives the whole enum, narrowed to the one value this path can
-  # reach. `Courier.UnsubscribesTest` asserts it is still one of the three the
-  # builder accepts.
-  #
-  # **`preference_off` and not a word of courier's own**, because the enum is
-  # core's and a fourth value is not this repository's to publish. It is also the
-  # truest of the three: the recipient has answered "do not send me this type",
-  # which is what the other two mean too.
   @reason "preference_off"
 
-  # The value in `email_suppressions.provider`, beside `"resend"` — half of the
-  # unique index every other reader of that table already groups by, and what an
-  # operator's `GROUP BY provider` will show as a third source of rows.
   @provider "unsubscribe"
 
-  # The value in `email_suppressions.reason`, and it is courier's own sentence in
-  # the column that exists for "the sender's words, bounded". It is not a state
-  # and not a code: nothing reads it, and its only job is to answer "why is this
-  # address not getting this type of mail" for whoever asks the database.
   @why "one-click unsubscribe (RFC 8058)"
 
   @typedoc """
@@ -262,14 +227,6 @@ defmodule Courier.Unsubscribes do
     |> url_from()
   end
 
-  # `url: [scheme: "https", host: "anywaye.com", port: 443]`. The port is dropped
-  # when it is the scheme's default, because `https://anywaye.com:443` in a
-  # `List-Unsubscribe` header is a valid URL that no two mail clients spell the
-  # same way. A missing scheme or host is **not** defaulted to anything: the
-  # result is whatever the configuration says, and a deployment whose public host
-  # is wrong produces a wrong header in exactly the same way it produces wrong
-  # links everywhere else — one setting, one failure, rather than a second one
-  # that can disagree.
   defp url_from(url) do
     scheme = Keyword.get(url, :scheme, "http")
     host = Keyword.get(url, :host, "localhost")
@@ -428,8 +385,6 @@ defmodule Courier.Unsubscribes do
 
   defp record(row) do
     case Repo.transaction(fn ->
-           # `row.id` is the provider event id and it is stable for the life of
-           # the token: one row, however many times the `POST` is repeated.
            case Suppressions.find_by_event(@provider, row.id) do
              %Suppression{} -> :already_unsubscribed
              nil -> insert(row)
@@ -443,19 +398,11 @@ defmodule Courier.Unsubscribes do
   defp insert(row) do
     case Suppressions.unsubscribe(attrs(row)) do
       {:ok, :new, _suppression} -> publish(row)
-      # Unreachable unless two identical `POST`s raced, and then this one lost the
-      # index. The transaction unwinds, the mail client retries, and the retry is
-      # answered `:already_unsubscribed` by the lookup above.
       {:ok, :duplicate, _row} -> Repo.rollback({:concurrent_duplicate, row.id})
       {:error, reason} -> Repo.rollback(reason)
     end
   end
 
-  # `provider_event_id` is the TOKEN's id rather than anything derived from the
-  # request, which is what makes a replay a `:duplicate` by the same index every
-  # provider report uses. The `reason` is courier's own sentence and is bounded
-  # like a provider's, so an operator asking why this address is not getting this
-  # type of mail gets a row that says who wrote it and why.
   defp attrs(row) do
     %{
       email: row.email,
@@ -467,14 +414,6 @@ defmodule Courier.Unsubscribes do
     }
   end
 
-  # The subject is the USER and the payload has no `message_id`, which is core's
-  # D8 and the reason this type is not interchangeable with the other three: no
-  # message was rendered, so there is no message to be the subject of. The address
-  # is in `data` and not in the subject, because an address is mutable and
-  # `subject` is a per-entity ordering key.
-  #
-  # The type comes from `Events.suppressed_type/0` rather than from a string
-  # written here, so the row and the envelope cannot drift.
   defp publish(row) do
     attrs = %{
       type: Events.suppressed_type(),
@@ -499,12 +438,6 @@ defmodule Courier.Unsubscribes do
 
   defp recipient(%Swoosh.Email{to: [{_name, address} | _]}), do: address
 
-  # A message with no recipient is not one courier built — `Courier.Mailers`
-  # requires an address before it composes anything — so this is a log line and a
-  # refusal rather than a crash on the send path, for the same reason
-  # `Courier.InboundReports` logs an unbuildable event instead of raising inside a
-  # transaction. The value is logged and never returned: a response naming a
-  # mailbox is a way to ask courier questions about mailboxes it holds.
   defp recipient(%Swoosh.Email{}) do
     Logger.error("cannot mint an unsubscribe token: the message has no recipient address")
 

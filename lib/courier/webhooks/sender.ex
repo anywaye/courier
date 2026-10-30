@@ -8,7 +8,6 @@ defmodule Courier.Webhooks.Sender do
   a success, what is worth retrying, what a `410` means — are courier's policy
   and can be tested without a socket in the room.
 
-  ## What counts as a failure, and what is worth repeating
 
   The spec §Delivery success and failure is the whole list, and courier follows it
   rather than inventing a retry rule:
@@ -27,7 +26,6 @@ defmodule Courier.Webhooks.Sender do
   honour it — the spec asks for that explicitly. It is read only in the
   delta-seconds form; a date form is absent rather than misread as a number.
 
-  ## Why the result is a struct and not a bare status code
 
   Because the caller needs four things and a status code cannot hold them: whether
   it worked, what came back, how long it took, and what the receiver said about

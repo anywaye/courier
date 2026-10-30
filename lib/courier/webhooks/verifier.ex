@@ -37,12 +37,6 @@ defmodule Courier.Webhooks.Verifier do
 
   @version "v1"
 
-  # Five minutes. The spec §Verifying signatures requires "some allowable
-  # tolerance" without naming one, and the reference implementations in
-  # `reference/standard-webhooks/libraries/` (go: `var tolerance = 5 * time.Minute`;
-  # python: `webhook_tolerance = timedelta(minutes=5)`) all chose five. courier
-  # verifies the same window, so a customer can point an official library at a
-  # courier webhook and get the same answer courier documents.
   @tolerance 300
 
   @required_headers ["webhook-id", "webhook-timestamp", "webhook-signature"]
@@ -96,9 +90,6 @@ defmodule Courier.Webhooks.Verifier do
     end
   end
 
-  # The spec's warning about `.` in the message id: an id carrying one could
-  # append fields to the base string, so it is not an id courier sends and a
-  # consumer is right to refuse it.
   defp fetch_id(headers) do
     case Map.fetch!(headers, "webhook-id") do
       "" <> rest ->
@@ -144,8 +135,6 @@ defmodule Courier.Webhooks.Verifier do
       |> :crypto.mac(:sha256, Signature.sign_key(secret, @version), base_string)
       |> Base.encode64()
 
-    # Constant time, per spec §Verifying signatures: an `==` here is a timing
-    # oracle that turns a consumer into a signing oracle.
     :crypto.hash_equals(received, expected)
   end
 

@@ -2,7 +2,6 @@ defmodule Courier.TestSpans do
   @moduledoc """
   The spans courier actually produced, read out of the export path.
 
-  ## Why this goes through an exporter at all
 
   The Erlang OpenTelemetry SDK cannot start a span processor, in any published
   version, for reasons that are in `Courier.SpanCollector` and reproduced there in
@@ -20,7 +19,6 @@ defmodule Courier.TestSpans do
   It is not "courier put these attributes on a span"; it is "these are the
   attributes that left courier".
 
-  ## Why every absence assertion here is paired with a presence one
 
   A redaction boundary that deletes all attributes is indistinguishable from a
   working one when the only assertion is that a canary is missing, and it is
@@ -29,21 +27,6 @@ defmodule Courier.TestSpans do
   rather than passing quietly.
   """
 
-  # The SDK's `#span{}` field order, declared ONCE and used to build the index map
-  # below.
-  #
-  # Not `Record.extract/2`, which reads a header from `_build/<env>/lib/<app>/
-  # include/` — a path rebar3 does not produce for a Mix dependency, so the first
-  # version raised `enoent`. And not `record[:field]`, which is what reads most
-  # naturally: `Access` resolves a field name only for a MAP, so on an Erlang
-  # record it raises a FunctionClauseError. Hence `elem/2` with indices derived
-  # from this one list, so there is a single place where the order is written down
-  # and a second place that would notice it being wrong.
-  #
-  # The offset is 1, not 2: the record TAG occupies element 0, so `trace_id` —
-  # the first declared field — is `elem/2` index 1. Getting that wrong reads
-  # `kind` as `name` and reports a span called "server", which is how the mistake
-  # was caught the first time.
   @span_fields [
     :trace_id,
     :span_id,
@@ -146,7 +129,7 @@ defmodule Courier.TestSpans do
     case render(spans) do
       "" ->
         raise """
-        nothing to render (#{length(spans)} spans in), so every assertion about a canary \
+        nothing to render (
         being absent from that render would be vacuously true.
 
         Two causes, diagnosed in opposite directions. If courier exported NOTHING, check \
@@ -201,13 +184,7 @@ defmodule Courier.TestSpans do
   defp attribute_map(pairs) when is_map(pairs), do: pairs
   defp attribute_map(_other), do: %{}
 
-  # The SDK stores the status as `{code, description}`, and the code is spelled
-  # `:unset` / `:ok` / `:error` — core's vocabulary, which is what a test compares
-  # against rather than a translation of it.
   defp status(nil), do: "unset"
-  # `:undefined` and not `nil` is what a span that never had `set_status/2` called
-  # on actually carries, and mapping it to `:undefined.to_string()` would render
-  # "undefined" — which reads as a status value and is not one.
   defp status(:undefined), do: "unset"
   defp status({code, _description}) when is_atom(code), do: Atom.to_string(code)
   defp status(code) when is_atom(code), do: Atom.to_string(code)

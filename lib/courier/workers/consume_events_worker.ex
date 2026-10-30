@@ -14,7 +14,6 @@ defmodule Courier.Workers.ConsumeEventsWorker do
   is the same overlap the outbox has between its enqueue and its crontab, and it
   is harmless for the same reason: the claim excludes anything already handled.
 
-  ## WHY THIS IS NOT WIRED INTO THE SUPERVISION TREE
 
   Because a sweep needs no broker and no subscription: it reads a table and
   dispatches. What fills the table is `Courier.Consumers.Subscriber`, the
@@ -44,20 +43,10 @@ defmodule Courier.Workers.ConsumeEventsWorker do
 
   @backoff_cap 60
 
-  # Read at compile time because Oban reads a worker's options when it builds the
-  # job, and `claim/0` reads the same key at runtime — the relay's arrangement,
-  # kept so the two agree on what "past the cap" means.
   @max_attempts Application.compile_env(:courier, :consumer)[:max_attempts]
 
-  # `use` BEFORE `backoff/1`, or Oban's own default `backoff/1` is defined first
-  # and this clause is reported as a clause that can never match. The relay's
-  # ordering is the same for the same reason, and it is worth a line because
-  # `--warnings-as-errors` turns this into a red build rather than a note.
   use Oban.Worker, queue: :consumers, max_attempts: @max_attempts
 
-  # The relay's backoff ceiling in seconds, for the relay's reason: a minute is
-  # short enough that a broker that comes back is picked up while anyone is still
-  # watching, and long enough that an outage is not a hot loop.
   @impl Oban.Worker
   def backoff(%Oban.Job{attempt: attempt}) do
     base =
@@ -77,10 +66,6 @@ defmodule Courier.Workers.ConsumeEventsWorker do
     if summary.failed == 0 do
       {:ok, Map.take(summary, [:handled, :skipped])}
     else
-      # An error, so Oban's backoff applies and the unhandled rows stay claimable.
-      # A sweep that always answered `{:ok, _}` would report success while
-      # invitations sat unsent — the same "a command that exits zero" failure
-      # this repository's gate exists to catch.
       {:error, Map.take(summary, [:handled, :failed, :skipped, :reason])}
     end
   end

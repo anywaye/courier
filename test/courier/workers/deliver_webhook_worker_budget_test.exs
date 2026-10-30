@@ -28,17 +28,11 @@ defmodule Courier.Workers.DeliverWebhookWorkerBudgetTest do
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account_id
 
   setup do
     original = Application.get_env(:courier, :webhooks)
 
-    # A threshold the budget can never reach: the point of this file is the
-    # delivery's own attempt count, and the circuit is measured in
-    # `Courier.Workers.DeliverWebhookWorkerTest`.
     Application.put_env(
       :courier,
       :webhooks,
@@ -76,10 +70,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerBudgetTest do
   end
 
   defp attempt(status) do
-    # Move the window forward rather than waiting for it. The backoff is asserted
-    # as a recorded value in `Courier.WebhookDeliveriesTest`; what is left to
-    # observe here is the *count*, and a count cannot be watched across a
-    # sixteen-hour schedule.
     WebhookDelivery
     |> Ecto.Query.where([delivery], not is_nil(delivery.next_attempt_at))
     |> Repo.update_all(set: [next_attempt_at: DateTime.add(DateTime.utc_now(), -1, :second)])
@@ -103,8 +93,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerBudgetTest do
     assert recorded.status == :exhausted
     assert recorded.next_attempt_at == nil
 
-    # The last attempt is the cap, not one past it. A worker run after the budget
-    # is spent must not send anything.
     Sender.reset()
     assert {:ok, %{sent: 0}} = perform_job(DeliverWebhookWorker, %{})
 
@@ -131,10 +119,6 @@ defmodule Courier.Workers.DeliverWebhookWorkerBudgetTest do
         Sender.last().headers["webhook-id"]
       end)
 
-    # One id for the whole budget. A consumer deduplicating on it sees one event
-    # however many times courier retried, which is the whole reason the spec says
-    # the id "remains the same no matter how many times a webhook that has failed
-    # is retried".
     assert length(Enum.uniq(ids)) == 1
     assert [id] = Enum.uniq(ids)
     assert id == delivery.webhook_id

@@ -19,9 +19,6 @@ defmodule Courier.TestSupport.HeaderResolver do
   def resolve(conn) do
     case conn |> Plug.Conn.get_req_header(CourierWeb.Plugs.Principal.account_header()) do
       [account_id] -> build(account_id)
-      # No header, or more than one: an anonymous caller, or a request that
-      # cannot say which account it is. Both are a refusal, because a caller that
-      # cannot name its account must not be given one.
       _missing_or_ambiguous -> :error
     end
   end

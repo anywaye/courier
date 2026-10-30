@@ -10,7 +10,6 @@ defmodule CourierWeb.OpenAPIDocumentTest do
   was in the router with tests behind it and absent from the document, which is
   the omission courier-03 flagged and this closes.
 
-  ## How it can fail, and how it cannot
 
   It reads both sides (`Courier.TestSupport.OpenAPIPaths`) and compares the
   **paths**, never a count. A count comparison is the shape that misses the
@@ -21,7 +20,6 @@ defmodule CourierWeb.OpenAPIDocumentTest do
   raised error rather than an empty set, and the two guards below assert that
   each side produced operations at all — because two empty sets agree.
 
-  ## The one omission that stays an omission
 
   `/healthz` and `/readyz` are not in the document and are not going to be. They
   run before auth, routing and the rest of the platform exist, no customer codes
@@ -39,9 +37,6 @@ defmodule CourierWeb.OpenAPIDocumentTest do
 
   @document "openapi.yaml"
 
-  # courier's declared omissions, one operation each, with the reason. Keyed by
-  # `{method, path}` in normalised form, because a carve-out that named a path
-  # rather than an operation would cover every method on it.
   @excluded [
     {"GET", "/healthz",
      "an infrastructure probe: it runs before auth, routing and the rest of the platform " <>
@@ -72,9 +67,6 @@ defmodule CourierWeb.OpenAPIDocumentTest do
   end
 
   test "the document was read, and it is not empty", %{document: document} do
-    # Without this the test below would compare an empty set against an empty set
-    # and go green having checked nothing. The reader raises on most ways of
-    # under-reading; this catches the rest.
     assert map_size(document) > 0,
            "#{@document} was read as documenting no operations at all. A check over " <>
              "none passes, and a green check over nothing is worse than no check — " <>
@@ -88,28 +80,18 @@ defmodule CourierWeb.OpenAPIDocumentTest do
   end
 
   test "every operation the document describes is a route the router serves", %{diff: diff} do
-    # The dangerous direction, and the one that 404s a customer: an endpoint in
-    # the menu that answers 404 is a product configured against a route that does
-    # not exist, and they find out at their outage.
     assert diff.documented_not_served == [],
            """
            openapi.yaml documents a route the router does not serve.
 
-           #{Paths.describe_drift(diff)}
            """
   end
 
   test "every route the router serves is an operation the document describes", %{diff: diff} do
-    # The other direction. This was the real drift courier-03 reported, and it is
-    # a failure rather than a warning because the gap has been closed: there is
-    # nothing left to warn about, and a warning that is never acted on is a note
-    # in a file nobody reads. What remains deliberately out of the document is in
-    # `excluded/0`, with a reason, and is printed on every failure.
     assert diff.unexplained == [],
            """
            the router serves a route openapi.yaml does not describe.
 
-           #{Paths.describe_drift(diff)}
            """
   end
 
@@ -117,10 +99,6 @@ defmodule CourierWeb.OpenAPIDocumentTest do
     router: router,
     exclusions: exclusions
   } do
-    # The stale-exclusion guard. If `/healthz` were renamed, or removed, the
-    # exclusion above would still be in the list while no longer matching anything
-    # — and a carve-out that matches nothing is a hole waiting for the next route
-    # to fall into it.
     for {{method, path}, _reason} <- Map.keys(exclusions) do
       assert Map.has_key?(router, {method, path}),
              "the exclusion for #{method} #{path} names a route the router does not " <>
@@ -133,10 +111,6 @@ defmodule CourierWeb.OpenAPIDocumentTest do
   test "the document's header names every route it deliberately leaves out", %{
     exclusions: exclusions
   } do
-    # The header is the only thing a reader of the document has to go on: a
-    # document that silently omits a route is worse than one that says what it
-    # covers. So an omission the check tolerates has to be an omission the
-    # document admits, in words, in its first paragraph.
     header = @document |> File.read!() |> String.split("openapi: 3.1.0") |> List.first()
 
     for {{_method, path}, _reason} <- Map.keys(exclusions) do
@@ -149,9 +123,6 @@ defmodule CourierWeb.OpenAPIDocumentTest do
   end
 
   test "the exclusions are the probes and nothing else" do
-    # Not a route list — a bound. A carve-out set that grows is a document losing
-    # its coverage quietly, and the number is here so that growth is a change
-    # somebody reads rather than a diff line that scrolls past.
     assert Map.keys(normalised_exclusions()) |> Enum.sort() == [
              {"GET", "/healthz"},
              {"GET", "/readyz"}

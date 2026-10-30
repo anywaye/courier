@@ -2,7 +2,6 @@ defmodule CourierWeb.TenantScopeTest do
   @moduledoc """
   The tenant scope spans the request's database work — write and read.
 
-  ## THE BUG THIS FILE PINS
 
   `CourierWeb.Plugs.TenantIdentity` opens its transaction around `fn -> conn end`
   — no database work — and commits before the `:idempotent` plug and the
@@ -11,7 +10,6 @@ defmodule CourierWeb.TenantScopeTest do
   raise `42501` and protected reads return zero rows. Every authenticated
   route's protected-table access is broken, not just mail.
 
-  ## WHY PLUG-LEVEL, AND WHY `begin_account(nil)`
 
   The full request path cannot show this in-suite: the sandbox wraps the test in
   a transaction, so the plug's `Repo.transaction/1` is a SAVEPOINT whose release
@@ -27,7 +25,6 @@ defmodule CourierWeb.TenantScopeTest do
   The account on `conn.assigns.current_account` is `CourierWeb.Plugs.Principal`'s
   stash, which still runs first; the database half is what is under test.
 
-  ## WHY `async: false`, WITH A REASON
 
   The pool-recovery test deliberately fails more transactions than any test pool
   holds. A leaked checkout would starve a concurrently running test's checkout,
@@ -43,12 +40,7 @@ defmodule CourierWeb.TenantScopeTest do
   @account "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # No `@moduletag account:` on purpose: the file's ambient identity is none,
-  # which is the production downstream state once the plug's transaction has
-  # committed. A tag would set the identity the test is proving the request
-  # carries itself.
 
-  # A conn the way `Principal` leaves it: the account stashed, nothing else.
   defp authed_conn(key) do
     build_conn()
     |> Plug.Conn.assign(:current_account, @account)
@@ -66,28 +58,15 @@ defmodule CourierWeb.TenantScopeTest do
 
   describe "the request's protected-table access, with no ambient identity" do
     test "an idempotency claim (write) and its lookup (read) both succeed" do
-      # Production's post-COMMIT state, stated rather than inherited: whatever a
-      # previous transaction set is gone. `Courier.TenancyTest` measures that a
-      # COMMIT discards `is_local`; this is the downstream half of that fact.
       Tenancy.begin_account(Repo, nil)
 
       key = Ecto.UUID.generate()
 
-      # WRITE: the first protected-table write on the request path. On the
-      # broken arrangement this raises, because no transaction holds the
-      # identity anymore:
-      #
-      #     ** (Postgrex.Error) ERROR 42501 new row violates row-level security
-      #        policy for table "idempotency_keys"
       conn = IdempotencyPlug.call(authed_conn(key), IdempotencyPlug.init([]))
 
       refute conn.halted,
              "a first presentation of an Idempotency-Key must claim, not refuse"
 
-      # READ: the same key presented again must FIND the row the claim wrote. An
-      # `in_flight` row answers 409 `conflict` ("still being processed") — the
-      # status is not the point, reaching the row is: a scope that could not
-      # read would answer as though the row did not exist.
       again = IdempotencyPlug.call(authed_conn(key), IdempotencyPlug.init([]))
 
       assert again.halted
@@ -97,24 +76,18 @@ defmodule CourierWeb.TenantScopeTest do
 
   describe "the pool on error paths" do
     test "a request that blows up mid-transaction returns its connection" do
-      # More failures than any test pool holds (`pool_size` is
-      # `schedulers * 2`): one leaked checkout per failure would exhaust the
-      # pool and the scoped write below would time out waiting for one.
       for _ <- 1..32 do
         assert_raise RuntimeError, "boom mid-request", fn ->
           Tenancy.with_account(Repo, @account, fn -> raise "boom mid-request" end)
         end
       end
 
-      # The pool is intact: scoped work succeeds immediately afterwards, with
-      # no sleep and no retry.
       Tenancy.begin_account(Repo, nil)
 
       key = Ecto.UUID.generate()
       conn = IdempotencyPlug.call(authed_conn(key), IdempotencyPlug.init([]))
       refute conn.halted
 
-      # And a full request is still served on the same pool.
       full =
         build_conn()
         |> Plug.Conn.put_req_header("x-courier-account", @account)
@@ -154,9 +127,6 @@ defmodule CourierWeb.TenantScopeTest do
   end
 
   describe "the pipeline the scope hangs off" do
-    # The `/v1` routes. `route_info/4` is given a **string** verb because
-    # the atom form answers `:error` for every path here — the same form
-    # `router_test.exs` uses.
     @v1_routes [
       {"GET", "/v1/notification_preferences/:user_id"},
       {"PUT", "/v1/notification_preferences/:user_id"},
@@ -201,14 +171,6 @@ defmodule CourierWeb.TenantScopeTest do
     end
 
     test ":authenticated holds no transaction-scoping plug" do
-      # The removed shape, guarded against by name: a plug in this pipeline
-      # that opened a transaction around the rest of the request committed
-      # before the controller ran, discarding the transaction-local identity
-      # and breaking every authenticated route's protected-table access with
-      # a 42501. The scope now lives in each action and in the `:idempotent`
-      # plug, where a transaction can wrap the work. Read off the ROUTER'S OWN
-      # SOURCE rather than a list kept here, because a list kept here can
-      # agree with a router that has the plug back.
       source = File.read!(Path.join(__DIR__, "../../../lib/courier_web/router.ex"))
 
       [_, body] =

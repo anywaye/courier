@@ -36,15 +36,8 @@ defmodule Courier.Workers.ProcessOutboxWorker do
   alias Courier.OutboxEvent
   alias Courier.Repo
 
-  # The relay's backoff ceiling, in seconds. Core asks for "a few minutes"; a
-  # minute is short enough that a broker that comes back is picked up while
-  # anyone is still watching, and long enough that an outage is not a hot loop.
   @backoff_cap 60
 
-  # The attempt cap is read here, at compile time, because Oban reads a worker's
-  # options when it builds a job — and it is the same number
-  # `config :courier, :outbox` holds, so the queue and the relay agree on what
-  # "past the cap" means. `claim/0` reads the same key at runtime.
   @max_attempts Application.compile_env(:courier, :outbox)[:max_attempts]
 
   use Oban.Worker, queue: :outbox, max_attempts: @max_attempts
@@ -115,7 +108,6 @@ defmodule Courier.Workers.ProcessOutboxWorker do
     |> Repo.all()
   end
 
-  # `published_at` is set here and nowhere else, and only from an acknowledgement.
   defp mark_published(event) do
     event
     |> Ecto.Changeset.change(published_at: DateTime.utc_now(), last_error: nil)

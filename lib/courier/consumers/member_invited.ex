@@ -3,7 +3,6 @@ defmodule Courier.Consumers.MemberInvited do
   `identity.member.invited` → an invitation email, and the refusal that is the
   honest answer for every event this bus will deliver.
 
-  ## THE PAYLOAD GAP, WHICH IS THE SUBJECT OF THIS MODULE
 
   identity publishes this event from `internal/outbox/tenancy.go`, appended in
   the same transaction as the invitation row. **Measured there, and not
@@ -23,7 +22,6 @@ defmodule Courier.Consumers.MemberInvited do
   | `invited_by`      | **no**       | yes — the inviter's member record  |
   | `url`             | **no**       | **NO. See below.**                 |
 
-  ## WHY `url` IS THE ONE THAT MATTERS, AND WHY NO LOOKUP CAN FIX IT
 
   The accept link is built from the invitation's one-time token, and **identity
   returns that token in the `201` and never again.** `internal/accounts/store.go`
@@ -37,7 +35,6 @@ defmodule Courier.Consumers.MemberInvited do
   Any consumer of this event, in any language, on any bus, has exactly the same
   information courier has, and the same absence.
 
-  ## SO THIS REFUSES, AND THE REFUSAL IS THE DELIVERABLE
 
   A `team_invitation` with an empty `url` renders `Accept the invitation:`
   followed by nothing — mail to a stranger, on a domain they have no reason to
@@ -57,7 +54,6 @@ defmodule Courier.Consumers.MemberInvited do
   broken link in it**. Strictly worse than refusing, which is why the refusals
   here are refusals rather than "not implemented yet".
 
-  ## WHY THE HANDLER STILL EXISTS, AND STILL PARSES
 
   Because the wiring is the part that has never been built, and a consumer that
   only appears once the payload is fixed means the first real event on this bus
@@ -68,7 +64,6 @@ defmodule Courier.Consumers.MemberInvited do
   when a `url` is present, so the refusal cannot be a function that refuses
   everything.
 
-  ## NO TOKEN IN THE INVITATION STRUCT, AND THAT IS ASSERTED
 
   identity's own comment says the event "carries no token, and that is the
   important omission — the raw invitation token exists once, in the 201
@@ -77,7 +72,6 @@ defmodule Courier.Consumers.MemberInvited do
   carrying a token would be evidence the publisher changed, and this handler
   would then be withholding mail it could send.
 
-  ## THE HANDLER TAKES THE ROW, NOT THE ENVELOPE
 
   `handle/1` is given the `consumed_events` row rather than the envelope as it
   arrived. Same principle as `Courier.OutboxEvent.envelope/1` on the publishing
@@ -104,9 +98,6 @@ defmodule Courier.Consumers.MemberInvited do
           optional(:url) => String.t()
         }
 
-  # The five fields identity publishes, checked by NAME so the reason names the
-  # one that was wrong. Order is the payload's own, so the message a caller sees
-  # is the payload's rather than a hash order's.
   @fields ~w(account_id invitation_id email role invited_by_id)
 
   @event_type "identity.member.invited"
@@ -190,7 +181,6 @@ defmodule Courier.Consumers.MemberInvited do
   the same payload on `url` being required; this one says so first and with a
   reason about the event rather than about the template.
 
-  ## THE SEND GOES THROUGH `Courier.Deliver`, AND NOT AROUND IT
 
   Not `Courier.Mailer`, and not a provider call in this module: `Deliver` is
   where the preference check, the per-type unsubscribe check and the mailbox
@@ -206,21 +196,9 @@ defmodule Courier.Consumers.MemberInvited do
     end
   end
 
-  # THE REFUSAL, AND IT IS NAMED RATHER THAN GUESSED AT.
-  #
-  # `url` absent is the case identity's design makes permanent: the token is
-  # returned once and never stored, so no redelivery and no lookup will ever
-  # supply it. The row walks its attempt budget and is then left alone to alert
-  # on, which is the honest shape for something that needs a change in another
-  # service rather than a retry.
   defp fetch_url(%{url: url}) when is_binary(url) and url != "", do: :ok
   defp fetch_url(_invitation), do: {:error, :missing_acceptance_url}
 
-  # The mapping onto courier's own payload keys. `name` is the invitee's own
-  # display name, which the event does not carry (the invitee may have no
-  # account, which is the whole point of an invitation), so the template falls
-  # back to its own greeting — `Courier.Mailers.greeting/1` handles a nil name
-  # and this is not a blank in a person's inbox.
   defp payload(invitation) do
     %{
       "user_id" => user_id(invitation),
@@ -233,29 +211,8 @@ defmodule Courier.Consumers.MemberInvited do
     }
   end
 
-  # `Map.get/3` and not `invitation[:account_name]`: a struct does not implement
-  # `Access`, so the bracket form **raises** `FunctionClauseError` on a struct —
-  # and raises from inside the consumer's handler, which is the one place a raise
-  # becomes a failed row at best. The invitation is a plain map so it would work
-  # today; the map form is what stops it becoming a struct in a later packet.
   defp fetch(map, key), do: Map.get(map, key)
 
-  # `user_id` is required by `Courier.Deliver` — a send with no user has no
-  # preferences to check and no user to attribute it to, and courier refuses
-  # `:missing_user_id` rather than inventing an id.
-  #
-  # **The invitation id stands in for it, and that is a compromise with a named
-  # cost.** An invitee has no user: the invitation exists precisely because
-  # they have not signed up. So there is no user id to write. The invitation's
-  # own id is used so the row is attributable and the preference check runs
-  # against a stable key — and the cost is that an invitee who *does* have an
-  # account is checked against the invitation's preferences, not their own.
-  #
-  # It is stated here rather than fixed because the fix belongs in identity: an
-  # `invitee_user_id` on the event, nullable, would let courier branch on it and
-  # check the right person's preferences —
-  # `Courier.NotificationPreferences.enabled?/3` is the call that would gain a
-  # real user id.
   defp user_id(invitation), do: invitation.invitation_id
 
   defp fetch_type(%ConsumedEvent{type: @event_type}), do: :ok

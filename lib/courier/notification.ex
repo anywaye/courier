@@ -3,7 +3,6 @@ defmodule Courier.Notification do
   One event, addressed to one person, with the two facts about whether they have
   looked at it.
 
-  ## The recipient is NOT NULL, and it is the whole design
 
   A row with no recipient is a fan-out that has not happened, and an inbox that
   could see one would answer "how many unread?" with a number nobody can act on.
@@ -18,7 +17,6 @@ defmodule Courier.Notification do
   point at, and a `references/2` would be a constraint against another service's
   schema.
 
-  ## `seen_at` and `read_at` are different facts, and both are nullable
 
   * `seen_at` — "this appeared in a list". Nobody had to open anything; it was on
     screen in an inbox. This is what a badge can honestly count.
@@ -32,7 +30,6 @@ defmodule Courier.Notification do
   by a console and by migrations, and a rule three places have to hold is a rule
   two of them will not.
 
-  ## The unique index is `(event, recipient_type, recipient_id)`
 
   Not the account. An event is addressed to people, and addressing the same
   event to the same person twice writes the same row twice — which is what makes
@@ -49,19 +46,6 @@ defmodule Courier.Notification do
 
   import Ecto.Changeset
 
-  # **THE ALIAS IS NOT COSMETIC.** `belongs_to :event, NotificationEvent` writes
-  # the second argument as the *runtime* module atom `NotificationEvent`, and
-  # inside this module that resolves to `Courier.Notification.NotificationEvent`
-  # unless something has aliased it. The compiler says
-  #
-  #     invalid association `event` in schema Courier.Notification:
-  #     associated schema NotificationEvent does not exist
-  #
-  # and — this is the part worth knowing — it does **not** stop the module from
-  # compiling. The association is left unusable and `preload: :event` raises
-  # `RuntimeError` at the call site, in whichever test happens to load it, with
-  # nothing in the schema to explain why. An explicit `alias` is the whole fix and
-  # it is why this module has one.
   alias Courier.NotificationEvent
 
   @type t :: %__MODULE__{}
@@ -79,18 +63,6 @@ defmodule Courier.Notification do
 
     timestamps()
 
-    # Loaded by `Courier.Notifications.list/4`, and never required. A consumer
-    # that renders a row needs the event's `type` and `params`; one that only
-    # counts unread does not, and preload is a second query it should not pay
-    # for. It is loaded, not joined, so a notification whose event has been
-    # retracted arrives as `%Ecto.Association.NotLoaded{}` rather than vanishing
-    # from the list.
-    #
-    # `belongs_to` **defines** `:notification_event_id`, and declaring the field
-    # as well is a compile error rather than a duplicate — Ecto raises
-    # `field/association :notification_event_id already exists on schema` while
-    # the module compiles. So the association and the column cannot drift apart,
-    # which is why the column is not listed above the way every other one is.
     belongs_to :event, NotificationEvent, foreign_key: :notification_event_id
   end
 

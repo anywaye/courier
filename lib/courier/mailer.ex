@@ -7,7 +7,6 @@ defmodule Courier.Mailer do
   deploy-time decision and not a code change. `Courier.Mailers` composes the
   messages; this module is the only place that hands one to a provider.
 
-  ## Which provider is configured, and who decides
 
   `Courier.MailerAdapter`. It reads `COURIER_MAIL_ADAPTER` and the
   `COURIER_SMTP_*` variables from `config/runtime.exs`, and it REFUSES rather
@@ -20,7 +19,6 @@ defmodule Courier.Mailer do
   send it was ever given. The module itself needed no change to stop being the
   problem; the configuration around it did.
 
-  ## Why `gen_smtp` is a declared dependency and not just `swoosh`
 
   `swoosh` declares `gen_smtp` as an OPTIONAL dependency and `Swoosh.Adapters.SMTP`
   declares it as a required one. Naming `swoosh` alone compiles a courier whose

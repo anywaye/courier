@@ -10,14 +10,12 @@ defmodule CourierWeb.MessagesControllerTest do
   build, a recipient who asked not to be written to, a mailbox that hard-bounced
   months ago — and a suite that only asserts `200` has tested none of them.
 
-  ## Every count here is over courier's own rows, never the table's
 
   The "nothing was written" assertions filter the outbox by the **recipient
   address this test minted**, which is unique per call. `Repo.aggregate(
   OutboxEvent, :count) == 0` would be a claim about every other test in the
   repository as much as about this one — see AGENTS.md.
 
-  ## No real email is sent
 
   `config/test.exs` configures `Swoosh.Adapters.Test`, and the adapter hands each
   message to the sending process as `{:email, email}`. The real adapter is
@@ -37,18 +35,11 @@ defmodule CourierWeb.MessagesControllerTest do
 
   @account "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account
   @other_account "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e"
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
   @other_user_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
-  # A fresh address per call. `email_suppressions` has no `account_id` and its
-  # rows are permanent, so a hard-coded address would let one test's suppression
-  # silently decide another test's outcome — and the table is shared with every
-  # other account by design.
   defp address, do: "recipient-#{System.unique_integer([:positive])}@example.com"
 
   defp body(overrides \\ %{}) do
@@ -58,10 +49,6 @@ defmodule CourierWeb.MessagesControllerTest do
     )
   end
 
-  # Header names are written as the strings HTTP carries them under. An earlier
-  # draft took keyword keys and ran them through `to_string/1`, which produced
-  # `idempotency_key` — a header courier does not read, so every idempotency
-  # assertion in this file was green against a request that had sent nothing.
   defp post_message(conn, payload, headers \\ []) do
     Enum.reduce(headers, conn, fn {name, value}, acc ->
       put_req_header(acc, name, value)
@@ -83,9 +70,6 @@ defmodule CourierWeb.MessagesControllerTest do
       "application/problem+json"
   end
 
-  # Every message the test adapter handed to this process, oldest first. A
-  # receive with `after 0` rather than a sleep: the send happened inside the
-  # request, so the messages are already in the mailbox when this runs.
   defp sent do
     do_sent([])
   end
@@ -98,8 +82,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
   end
 
-  # courier's own rows for ONE address, which is what "nothing was written" has
-  # to mean here.
   defp outbox_for(email) do
     Enum.filter(Repo.all(OutboxEvent), &(&1.data["email"] == email))
   end
@@ -131,22 +113,12 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "a body courier would happily send is refused identically" do
-      # The 401 is not a consequence of a malformed request. If a well-formed
-      # send got through, this endpoint would be an open relay.
       assert post_authed(body()).status == 200
 
       assert post_message(build_conn(), body()).status == 401
       assert length(sent()) == 1
     end
 
-    # NOT asserted here: two `x-courier-account` headers being an ambiguous
-    # caller. `Courier.TestSupport.HeaderResolver` refuses that case and the
-    # refusal is right, but `Plug.Conn.put_req_header/3` **replaces** a header
-    # rather than appending to it, so a ConnTest cannot build the request at all —
-    # the second call overwrites the first and the caller arrives authenticated.
-    # Proving it needs a real socket carrying a duplicated header line, which is a
-    # fact about the test adapter rather than about this endpoint. The branch stays
-    # unasserted rather than asserted with a request that cannot express it.
 
     test "an account header that is not a uuid is refused" do
       conn =
@@ -213,8 +185,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "a user id that is not a uuid is a 422" do
-      # `notification_preferences` is keyed by user id, so a non-uuid is a
-      # preference courier cannot read and an event it cannot attribute.
       conn = post_authed(body(%{"user_id" => "kaka"}))
 
       assert conn.status == 422
@@ -245,9 +215,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "a bad type and a bad user id are both named, not just the type" do
-      # The reason the type check lives in `CourierWeb.Messages` rather than being
-      # left to the context's bare `:unknown_notification_type`: a bare atom cannot
-      # be attached to a field, so a body wrong in two ways would lose one of them.
       conn =
         post_authed(%{"type" => "email_changed", "user_id" => "not-a-uuid", "to" => address()})
 
@@ -256,10 +223,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "an unknown field is a 422 rather than one courier silently drops" do
-      # `Courier.Mailers.normalize/1` builds the payload from a fixed field list
-      # and discards everything else without a word. Over HTTP that is how a
-      # misspelled `email_enabled` becomes a setting the caller believes took
-      # effect.
       conn = post_authed(body(%{"emai_enabled" => false}))
 
       assert conn.status == 422
@@ -268,9 +231,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "an account_id in the body is refused and cannot reach anything" do
-      # The account is `conn.assigns.current_account` and nothing else. The body
-      # names no field courier reads, so it is an unknown field rather than a
-      # value with an effect.
       conn = post_authed(body(%{"account_id" => @other_account}))
 
       assert conn.status == 422
@@ -298,20 +258,11 @@ defmodule CourierWeb.MessagesControllerTest do
 
       assert sent_data["message_id"] =~ ~r/^courier-[0-9a-f-]{36}$/
       assert {:ok, _uuid} = Ecto.UUID.cast(sent_data["event_id"])
-      # `notification_type` and not `type`: the request's field is `type` and the
-      # response's is the name every other operation and the emitted event already
-      # use for the same value. Two spellings of one thing in one document is a
-      # mapping somebody has to hold in their head; the request field is the one
-      # that had to differ, because `type` is what a caller writing an HTTP
-      # client expects.
       assert sent_data["notification_type"] == "welcome"
       assert sent_data["user_id"] == @user_id
     end
 
     test "the status reads accepted, because accepted is all SMTP promises" do
-      # A submission protocol's whole reply is "accepted for delivery". A field
-      # reading `delivered` would be courier claiming a fact about somebody
-      # else's inbox, which courier has and cannot have at this point.
       assert data(post_authed(body()))["status"] == "accepted"
     end
 
@@ -381,10 +332,6 @@ defmodule CourierWeb.MessagesControllerTest do
   end
 
   describe "the two email-change notices" do
-    # identity's email-change flow reaches courier through this door, so these
-    # two types are asserted here and not only in `Courier.MailersTest`: a type
-    # that renders and a type that is SENDABLE are different claims, and the
-    # second one is the one the flow depends on.
 
     test "the current-address notice sends, and carries the confirmation link" do
       url = "https://anywaye.com/email-changes/confirm?token=ch4nge"
@@ -429,9 +376,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "a type's required fields are enforced at the door, not only in the library" do
-      # The per-type required list is `Courier.Mailers`' own, and this is the
-      # proof that a body missing one of them is refused HERE rather than
-      # rendered into a mail with a hole in it.
       conn = post_authed(body(%{"type" => "email_change_current", "name" => nil}))
 
       assert conn.status == 422
@@ -440,16 +384,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "a misspelled field is a 422 naming it, not one courier silently drops" do
-      # The closed vocabulary is the point of the door: `previous_emai` is not
-      # a field, and a body carrying it must be refused by NAME rather than
-      # accepted with the previous address silently discarded — which over
-      # HTTP is how a caller believes a mail was addressed that was not.
-      #
-      # The correctly-spelled `previous_email` travels beside it, so the
-      # misspelling is the ONLY thing wrong with the body: a 422 naming both
-      # an unknown field and a missing required one would pass against a door
-      # that reported only the first, and the claim is that the unknown field
-      # is named.
       conn =
         post_authed(
           body(%{
@@ -516,10 +450,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "a padded address is a 422 rather than a silently trimmed one" do
-      # `Courier.Mailers`' format check rejects a space inside the address, so
-      # `" a@b.test "` never reaches the suppression lookup. Asserted because the
-      # opposite would be quiet: courier trimming an address a caller sent padded
-      # is a decision no caller asked for and none can see.
       email = address()
       {:ok, :new, _row} = suppress(email, :hard_bounce)
 
@@ -531,13 +461,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "the refusal does not echo the address back" do
-      # The table is never exposed through a route, and a 409 that quoted the
-      # address would make a probe of guessed addresses worth running.
-      #
-      # The status is asserted FIRST on purpose. This is an absence assertion, and
-      # an absence assertion placed before the presence one is green over a 404 —
-      # which is how it read before the route existed, and how three redaction
-      # tests in this repository once proved nothing at all.
       email = address()
       {:ok, :new, _row} = suppress(email, :hard_bounce)
 
@@ -557,9 +480,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "a soft bounce suppresses nothing" do
-      # RFC 5321 §4.2.2 is a temporary failure. A list that fills on temporary
-      # failures is how a service stops mailing people whose provider had a bad
-      # afternoon.
       email = address()
 
       assert {:ok, :ignored} = Suppressions.ingest(suppression_event(email, :soft_bounce))
@@ -571,8 +491,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "the suppression check is in the send path, not only in this controller" do
-      # Proved from the library side, because "whatever the caller asked for" has
-      # to hold for a caller that is not HTTP.
       email = address()
       {:ok, :new, _row} = suppress(email, :hard_bounce)
 
@@ -663,9 +581,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "a refused send leaves its key free to use again" do
-      # Why the plug releases rather than stores a non-2xx: a stored 422 would
-      # pin a caller's typo for 24 hours, so fixing the body and retrying with
-      # the same key has to work.
       key = "22222222-2222-2222-2222-222222222222"
 
       assert post_authed(body(%{"type" => "nope"}), [{"idempotency-key", key}]).status == 422
@@ -709,10 +624,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
 
     test "the invariant reads the message, not the type it was rendered from" do
-      # Every type courier renders carries both formats today, so the predicate
-      # has to be tested on hand-built messages to be tested at all — and a
-      # predicate that only ever sees real renders is a predicate nothing has
-      # checked.
       refute Courier.Mailers.body?(%Swoosh.Email{
                to: [{"Kaka", address()}],
                subject: "no bodies at all"
@@ -720,7 +631,6 @@ defmodule CourierWeb.MessagesControllerTest do
     end
   end
 
-  # --- helpers ---------------------------------------------------------------
 
   defp body_only(fields), do: struct!(%Swoosh.Email{to: [{"Kaka", address()}]}, fields)
 

@@ -32,9 +32,6 @@ defmodule CourierWeb.HealthController do
         json(conn, %{status: "ok"})
 
       {:error, _reason} ->
-        # The reason is logged by Courier.Health and deliberately not returned:
-        # a probe response is read by orchestrators and, in a public repo,
-        # by anyone.
         conn
         |> put_status(:service_unavailable)
         |> json(%{status: "error", checks: %{database: "unavailable"}})

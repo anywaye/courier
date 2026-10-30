@@ -1,14 +1,4 @@
 #!/bin/sh
-# The gate for this repository. One command, from a clean checkout to a green
-# suite: toolchain, database, tests.
-#
-#   bin/prime
-#
-# Needs the pinned Elixir and Erlang from mise (see mise.toml), and a postgres
-# reachable at localhost:5432 as postgres/postgres — `docker compose up -d db`
-# if you do not have one. It is the local gate; CI runs the same steps.
-#
-# This is the Elixir sibling of kit's Go template; if kit changes it, follow kit.
 set -eu
 
 mix local.hex --force

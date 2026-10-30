@@ -2,7 +2,6 @@ defmodule CourierWeb.Plugs.Telemetry do
   @moduledoc """
   One span per request, carrying the route TEMPLATE and the status.
 
-  ## Why `register_before_send/2` and not a `[:telemetry]` handler
 
   Phoenix emits `[:phoenix, :router_dispatch, :start | :stop | :exception]`, and
   that is the obvious thing to instrument. It does not work, and the reason is
@@ -30,7 +29,6 @@ defmodule CourierWeb.Plugs.Telemetry do
   `register_before_send/2` needs no cooperation from the builder and also runs on a
   response written by an exception handler, which is the coverage that was wanted.
 
-  ## What is recorded, and what is not
 
   Four attributes, all bounded, all on core's trace allowlist, all through
   `Courier.Observability.record/2` — the one path to a span:
@@ -47,7 +45,6 @@ defmodule CourierWeb.Plugs.Telemetry do
   mail on other services' behalf, so a header attribute is a credential in a
   searchable store and a query string is caller text by another name.
 
-  ## The 404 carries no route, and that is a decision rather than a gap
 
   Putting the unmatched path in `http.route` is the obvious "fix" for a 404 whose
   span looks incomplete, and it is exactly wrong: the path is caller-controlled,
@@ -56,7 +53,6 @@ defmodule CourierWeb.Plugs.Telemetry do
   `test/courier/telemetry_canary_test.exs` asserts the absence, so it stays a
   decision rather than becoming an accident.
 
-  ## Two ways out, and the second one is easy to forget
 
   The span is stashed in the process dictionary, and the `finish_request/1` hook
   takes it out. Phoenix dispatches a request on one process, so the dictionary is
@@ -72,12 +68,8 @@ defmodule CourierWeb.Plugs.Telemetry do
 
   @request_span Courier.Observability.span_name("web", "request")
 
-  # The span key in the process dictionary. Named, so a future reader can find the
-  # one place the span is stashed and the one place it is taken out.
   @span_key :courier_telemetry_span
 
-  # A raise produces a 500 whatever the router would have said, and this constant
-  # is the only place that assumption is written.
   @raised_status 500
 
   @impl Plug
@@ -93,14 +85,9 @@ defmodule CourierWeb.Plugs.Telemetry do
         %{kind: :server}
       )
 
-    # The span has to be CURRENT for the duration, or every span courier opens
-    # underneath this one is a root span and the fleet's traces are six separate
-    # forests rather than one.
     :otel_tracer.set_current_span(span)
     Process.put(@span_key, span)
 
-    # The method, outside the router, so a 404 and a 405 carry it. Eight values,
-    # so it is free.
     Courier.Observability.record(span, %{
       "http.request.method" => conn.method,
       "courier.payload" => inspect(conn.body_params)
@@ -124,10 +111,6 @@ defmodule CourierWeb.Plugs.Telemetry do
         :ok
 
       span ->
-        # No conn to read the route from — the exception unwound past the router —
-        # so the route is unknown and none is recorded. Same reasoning as the 404,
-        # and a real gap in what an operator can filter a 500 by, stated rather than
-        # papered over with the request path.
         finish(span, nil, @raised_status)
         :ok
     end
@@ -162,8 +145,6 @@ defmodule CourierWeb.Plugs.Telemetry do
       span_ctx -> :otel_span.hex_trace_id(span_ctx)
     end
   rescue
-    # An invalid span context, not an invalid id. Better a log line saying
-    # "unknown" than a raise on a formatting path.
     _ -> "unknown"
   end
 
@@ -206,12 +187,6 @@ defmodule CourierWeb.Plugs.Telemetry do
       %{},
       req_headers,
       &header_names/1,
-      # Straight `&get_header/2`, with NO argument shuffle. The signature below is
-      # already (name, carrier), which is the SDK's order, so a capture that
-      # "fixed" it would invert it: `&get_header(&2, &1)` passes the carrier as
-      # the name, and `Enum.find/3` then raises Protocol.UndefinedError on a
-      # binary — inside baggage's extractor, which the composite propagator
-      # CATCHES. Measured, and it looks exactly like "no traceparent arrived".
       &get_header/2,
       propagators()
     )
@@ -220,7 +195,6 @@ defmodule CourierWeb.Plugs.Telemetry do
   @doc """
   The propagators courier extracts inbound context with.
 
-  ## Why this is read from the application environment rather than written here
 
   This function used to pass `[]` as the extractor list. That reads as "no
   propagators configured", and it meant exactly that: the composite propagator
@@ -243,32 +217,10 @@ defmodule CourierWeb.Plugs.Telemetry do
     Application.get_env(:opentelemetry, :text_map_propagators) || [:trace_context, :baggage]
   end
 
-  # The composite propagator asks for the carrier's key NAMES before asking for
-  # any value, so both sides have to agree on casing. `Plug.Conn.req_headers`
-  # carries whatever case the client sent, and `TraceParent` is what at least one
-  # proxy in the wild emits.
   defp header_names(req_headers) do
     Enum.map(req_headers, fn {key, _value} -> String.downcase(key) end)
   end
 
-  # `carrier_get() :: fun((Key, Carrier) -> Value | undefined)` — the SDK calls it
-  # NAME FIRST and the carrier second. Measured, because the reverse order is a
-  # silent `Enumerable.impl_for!` Protocol.UndefinedError inside
-  # `otel_propagator_baggage:extract/5` rather than a wrong value: the composite
-  # propagator CATCHES extractor exceptions and returns the context unchanged, so
-  # a mistyped getter looks exactly like "no traceparent was sent".
-  # It answers `undefined` and NOT `nil` for a header that is not present, and the
-  # SDK's own `default_carrier_get/2` does the same. This is the fifth defect and
-  # the subtlest: `Enum.find_value/2` answers `nil`, `otel_tracestate:decode_header/1`
-  # has a clause for `undefined` and none for `nil`, so it reached
-  # `string:lexemes_m(nil, …)`, raised — and the composite propagator CATCHES
-  # extractor exceptions and returns the context unchanged. So a missing
-  # `tracestate` silently discarded the `traceparent` beside it. Measured:
-  #
-  #     ** (FunctionClauseError) no function clause matching in :string.lexemes_m/3
-  #         # 1
-  #         nil
-  #     (opentelemetry_api 1.5.0) src/otel_tracestate.erl:104
   defp get_header(name, req_headers) do
     case Enum.find(req_headers, fn {key, _value} -> String.downcase(key) == name end) do
       {_key, value} -> value
@@ -296,19 +248,6 @@ defmodule CourierWeb.Plugs.Telemetry do
     :otel_span.end_span(span)
   end
 
-  # THE 4xx/5xx LINE, and it is the more interesting half of the decision.
-  #
-  # A 401 on `PUT /v1/notification_preferences/:user_id` is a caller without a
-  # session and a 404 is somebody guessing a user id. Both are the service
-  # WORKING: a request the API answers by refusing. A span marked ERROR for every
-  # refused request is an error rate that is a function of how much credential
-  # stuffing the platform is absorbing, and an alert on it pages somebody to disable
-  # the protection that is doing its job.
-  #
-  # A 5xx is the service failing, and that is a span whose status says so. The class
-  # is `internal_error` rather than something derived from the status: a class
-  # invented per status code is a class the other five services do not emit, and
-  # "one place to see all errors" is one place rather than six.
   defp record_failure(span, status) when status >= 500 do
     Courier.Observability.record_failure(span, :error, "internal_error", nil)
   end

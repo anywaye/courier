@@ -17,7 +17,6 @@ defmodule Courier.NatsPublisherBusTest do
   A test asserting the publisher was CALLED proves nothing about delivery, which
   is why the assertions below are about the bytes the broker received.
 
-  ## Why this file is `async: false`
 
   Three reasons, and each is a property of the VM rather than of this test:
 
@@ -27,7 +26,6 @@ defmodule Courier.NatsPublisherBusTest do
       one VM is a clash;
     * the publisher it ends up configured with is not the suite's stand-in.
 
-  ## What is not proved here
 
   That a real broker creates the `anywaye` stream, or that `courier.>` matches.
   kit owns that (`templates/compose/docker-compose.yml:540` and
@@ -65,8 +63,6 @@ defmodule Courier.NatsPublisherBusTest do
     }
   end
 
-  # A row through the real path, so the relay is never tested against a row
-  # shape courier itself would not write.
   defp delivered_row! do
     {:ok, result} = Deliver.welcome(welcome_payload())
     Repo.get!(OutboxEvent, result.event_id)
@@ -88,9 +84,6 @@ defmodule Courier.NatsPublisherBusTest do
       Application.put_env(:courier, :nats_publisher, original_publisher)
     end)
 
-    # `{:ok, server: server}` no longer lands in the test body as a binding
-    # (measured on Elixir 1.20.4: a keyword returned from `setup` is available
-    # only through the context argument), so the tests below take `ctx`.
     {:ok, server: server}
   end
 
@@ -103,8 +96,6 @@ defmodule Courier.NatsPublisherBusTest do
 
       assert {:ok, _} = perform_job(ProcessOutboxWorker, %{})
 
-      # THE ASSERTION THE PACKET IS FOR: the row is ON THE BUS, on the subject
-      # named by its type, carrying the envelope the row recorded.
       assert [%{subject: subject, payload: payload}] = NatsServer.published(ctx.server)
 
       assert subject == "courier.email.delivered"
@@ -115,16 +106,10 @@ defmodule Courier.NatsPublisherBusTest do
       assert envelope["source"] == "courier"
       assert envelope["specversion"] == "1.0"
       assert envelope["subject"] == row.subject
-      # Not a mapping table and not a re-rendering: the envelope is the row.
       assert envelope["time"] == DateTime.to_iso8601(row.occurred_at)
 
-      # The subject is prefixed with courier's own name, which is the fleet's
-      # contract rule for a publisher's event types.
       assert String.starts_with?(subject, "courier.")
 
-      # And `published_at` was set from the broker's ack rather than from the
-      # publish being sent — which is the difference between this and
-      # `Gnat.pub/4`.
       reloaded = Repo.get!(OutboxEvent, row.id)
       assert reloaded.published_at
       assert reloaded.last_error == nil
@@ -155,9 +140,6 @@ defmodule Courier.NatsPublisherBusTest do
       start_supervised!({Nats, []})
       assert {:ok, _} = perform_job(ProcessOutboxWorker, %{})
 
-      # Core's outbox rule: re-serialising between signing and sending
-      # invalidates the signature. The payload on the wire is the one binary the
-      # publisher encoded, byte for byte — asserted rather than described.
       [%{payload: payload}] = NatsServer.published(ctx.server)
       assert payload == Jason.encode!(OutboxEvent.envelope(row))
     end
@@ -165,14 +147,6 @@ defmodule Courier.NatsPublisherBusTest do
 
   describe "when the broker refuses" do
     setup ctx do
-      # The refusal a stream answers a publish to a subject no stream claims:
-      # an error object rather than an ack. `Courier.NatsPublisher.Bus` reads
-      # the code out of it, and the row is left claimable.
-      #
-      # `ctx.server` and not a bare `server`: a NESTED setup does not inherit the
-      # bindings the outer `setup` returns, so the outer setup's keyword is read
-      # off the context instead. Measured, and the opposite of the shape that
-      # compiles.
       :ok =
         NatsServer.refuse_next(
           ctx.server,
@@ -196,8 +170,6 @@ defmodule Courier.NatsPublisherBusTest do
                ~s(stream_refused 404: "stream not found for subject: ) <>
                  ~s(courier.email.delivered")
 
-      # The message DID reach the broker's port — this is the broker refusing,
-      # not a connection that never opened.
       assert [%{subject: subject}] = NatsServer.published(ctx.server)
       assert subject == "courier.email.delivered"
 

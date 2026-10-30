@@ -3,7 +3,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
   `config/runtime.exs` validates the SERVER's credential contract, and only the
   server's — a `bin/migrate` boot is a subset of it, and this file is the proof.
 
-  ## The bootstrap cycle this exists on the far side of
 
   The substrate runs each service's migrate entrypoint as a one-shot Job **before
   the stack is up**, and mints courier's `COURIER_IDENTITY_TOKEN` in a later step,
@@ -12,14 +11,12 @@ defmodule Courier.ReleaseMigrateConfigTest do
   that did not exist yet and that a migration never reads. The fix is a
   distinction, not a deletion: the server still refuses.
 
-  ## How the two boots are told apart
 
   `RELEASE_COMMAND`, which the release's own `bin/<name>` script sets from its
   first argument before the VM starts: `start` for `bin/server`, `eval` for
   `bin/migrate`. The release script OVERWRITES any inherited value, so a
   deployment cannot put `RELEASE_COMMAND=eval` in front of `bin/server`.
 
-  ## Why this evaluates the file rather than reading application env
 
   This process's merged application env is the SUITE's config, where none of the
   production blocks ran. So each test evaluates `config/runtime.exs` as the
@@ -28,7 +25,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
   `Config.Reader`'s `:env` option does not satisfy that (measured; see
   `CourierWeb.ErrorRelayEndpointTest`, which found it first).
 
-  ## `async: false`
 
   Every test here mutates OS environment variables, which the whole VM shares
   (`System.put_env/2` / `System.delete_env/1`), and a test that runs beside
@@ -40,16 +36,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
 
   @owner_dsn "ecto://postgres:postgres@localhost/courier_test"
 
-  # The SERVING contract: every variable the server refuses without, and not one
-  # of which a migration reads. Written out so a newly required variable that a
-  # migration should NOT need is added here deliberately rather than inherited by
-  # a delete-everything helper. A migration reads `COURIER_OWNER_DATABASE_URL`
-  # and nothing else, and that is the *positive* half asserted below.
-  # `COURIER_INBOUND_RESEND_SECRET` is **not** in this list — cf-inbound-optional.
-  # It is optional: a Cloudflare-only box (COURIER_MAIL_ADAPTER=cloudflare) boots
-  # with no provider, logs the cost, and its inbound route answers 500. The
-  # serving contract is the set of variables a server cannot start without, and
-  # an inbound webhook secret is not one of them.
   @serving_variables [
     "COURIER_IDENTITY_TOKEN",
     "COURIER_SECRET_BOX_KEY",
@@ -79,8 +65,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
 
     on_exit(fn -> restore(previous) end)
 
-    # A bare box: none of the serving contract is present, and the one credential
-    # a migration reads IS. This is the state the substrate's migrate Job runs in.
     Enum.each(@serving_variables, &System.delete_env/1)
     System.put_env("COURIER_OWNER_DATABASE_URL", @owner_dsn)
 
@@ -101,8 +85,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "the serving variables really were absent, so the test above is a claim" do
-      # The empty half paired with the positive one above. A helper that deleted
-      # nothing would make the first test green for the wrong reason.
       absent = Enum.reject(@serving_variables, &System.get_env/1)
 
       assert Enum.sort(absent) == Enum.sort(@serving_variables),
@@ -112,10 +94,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "does not require DATABASE_URL, because a migration does not start Courier.Repo" do
-      # `DATABASE_URL` names `courier_app`, and `Courier.Release.migrate/0` runs as
-      # `Courier.OwnerRepo` and never starts `Courier.Repo` — so requiring it for a
-      # migration is requiring courier_app's credential for DDL it cannot run. If
-      # this goes red, the migrate Job is being handed a credential it must not use.
       config = read_config!("eval")
 
       assert config[:courier][Courier.Repo][:url] == nil,
@@ -124,13 +102,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "still evaluates when the owner DSN is absent — the refusal is Ecto's, later" do
-      # The migrate entrypoint must not RAISE here: with no owner DSN the file
-      # evaluates, `Courier.OwnerRepo` is simply not configured, and the refusal
-      # lands in `bin/migrate` as Ecto's "could not find Ecto repo config for
-      # Courier.OwnerRepo under :courier" — a message that names the module an
-      # operator needs. Raising at config time would move that earlier and, on the
-      # substrate's ordering, keep courier from migrating for a reason `bin/migrate`
-      # is the right place to report.
       System.delete_env("COURIER_OWNER_DATABASE_URL")
 
       config = read_config!("eval")
@@ -142,12 +113,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
 
   describe "the server boot without an inbound secret" do
     test "boots with no inbound secret, and configures an empty map" do
-      # cf-inbound-optional: a Cloudflare box has no Resend webhook and the
-      # cheapest, most self-contained setup cannot require a second vendor's
-      # credential. The absence is a supported state — the boot configures
-      # `%{}` and the route answers 500 with the cost, rather than refusing
-      # to start. `Courier.InboundConfig` documents the cost sentence that now
-      # lives on a boot log line and in README.
       System.put_env("COURIER_IDENTITY_TOKEN", "anywaye_fixture-not-a-real-credential")
       System.put_env("COURIER_SECRET_BOX_KEY", "Y291cmllci10ZXN0LW9ubHkta2V5LTMyLWJ5dGVzISE=")
       System.put_env("COURIER_ERROR_RELAY_TOKEN", "test-only-not-a-secret")
@@ -220,14 +185,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
       System.delete_env("COURIER_SMTP_USERNAME")
       System.delete_env("COURIER_SMTP_PASSWORD")
 
-      # COMPOSED, not logged. This used to `capture_log(fn -> read_config!("start") end)`
-      # and assert the line appeared — and it was green over a release that logged
-      # NOTHING, because `Config.Reader.read!/2` runs with the logger already up
-      # while the release's boot script does not. That is exactly the trap this
-      # packet is fixing: the assertion exercised the mechanism that a release
-      # never runs. What is asserted now is the notice's CONTENT;
-      # `Courier.StartupNoticesTest` asserts that `Courier.Application.start/2`
-      # actually emits it, in the window a release provides.
       notices = read_config!("start")[:courier][:startup_notices]
 
       assert Enum.any?(notices, fn {_level, message} ->
@@ -281,19 +238,12 @@ defmodule Courier.ReleaseMigrateConfigTest do
 
   describe "the server boot" do
     test "refuses without COURIER_IDENTITY_TOKEN, and names the variable" do
-      # THE BOUNDARY: the same bare-box environment that migrates must NOT let the
-      # server start. The raise's own sentence is asserted, because that sentence
-      # is the only thing an operator sees in a crash-looping container log.
       assert_raise RuntimeError, ~r/COURIER_IDENTITY_TOKEN is missing/, fn ->
         read_config!("start")
       end
     end
 
     test "refuses for every command that serves, not only `start`" do
-      # The gate is `!= "eval"`, so the daemon and iex forms are covered by the
-      # same line — asserted rather than assumed, because a gate written as
-      # `== "start"` would leave `courier daemon` unguarded and this test is the
-      # only place that would say so.
       for command <- @commands_that_serve do
         assert_raise RuntimeError, ~r/COURIER_IDENTITY_TOKEN is missing/, fn ->
           read_config!(command)
@@ -302,10 +252,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "and `mix` (no RELEASE_COMMAND at all) is treated as the server" do
-      # `mix phx.server` and `MIX_ENV=prod mix` leave the variable unset. The safe
-      # direction is to treat that as serving, so a non-release invocation cannot
-      # be the loophole that skips the contract. The variable is DELETED rather
-      # than set to some other value, because "unset" is the case under test.
       System.delete_env("RELEASE_COMMAND")
 
       assert_raise RuntimeError, ~r/COURIER_IDENTITY_TOKEN is missing/, fn ->
@@ -316,10 +262,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
 
   describe "the entrypoints, held to the split" do
     test "bin/migrate runs the release's `eval` command" do
-      # THE REACHABILITY CHECK, in the shape `Courier.BackupConfigTest` uses for
-      # the two Kamal files: the config split is a document unless some entrypoint
-      # actually produces the command it keys on. `eval` is that word, and the
-      # release's own script is what turns it into `RELEASE_COMMAND`.
       migrate = File.read!("rel/overlays/bin/migrate")
 
       assert migrate =~ "eval Courier.Release.migrate",
@@ -342,10 +284,6 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
 
     test "config/runtime.exs keys the split on RELEASE_COMMAND and on `eval`" do
-      # A source-level assertion, deliberately narrow: it fails if the file stops
-      # reading the release's own signal or stops naming the one value that means
-      # "one-shot". The behavioural claims live in the tests above; this one keeps
-      # the mechanism visible in the one file a reader will open.
       runtime = File.read!("config/runtime.exs")
 
       assert runtime =~ ~s|System.get_env("RELEASE_COMMAND") != "eval"|,
@@ -355,11 +293,7 @@ defmodule Courier.ReleaseMigrateConfigTest do
     end
   end
 
-  # --- helpers ---------------------------------------------------------------
 
-  # `config/runtime.exs` as a release evaluates it under `command`: `env: :prod`
-  # so the prod blocks run, and `RELEASE_COMMAND` in the REAL environment, because
-  # `runtime.exs` asks `System.get_env/1`.
   defp read_config!(command) do
     System.put_env("RELEASE_COMMAND", command)
     prod_config()

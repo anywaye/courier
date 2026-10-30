@@ -2,7 +2,6 @@ defmodule Courier.BackupConfigTest do
   @moduledoc """
   courier's backup configuration is a real configuration, and it is reachable.
 
-  ## What "reachable" means here, and why it is the whole test
 
   `config/kamal-backup.yml` is not read by courier. Nothing in this repository
   opens it. It is mounted, read-only, into the `backup` accessory's container by
@@ -17,7 +16,6 @@ defmodule Courier.BackupConfigTest do
   the connection, which is also the only way to see the second half of the
   problem below.
 
-  ## The two files are ONE contract, and neither can check itself
 
   `kamal-backup validate` builds the accessory's environment from
   `config/deploy.yml` and from nothing else — not from the process, not from
@@ -33,7 +31,6 @@ defmodule Courier.BackupConfigTest do
   from the accessory's list. What this suite does is hold the same contract in
   the gate, where it runs on every commit and needs no Ruby.
 
-  ## Every absence assertion is paired with a presence one
 
   Three claims here are "this is NOT in the file": no key material, no file
   paths, no `COURIER_SECRET_BOX_KEY`. Each is paired with an assertion that the
@@ -44,7 +41,6 @@ defmodule Courier.BackupConfigTest do
   replaceable by real ones, that the mount exists, and that the schedule is the
   one README quotes.
 
-  ## It runs with no database
 
   `use ExUnit.Case`, not `Courier.DataCase`. Both files are read from disk and
   nothing here touches `Courier.Repo`, so this belongs to the no-database tier —
@@ -52,8 +48,6 @@ defmodule Courier.BackupConfigTest do
   postgres would be one a CI runner without a database silently skips.
   """
 
-  # `async: true`: this test reads two files and touches no shared process, no
-  # application environment and no database.
   use ExUnit.Case, async: true
 
   alias Courier.TestSupport.KamalConfig
@@ -62,19 +56,6 @@ defmodule Courier.BackupConfigTest do
   @deploy_path "config/deploy.yml"
   @readme "README.md"
 
-  # The secrets the backup config is allowed to name. A name outside this set is
-  # either a credential by accident or a key this file has not been reviewed for,
-  # and both are refusals rather than warnings.
-  # The secrets `config/kamal-backup.yml` is allowed to name — four, not six.
-  #
-  # The accessory's `env.secret` list in `config/deploy.yml` carries two more
-  # (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) and that asymmetry is not an
-  # oversight to be tidied away: they are the R2 credentials restic reads from its
-  # OWN environment, and kamal-backup has no configuration key for them at all
-  # (`ConfigFile::TOP_LEVEL_KEYS` is `app accessory databases paths restore_from
-  # restic backup state`, and the AWS pair appears in none of it). Naming them
-  # here would be inventing a key, so they are asserted to be ABSENT rather than
-  # present.
   @permitted_secrets ~w(
     DATABASE_URL
     DATABASE_PASSWORD
@@ -82,9 +63,6 @@ defmodule Courier.BackupConfigTest do
     RESTIC_PASSWORD
   )
 
-  # …and the two the accessory needs that this file must NOT name, with the
-  # reason above. A restic repository on R2 is an S3 endpoint, so something has to
-  # hold the two keys that authenticate against it.
   @accessory_only_secrets ~w(AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY)
 
   setup_all do
@@ -97,10 +75,6 @@ defmodule Courier.BackupConfigTest do
            backup: _backup,
            deploy: deploy
          } do
-      # The specific destination, not "a file is mounted somewhere": the mount's
-      # source can be written any number of ways, and the destination is the part
-      # that has to be `/app/config/kamal-backup.yml` because that is where
-      # `kamal-backup` opens it.
       assert KamalConfig.mounts_backup_config?(deploy),
              "#{@deploy_path} mounts #{inspect(deploy.mounts)}, and none of them puts " <>
                "#{@backup_path} at /app/config/kamal-backup.yml. Nothing reads that file except the " <>
@@ -126,15 +100,6 @@ defmodule Courier.BackupConfigTest do
          %{
            backup: backup
          } do
-      # The presence assertion is `app`, and this is its own claim. kit ships
-      # `kamal-backup.yml.erb`; the file that lands here has to be the rendered
-      # result, because `KamalBackup::ConfigFile#data` reads this path with
-      # `YAML.safe_load` and nothing else (kamal-backup 0.5.2,
-      # `lib/kamal_backup/config_file.rb:57`). An unrendered `app: <%= service %>`
-      # is not a syntax error — YAML reads it as a literal scalar — and the
-      # failure is a repository full of snapshots under
-      # `databases/<%= service %>/primary/`, tagged `app:<%= service %>`, which
-      # no `kamal-backup list` filtered on this app will ever find.
       assert backup.app,
              "#{@backup_path} declares no `app:`. It is the snapshot path and the restic tag, and " <>
                "restic tracks it: renaming it orphans every existing snapshot."
@@ -149,20 +114,12 @@ defmodule Courier.BackupConfigTest do
       backup: backup,
       deploy: deploy
     } do
-      # `config/deploy.yml` is ERB, so its `service:` is a tag here rather than a
-      # value — and that is the point of the assertion. It has to be the TAG, so
-      # that both files are rendered from the same `KIT_SERVICE` and cannot
-      # disagree about the service's name; a mismatch here is a snapshot written
-      # under one name and looked for under another, which reads as "the backup
-      # is missing".
       assert deploy.service == "<%= service %>",
              "#{@deploy_path} declares `service: #{inspect(deploy.service)}` rather than the " <>
                "`<%= service %>` tag. kit's template derives both files' service name from KIT_SERVICE " <>
                "for exactly this reason: a hard-coded name in one file and an interpolated one in " <>
                "the other is a snapshot written under one name and restored under another."
 
-      # And the rendered value has to be courier's, checked against the one place
-      # in this repository that already names it.
       assert backup.app == "courier",
              "#{@backup_path} declares `app: #{inspect(backup.app)}`. The restic snapshot path and tag " <>
                "are built from it, so this is the string `kamal-backup list` filters on."
@@ -198,9 +155,6 @@ defmodule Courier.BackupConfigTest do
     test "the secrets it names are the six the R2 and Postgres contract needs, and no others", %{
       backup: backup
     } do
-      # Not a count, and not a subset: an exact set, in both directions. A seventh
-      # name is either a credential in a committed file or a key nobody has
-      # reviewed for what it exposes, and both are refusals.
       assert MapSet.new(backup.secrets) == MapSet.new(@permitted_secrets),
              "#{@backup_path} names #{inspect(Enum.sort(backup.secrets))}; the permitted set is " <>
                "#{inspect(@permitted_secrets)}. Every one of these is a NAME resolved from the accessory's " <>
@@ -210,18 +164,6 @@ defmodule Courier.BackupConfigTest do
 
     test "the two R2 credentials are named in the accessory and NOT here, because no config key exists for them",
          %{backup: backup, deploy: deploy} do
-      # The other direction of the same contract, and it is worth asserting rather
-      # than leaving implied: `config/deploy.yml` gives the accessory SIX secrets
-      # and this file names FOUR. The two it does not name are the R2 pair, and
-      # the reason is in the tool — `KamalBackup::ConfigFile::TOP_LEVEL_KEYS` is
-      # `app accessory databases paths restore_from restic backup state`, and there
-      # is no key anywhere in it for an AWS credential. restic reads them from its
-      # own environment, which is the accessory's.
-      #
-      # So a reader that demanded "the two files name the same secrets" would be
-      # wrong, and demanding it is the mistake this test exists to prevent: the
-      # correct rule is one-directional, every secret NAMED HERE is in the
-      # accessory, and the accessory may hold more.
       accessory = MapSet.new(deploy.accessory_secrets[backup.accessory] || [])
 
       for name <- @accessory_only_secrets do
@@ -240,10 +182,6 @@ defmodule Courier.BackupConfigTest do
     test "the database connection uses the same variable name courier's release requires", %{
       backup: backup
     } do
-      # Read off `config/runtime.exs` rather than asserted from memory: that file
-      # raises without `DATABASE_URL` in `:prod`, so it is courier's real database
-      # identity, and a backup config naming a different variable would be dumping
-      # a database this release does not connect to.
       runtime = File.read!("config/runtime.exs")
 
       assert runtime =~ ~S|System.get_env("DATABASE_URL")|,
@@ -278,9 +216,6 @@ defmodule Courier.BackupConfigTest do
     test "the snapshot path is the one the runbook tells an operator to look for", %{
       backup: backup
     } do
-      # A presence assertion to go with the three absences below, and it is the
-      # string that decides whether a restore is findable: `databases/<app>/<name>
-      # /postgres.pgdump`, tagged `app:courier`.
       assert KamalConfig.snapshot_path!(backup, 1) == "databases/courier/primary/postgres.pgdump"
     end
   end
@@ -291,22 +226,6 @@ defmodule Courier.BackupConfigTest do
            backup: backup,
            deploy: deploy
          } do
-      # THE SECRETBOX ANSWER, asserted rather than asserted-in-prose. A restore
-      # brings every `webhook_endpoints.secret` back as ciphertext, and it cannot
-      # read its own rows until COURIER_SECRET_BOX_KEY is supplied unchanged — and
-      # the key cannot be IN the backup, because it is not in the database: it
-      # comes from the deployment's environment, by `config/runtime.exs`'s refusal
-      # to boot without it.
-      #
-      # So this is a property of the CONFIGURATION, and it is the shape the defect
-      # takes when somebody tries to be helpful: someone adds
-      # COURIER_SECRET_BOX_KEY to the accessory's secret list "so the restore can
-      # read the rows", and every snapshot is now encrypted under a key that
-      # rotates with the deployment rather than travelling with the data.
-      #
-      # The presence assertion is right below: the key IS in the service's own
-      # environment, because courier cannot start without it. That is the correct
-      # place for it and the difference between the two is the whole answer.
       refute "COURIER_SECRET_BOX_KEY" in backup.secrets,
              "#{@backup_path} names COURIER_SECRET_BOX_KEY. The key that opens " <>
                "webhook_endpoints.secret is not in the database, so it cannot be in a dump of the " <>
@@ -321,8 +240,6 @@ defmodule Courier.BackupConfigTest do
                "It needs no credential to run pg_dump and restic, and the sealing key is the one value " <>
                "a dump must never carry."
 
-      # …and it IS in the service's own environment, which is where courier reads
-      # it and where a restore has to find it again.
       runtime = File.read!("config/runtime.exs")
 
       assert runtime =~ ~S|System.get_env("COURIER_SECRET_BOX_KEY")|,
@@ -331,10 +248,6 @@ defmodule Courier.BackupConfigTest do
     end
 
     test "no file paths are declared, because courier keeps nothing on disk", %{backup: backup} do
-      # The absence, and its paired presence is the schema assertion in
-      # `Courier.BackupTablesTest` — a `paths:` list is only harmless while there
-      # is nothing on local disk worth listing, and that is a claim about
-      # courier's tables rather than about this file.
       refute backup.paths?,
              "#{@backup_path} declares a `paths:` list, so restic takes a file snapshot of whatever it " <>
                "names. courier keeps no state on local disk: its migrations create no bytea column, no " <>
@@ -344,23 +257,6 @@ defmodule Courier.BackupConfigTest do
     end
 
     test "no secret-shaped value appears in any line the tool reads" do
-      # The other half of the reader's contract, checked against the FILE rather
-      # than the parse: this repository's rule is that a credential never reaches
-      # a committed file, and `config/kamal-backup.yml` is committed, pasted into
-      # tickets and read over shoulders. A restic password written next to the
-      # repository it decrypts is a password in git, and it is the single most
-      # valuable value in the file.
-      #
-      # SCOPED TO NON-COMMENT LINES, and that scoping is a decision rather than a
-      # loosening. The file documents the restic URL's FORMAT in a comment —
-      # `s3:https://ACCOUNT_ID.r2.cloudflarestorage.com/courier-db-backups` — which
-      # teaches an operator the shape without carrying an account id. YAML reads
-      # nothing in a comment, so a value there is not a value the tool can leak.
-      # What must not appear is a value in a position the tool WOULD read.
-      #
-      # The presence half is the assertion above it: the file names four secrets
-      # and holds no credential, so this is a boundary with something on both
-      # sides of it rather than a file that was emptied.
       lines = configured_lines()
 
       assert lines != [],
@@ -380,9 +276,6 @@ defmodule Courier.BackupConfigTest do
 
   describe "the schedule, and the number README quotes" do
     test "the schedule is daily, and it is stated rather than inherited", %{backup: backup} do
-      # A retention and a cadence that live in a dependency's defaults are
-      # decisions that change when the gem releases, with a version bump as the
-      # diff. Both are written out.
       assert backup.schedule == "1d",
              "#{@backup_path} declares `backup.schedule: #{inspect(backup.schedule)}`. The schedule is " <>
                "the data-loss window quoted to a customer, and it is the one number in this file that " <>
@@ -415,12 +308,6 @@ defmodule Courier.BackupConfigTest do
     end
 
     test "README quotes the window this schedule produces, and says it is not PITR" do
-      # The number is the deliverable of this packet's fourth item, and the two
-      # ways to get it wrong are: writing "24 hours" while configuring something
-      # else, and writing "24 hours" as if it were a deadline. The first is a lie
-      # about the data; the second is a lie about the mechanism. So the assertion
-      # is on BOTH halves, and the schedule is read from the config rather than
-      # assumed, so changing `schedule:` without changing README fails here.
       readme = File.read!(@readme)
 
       assert readme =~ "24 hours",
@@ -432,8 +319,6 @@ defmodule Courier.BackupConfigTest do
                "absence of PITR, and a reader told only \"24 hours\" cannot tell a backup from a " <>
                "replication target."
 
-      # And it is measured from when the previous backup FINISHED, which is the
-      # part that makes it worse than a deadline rather than better.
       assert readme =~ "finished" or readme =~ "previous backup",
              "README.md gives the window without saying it is measured from when the previous backup " <>
                "finished. The scheduler's loop is run-a-backup-then-sleep, so one cycle is the interval " <>
@@ -443,18 +328,6 @@ defmodule Courier.BackupConfigTest do
 
   describe "the migration command" do
     test "config/deploy.yml does not claim to run migrations, because Kamal 2 cannot" do
-      # Not a backup property — it is here because it is a THIRD difference
-      # between this file and kit's template, and it is an ABSENCE, which is the
-      # kind of difference a reader diffing the two files would assume was an
-      # oversight.
-      #
-      # Kamal 1 had `migrate:`. Kamal 2.12.0 refuses the whole document with
-      # `Kamal::ConfigurationError: unknown key: migrate` (measured by running the
-      # real binary against this file), and runs migrations from
-      # `.kamal/hooks/pre-deploy` instead. So `bin/migrate` — shipped in this
-      # repository's release as `Courier.Release.migrate/0` — is NOT run by a
-      # `kamal deploy`, and the configuration says so rather than implying
-      # otherwise.
       deploy = File.read!(@deploy_path)
 
       refute deploy =~ ~r/^migrate:/m,
@@ -463,14 +336,6 @@ defmodule Courier.BackupConfigTest do
     end
   end
 
-  # The shapes a leak would take. Each is a CONNECTION STRING or a KEY PREFIX,
-  # never a guessed secret value: a test that guessed what a real credential looks
-  # like would pass on any file that happened not to contain that one, which is
-  # the vacuity this file is written against.
-  #
-  # `r2.cloudflarestorage.com` is here because the repository URL is a SECRET in
-  # this configuration, so the hostname is half of a credential's location — and a
-  # file carrying both the host and an account id is a file naming a bucket.
   defp secret_values do
     [
       "postgres://",
@@ -482,10 +347,6 @@ defmodule Courier.BackupConfigTest do
     ]
   end
 
-  # The file's non-comment, non-blank lines: the ones the tool reads. A value
-  # quoted in a COMMENT is documentation — the restic URL's format is spelled out
-  # in this file's header — and YAML reads nothing in a comment, so it cannot be
-  # leaked by anything.
   defp configured_lines do
     @backup_path
     |> File.read!()

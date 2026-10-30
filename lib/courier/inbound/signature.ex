@@ -9,7 +9,6 @@ defmodule Courier.Inbound.Signature do
   verification and signing two halves of one contract (§Verifying signatures), so
   the consumer half is written here rather than reinvented per provider.
 
-  ## It is the same scheme, and that is the point
 
   Resend signs with [Svix](https://docs.svix.com), and Svix is the scheme Standard
   Webhooks was standardised from — identical base string, identical algorithm,
@@ -26,7 +25,6 @@ defmodule Courier.Inbound.Signature do
   Svix libraries support both." Resend sends `svix-` by default. Both are read;
   neither substitutes for the other.
 
-  ## What a verifier has to get right, and why each is a test
 
   A verifier that is merely correct is not enough, and the reasons are the
   reasons this file is 300 lines rather than 15:
@@ -55,7 +53,6 @@ defmodule Courier.Inbound.Signature do
       indistinguishable from one under attack, and the operator's first question
       would be the wrong one.
 
-  ## Nothing here is a parse, and no parse happens before this returns `:ok`
 
   `parse/1` lives in each provider and is only reached after this succeeds. An
   unauthenticated body is never decoded, so a malformed or hostile payload cannot
@@ -69,9 +66,6 @@ defmodule Courier.Inbound.Signature do
   @version "v1"
   @secret_prefix "whsec_"
 
-  # The prefixes Svix uses, in the order they are tried. `:svix` is first because
-  # it is what Resend sends; `:webhook` is the spec's spelling, which Svix also
-  # emits for white-labelled accounts.
   @prefixes [:svix, :webhook]
 
   @fields [:id, :timestamp, :signature]
@@ -108,7 +102,6 @@ defmodule Courier.Inbound.Signature do
   """
   @spec verify(binary(), map() | keyword(), String.t(), keyword()) :: :ok | {:error, term()}
   def verify(body, headers, secret, opts \\ []) when is_binary(body) do
-    # MUTATION-MARKER
     with {:ok, headers} <- normalize(headers),
          {:ok, key} <- fetch_key(secret),
          {:ok, prefix} <- fetch_prefix(headers),
@@ -122,11 +115,6 @@ defmodule Courier.Inbound.Signature do
     end
   end
 
-  # A keyword list is accepted because `Courier.Webhooks.Verifier` accepts one and
-  # the two halves should not disagree about what a caller may hand them. Keys are
-  # stringified, so `[svix_id: id]` becomes `"svix_id"` and is then correctly
-  # reported as a missing `"svix-id"` — an atom key is not the header, and
-  # `Plug.Conn.get_req_header/2` hands back strings.
   defp normalize(headers) when is_map(headers), do: {:ok, headers}
 
   defp normalize(headers) when is_list(headers) do
@@ -139,21 +127,6 @@ defmodule Courier.Inbound.Signature do
 
   defp normalize(_other), do: {:error, :malformed_headers}
 
-  # The secret is fetched FIRST, before any header is read, and the order is the
-  # point. A courier deployed without a signing secret has one problem — its own
-  # configuration — and it should be told that about every single request rather
-  # than about whichever request happened to omit a header first. Checking the
-  # headers first means a misconfigured deployment answers `{:missing_header,
-  # "svix-id"}` to an attacker and `:invalid_secret` to a well-formed one, which
-  # is both a worse diagnostic and a small oracle for "is this endpoint
-  # configured".
-  # The prefix is chosen by which headers ARRIVED, not by which arrived completely.
-  # A request carrying `svix-id` and `svix-signature` but no `svix-timestamp` is a
-  # request about the svix naming with one header missing, and the useful answer
-  # is "svix-timestamp is missing" rather than the id — the one it did send. So
-  # the first prefix with any of the three wins, and `fetch_headers/2` names what
-  # is absent. With none of either prefix present, the default is reported, since
-  # Resend's default is the one an operator should be told they are missing.
   defp fetch_prefix(headers) do
     case Enum.find(@prefixes, &has_any_header?(headers, &1)) do
       nil -> {:ok, hd(@prefixes)}
@@ -181,15 +154,6 @@ defmodule Courier.Inbound.Signature do
     end
   end
 
-  # Spec §Signature scheme: "It's important that both the message id and the
-  # timestamp not be user controlled, or at the very least not be allowed to
-  # include any `.` to prevent certain attacks." A dot in the id lets the id
-  # append fields to the base string, and a field appended to a signed string is
-  # a field the provider never signed.
-  # `"" <> rest` matches the EMPTY string in Elixir, binding `rest` to `""` — so
-  # the empty case has to be refused before the full-stop check or an empty id
-  # sails through. The pattern is written as a guard rather than as a second
-  # clause because a clause below this one is unreachable for `""`.
   defp fetch_id(headers, prefix) do
     case Map.fetch!(headers, header_name(prefix, :id)) do
       id when is_binary(id) and id != "" ->
@@ -202,11 +166,6 @@ defmodule Courier.Inbound.Signature do
     end
   end
 
-  # `Integer.parse/1` returns the number it managed to read ALONG WITH the rest, so
-  # "1731705121x" parses to `1731705121` and a lenient check would accept it. The
-  # base string is built from the header's own bytes, so the trailing "x" is part
-  # of what was signed and accepting the number would be verifying one string and
-  # sending courier to parse another.
   defp fetch_timestamp(headers, prefix) do
     case Map.fetch!(headers, header_name(prefix, :timestamp)) do
       value when is_binary(value) ->
@@ -239,27 +198,12 @@ defmodule Courier.Inbound.Signature do
     end
   end
 
-  # An identifier other than `v1` is SKIPPED rather than rejected, for the reason
-  # `Courier.Webhooks.Verifier` gives: the header is a space-delimited list so a
-  # provider can sign with a current and a previous key during a rotation, and the
-  # list may carry `v1a` entries from a producer that has moved to the asymmetric
-  # scheme. Neither may stop the `v1` entry beside it from being found.
   defp matches?(@version <> "," <> received, base_string, key) do
     expected =
       :hmac
       |> :crypto.mac(:sha256, key, base_string)
       |> Base.encode64()
 
-    # Constant time, per spec §Verifying signatures. An `==` here is a timing
-    # oracle that turns courier into a signing oracle for whoever is asking.
-    #
-    # The length guard is what makes that true rather than merely intended:
-    # `:crypto.hash_equals/2` RAISES `ArgumentError` when the two binaries differ
-    # in size, so calling it unguarded turns "send a 4-character signature" into a
-    # 500 — an unauthenticated request that takes down the endpoint, which is
-    # the same self-inflicted outage the readiness probe rules out. Returning
-    # `false` is also the correct answer: HMAC-SHA256 is 32 bytes, so a signature
-    # of any other length cannot be the right one, and the length is public.
     byte_size(received) == byte_size(expected) and :crypto.hash_equals(received, expected)
   end
 

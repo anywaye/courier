@@ -1,124 +1,9 @@
-# The error stack: GlitchTip, its own database, and courier's error relay.
-#
-#   docker compose -f docker-compose.yml -f docker-compose.errors.yml up -d
-#   open http://localhost:8000        # GlitchTip, create an account, make a project
-#   curl localhost:4003/internal/v1/errors/healthz
-#
-# ## Why this is a SEPARATE file rather than a section of docker-compose.yml
-#
-# Three reasons, and the first is the one that decides it.
-#
-#   * **The base stack must stay runnable without an error store.** A developer
-#     running `docker compose up --build` for courier gets a database and a
-#     release and nothing else to think about. Folding in GlitchTip — a 741MB
-#     image that runs `manage.py migrate` on boot — makes the everyday path depend
-#     on an observability component being healthy, which is the exact inversion
-#     `Courier.ErrorRelay.Sink.Noop` documents at length in the code. The error
-#     stack is opt-in; the base stack is not.
-#   * **A compose file that names an image must be able to name its version.**
-#     GlitchTip is pinned here by digest (see the `glitchtip` service). Keeping
-#     that pin in the base file would put a digest next to `postgres:17-alpine`
-#     for files whose reason for pinning differs.
-#   * **`docker compose down` on the base file should not stop the store.**
-#     An operator tearing down courier to reinstall its database must not lose
-#     every recorded crash.
-#
-# ## The one postgres rule, held
-#
-# GlitchTip needs a database and the platform allows exactly one image:
-# `postgres:17-alpine`. It gets the **same service** as courier's own, on a
-# **separate database with a separate role**, rather than a second container
-# running a second tag. The isolation that matters is the *data*, not the server:
-# the error store is where crash reports live — an attacker with a store read
-# wants them, and a migration on courier's side has no business near them — and a
-# separate database under a separate role gives that. A second container on a
-# second image string would have broken the fleet-wide pin for no isolation the
-# database and role do not already provide.
-#
-# The role/database split below is **one-directional**, and it is worth knowing
-# which way before you rely on it: the store's role cannot read `courier_dev`
-# (verified against a live server, not assumed), but this stack's courier role is
-# `postgres`, a superuser, so courier can read the store. That is pre-existing —
-# the base file has always run courier as `postgres` — and it is the acceptable
-# direction, because the error store holds no credential courier needs while
-# courier's role holds courier's whole database. A production deployment should
-# still use a non-superuser for courier. `ops/glitchtip-database.sql` says the same
-# thing next to the statements.
-#
-# `glitchtip` also needs no Valkey: `VALKEY_URL=""` selects GlitchTip's
-# database-backed cache, which is the supported single-node configuration and is
-# what keeps this file to one added container.
-#
-# ## Port 4003 is deliberately NOT published
-#
-# The ingest surface is authenticated by a shared secret rather than a per-caller
-# principal, which is why it is on its own listener
-# (`CourierWeb.ErrorEndpoint`'s moduledoc). Publishing it on the host would undo
-# that: a laptop's 4003 reachable from the LAN is a surface whose only defence is
-# a token in an env var. It stays on the compose network, and the three services
-# reach it as `courier:4003`. To try it by hand from the host, use the relay's own
-# health probe, which needs no token, or `docker compose exec` into `app`.
-#
-# ## Bringing courier's own errors into it
-#
-# After creating a project in the GlitchTip UI, take its DSN — it looks like
-# `http://<public-key>@localhost:8000/<project-id>` — and split it into the two
-# variables the relay wants:
-#
-#   COURIER_ERROR_SINK_DSN=<the GlitchTip DSN verbatim>   # where errors land
-#   COURIER_ERROR_RELAY_TOKEN=$(openssl rand -hex 32)      # the shared secret
-#   COURIER_ERROR_REPORTING_DSN=http://$COURIER_ERROR_RELAY_TOKEN@courier:4003/1
-#
-# The third line is courier's **own** DSN and it points at courier's own relay, not
-# at GlitchTip — that is the redaction boundary: nothing courier produces reaches
-# the store without passing through `Courier.ErrorRelay.Policy`. A DSN pointed at
-# GlitchTip by mistake is survivable, because `Courier.ErrorReporting.Filter`
-# applies the same allowlist before the envelope exists. Both facts are asserted in
-# `CourierWeb.ErrorReportingTest`.
-#
-# `COURIER_ERROR_REPORTING_DSN`'s project id is `1` and is ignored by the relay:
-# every service reports into the one project `COURIER_ERROR_SINK_DSN` names. The id
-# is present only because an SDK cannot be talked out of putting one in the path.
-#
-# ## Verify the whole chain, not the parts
-#
-#   curl -i localhost:8000/_health/                       # the store answers
-#   docker compose exec app curl -s localhost:4003/internal/v1/errors/healthz
-#   docker compose logs app | grep error-relay             # what the relay counted
-#
-# An error that never appears in the GlitchTip UI is diagnosable from those three:
-# no `forwarded` means the SDK or the ingest surface refused it, a `forwarded` with
-# no `sink_failures` and nothing in the UI means the store rejected the envelope.
 
-# ## NO `name:` HERE, AND THAT IS LOAD-BEARING
-#
-# The base file declares `name: courier`. A `name:` in this file would **replace**
-# it rather than merge, so the two files would describe two different projects —
-# `courier-errors` — with their own network, their own volume names and therefore
-# their own `db`. An operator who ran `docker compose up` and then added this file
-# would get a second, empty database and a GlitchTip pointing at it, and the
-# failure would look like "the init script did not run".
-#
-# It was exactly that mistake, once, while writing this: the first run created
-# `courier-errors_db_1` alongside nothing. Compose resolves the project name from
-# the files it is given, so leaving it unset is what keeps `db` shared.
 
 services:
   db:
-    # The base file's service, extended rather than replaced. Compose merges
-    # per-service keys, so this adds a mount and leaves `image`,
-    # `healthcheck`, ports and the `courier-pg` volume exactly as the base file
-    # declares them — which matters because that `image:` line is the fleet-wide
-    # pin and it must not be restated here where it could drift.
     volumes:
       - courier-pg:/var/lib/postgresql/data
-      # Creates the role and database GlitchTip needs. Only runs when the data
-      # directory is empty, i.e. on the FIRST `up` of a fresh `courier-pg`
-      # volume — so an operator whose `courier_dev` already exists has to apply it
-      # by hand, and the command is in the file for them. That is stated here
-      # rather than left to be discovered: a `connection refused` or a
-      # `password authentication failed` from GlitchTip at boot is otherwise a
-      # confusing first hour.
       - ./ops/glitchtip-database.sql:/docker-entrypoint-initdb.d/10-glitchtip.sql:ro
 
   glitchtip:
@@ -136,57 +21,21 @@ services:
     # not licensed here; the image is used unmodified and unbranded.
     image: glitchtip/glitchtip@sha256:a3d8eb1b36c1e1603d55ab32711ea3dd8115874742a781a57391a62a16e0dff6
     environment:
-      # Its own database and role, created by `ops/glitchtip-database.sql` on the
-      # shared `postgres:17-alpine` service. The default in GlitchTip's settings is
-      # `postgres://postgres:postgres@postgres:5432/postgres` — courier's own
-      # database, which is exactly the store that must not hold crash reports.
       DATABASE_URL: postgres://glitchtip:glitchtip@db:5432/glitchtip
-      # Required by GlitchTip, and only a warning when it is the placeholder — so
-      # it is set. Local-only value for a stack that is never published; the same
-      # reasoning as `SECRET_KEY_BASE` below.
       SECRET_KEY: local-development-only-not-a-secret-0Qa7Tv3Mz9Kd2Bx4Wn8Lf6Hg1Js5Ry
-      # Empty string is the documented way to disable Valkey and fall back to the
-      # database cache. Unset would default to `redis://redis:6379/0` and fail to
-      # boot, since this stack deliberately has no Valkey.
       VALKEY_URL: ""
-      # Used for links in emails and for the DSN shown in the UI.
       APP_URL: http://localhost:8000
       ALLOWED_HOSTS: "localhost,glitchtip"
-      # Console rather than SMTP: this stack mails nobody, and the default backend
-      # would retry against a mail server that does not exist on boot.
       EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
-      # GlitchTip ships an in-product debug toolbar when DEBUG is on. This stack is
-      # a development convenience, not a dev server.
       DEBUG: "false"
       GRANIAN_WORKERS: "1"
-      # REQUIRED, and the boot log is the only place its absence shows up.
-      #
-      # `bin/start.sh` picks `SERVER_ROLE` from the environment and defaults it to
-      # `web`, which serves HTTP and **runs no migrations** — `manage.py migrate` is
-      # behind a `case "$HEROKU_DYNO"` that only matches on Heroku. So the store
-      # comes up healthy, answers `/_health/`, shows its banner, and has **zero
-      # tables**: a green container over a store that cannot store anything. That is
-      # exactly the shape of failure this repository's probe rules are written
-      # against, one level down.
-      #
-      # Setting `GLITCHTIP_EMBED_WORKER=true` makes `start.sh` select
-      # `all_in_one`, which runs `migrate`, `maintain_partitions` and the cache
-      # table before serving. GlitchTip's own compose.yml does the same thing by
-      # overriding `command:` to `./bin/run-all-in-one.sh`; the environment variable
-      # is used here so the image's own `Cmd` keeps working.
-      #
-      # Verified by counting tables in the store's database after boot: 0 without
-      # this, non-zero with it.
       GLITCHTIP_EMBED_WORKER: "true"
     depends_on:
       db:
         condition: service_healthy
     ports:
-      # The UI and the store's ingest endpoint. Published because it is the thing
-      # a developer is here to look at; it creates its own superuser on first run.
       - "8000:8000"
     healthcheck:
-      # GlitchTip's own `healthcheck.py`, at the path it checks.
       test: ["CMD", "python", "healthcheck.py"]
       interval: 10s
       timeout: 5s
@@ -204,48 +53,12 @@ services:
       POOL_SIZE: "10"
       PHX_HOST: localhost
       SECRET_KEY_BASE: local-development-only-not-a-secret-z0Yx3Kq9Wv7Tp2Lm5Nc8Rb4Fs6Hd1Jg0
-      # Required by the base stack too, so it is restated here. `runtime.exs`
-      # raises at boot without it rather than defaulting, because a default would
-      # be a key in version control every deployment that forgot one would seal its
-      # customers' webhook secrets under.
-      #
-      # **32 bytes, base64 — checked, not assumed.** `Courier.SecretBox` refuses
-      # anything that does not decode to exactly 32 bytes, so a 37-character
-      # "recognisable local value" fails at boot with a message about the key
-      # rather than about length, which is an unhelpful first hour. This decodes to
-      # exactly 32 bytes. It is a fixed local value for a stack that is never
-      # published, not a real key; production runs `openssl rand -base64 32`.
       COURIER_SECRET_BOX_KEY: Y2FmYXllLWxvY2FsLWRldi1zZWNyZXQtYm94LTMyYnk=
-      # --- error reporting -------------------------------------------------
-      # `COURIER_ERROR_RELAY_TOKEN` is REQUIRED and has no default:
-      # `config/runtime.exs` raises at boot without it, because a default would be
-      # a shared secret in version control. This value is a local development
-      # constant for a stack on one machine; production generates its own with
-      # `openssl rand -hex 32`.
-      #
-      # The same value appears in `COURIER_ERROR_REPORTING_DSN` below, because
-      # that DSN's userinfo **is** the token — an SDK sends it as `sentry_key`
-      # inside `X-Sentry-Auth`, which is why courier's relay reads that header
-      # rather than one of its own.
       COURIER_ERROR_RELAY_TOKEN: local-development-only-not-a-secret-4aTf7Kn2Wq9Zv6Bx1Mh5Rd8Lc3Py
-      # courier's own failures, to courier's own relay. Unset would leave
-      # `ErrorReporting.enabled?/0` false, which is diagnosable; set, it is
-      # filtered by `Courier.ErrorReporting.Filter` before the envelope exists.
       COURIER_ERROR_REPORTING_DSN: http://local-development-only-not-a-secret-4aTf7Kn2Wq9Zv6Bx1Mh5Rd8Lc3Py@courier:4003/1
-      # Where the relay forwards to. Left empty here on purpose: without a real
-      # GlitchTip project DSN the relay runs with `Sink.Noop` and COUNTS what it
-      # discards, which is the honest state for a stack whose store nobody has
-      # finished onboarding. Fill it in with the DSN from the GlitchTip UI and the
-      # chain is complete.
       COURIER_ERROR_SINK_DSN: "${COURIER_ERROR_SINK_DSN:-}"
-      # `COURIER_RELEASE` and `DEPLOYMENT_ENVIRONMENT` are not invented here — an
-      # operator sets them. The release is on the event so the store can resolve an
-      # issue when a fix ships; without it an issue stays open for ever.
       COURIER_RELEASE: "${COURIER_RELEASE:-local-compose}"
       DEPLOYMENT_ENVIRONMENT: "${DEPLOYMENT_ENVIRONMENT:-local}"
-    # NOTE: no `ports:` entry for 4003, deliberately. See the header.
 
 volumes:
-  # Named so `docker compose -f docker-compose.yml -f docker-compose.errors.yml
-  # down` does not throw the error store's data away. Losing it is `down -v`.
   glitchtip-pg:

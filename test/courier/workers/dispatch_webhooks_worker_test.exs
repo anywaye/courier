@@ -22,9 +22,6 @@ defmodule Courier.Workers.DispatchWebhooksWorkerTest do
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account_id
   @other_account_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
@@ -115,11 +112,6 @@ defmodule Courier.Workers.DispatchWebhooksWorkerTest do
     end
 
     test "an event courier recorded for a user rather than an account is not dispatched" do
-      # `Courier.Deliver` writes `email.delivered` with no account, because a mail
-      # goes to a person and courier does not know which account that person is in.
-      # Fanning those out to every account would be delivering one customer's mail
-      # events to another customer, so an event with no account has no endpoints
-      # to go to.
       endpoint!()
       event(%{account_id: nil})
 
@@ -141,9 +133,6 @@ defmodule Courier.Workers.DispatchWebhooksWorkerTest do
     end
 
     test "re-dispatching an event does not duplicate a delivery" do
-      # At-least-once on courier's own side too: the worker may run twice for the
-      # same event, and the second run must not produce a second delivery with a
-      # second webhook-id — the consumer's deduplication would see two events.
       endpoint!()
       event(%{account_id: @account_id})
 
@@ -161,8 +150,6 @@ defmodule Courier.Workers.DispatchWebhooksWorkerTest do
       perform_job(DispatchWebhooksWorker, %{})
       first = Repo.one!(WebhookDelivery).webhook_id
 
-      # Backdate the dispatch so the event is claimable again, which is what a
-      # crash between dispatching and marking looks like.
       row
       |> Ecto.Changeset.change(webhooks_dispatched_at: nil)
       |> Repo.update!()

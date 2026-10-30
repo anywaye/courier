@@ -2,7 +2,6 @@ defmodule CourierWeb.Plugs.Principal do
   @moduledoc """
   Resolves who is calling, and refuses the request when nobody is.
 
-  ## This is a seam with one implementation, and both directions are closed
 
   The seam was written when courier had no verifier, and what was settled then is
   still settled:
@@ -17,7 +16,6 @@ defmodule CourierWeb.Plugs.Principal do
       from `account_id`.** `Courier.Principal.Introspection.Document` refuses an
       active document that carries no `account_id` and never reads `sub` as one.
 
-  ## Three answers, and why the third is a 503 and not a 401
 
   `Courier.Principal.Resolver` answers one of three things:
 
@@ -50,7 +48,6 @@ defmodule CourierWeb.Plugs.Principal do
   requests' identities would fail for a reason that has nothing to do with this
   plug.
 
-  ## The header the test resolver reads
 
   `x-courier-account` is `Courier.TestSupport.HeaderResolver`'s stand-in for the
   verified claim, and it is only ever read when `config :courier, :principal`
@@ -59,7 +56,6 @@ defmodule CourierWeb.Plugs.Principal do
   convention — a header that becomes a fast path is an authentication bypass with
   a config file attached.
 
-  ## Why the account and not a role
 
   Core's OpenAPI conventions are explicit: "`scopes` for capability, `account_id`
   for tenancy… Services do not parse roles out of a `roles` claim — they check
@@ -131,11 +127,6 @@ defmodule CourierWeb.Plugs.Principal do
     |> halt()
   end
 
-  # The 503 carries no reason. identity's status, the dial error and the shape of
-  # its answer are all in courier's log under this request's `trace_id`, and a
-  # detail that named any of them would tell an unauthenticated caller which
-  # credential courier holds and what shape the service on the other side of it
-  # is — the same posture `Courier.Inbound.Signature`'s 401 takes.
   defp unavailable(conn) do
     conn
     |> Problem.send(

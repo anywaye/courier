@@ -2,7 +2,6 @@ defmodule CourierWeb.ErrorEnvelopeHealthController do
   @moduledoc """
   Liveness of the error relay, and nothing else.
 
-  ## It checks no dependency, and that is the whole design
 
   It answers `200 {"status":"ok"}` whenever this endpoint is dispatching. It does
   not check GlitchTip, the database, the queue depth, or the throttle table.
@@ -15,7 +14,6 @@ defmodule CourierWeb.ErrorEnvelopeHealthController do
   thing about `/healthz` on the main endpoint and constrains `checks` to
   `maxItems: 0` so a declaration cannot quietly give liveness a dependency.
 
-  ## What an operator is meant to read instead
 
   `Courier.ErrorRelay.stats/1` — `forwarded`, `throttled`, `queue_full`,
   `sink_failures`, `unclassified`. A relay that is up and dropping everything has

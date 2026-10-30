@@ -2,7 +2,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
   @moduledoc """
   The sending-domain API, over real requests through the real router.
 
-  ## What this file proves that `Courier.TenantSendingDomainsTest` cannot
 
   The context's tests are about the rows. These are about the **seam**: that the
   account comes from the caller's token and never from a body, that a domain in
@@ -13,7 +12,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
   body and on the token's absence from the bytes, not merely on a 2xx, because a
   response that echoed a token would still be a 2xx.
 
-  ## `async: false`, and why
 
   The verification proof changes `config :courier, :tenant_sending`,
   `config :swoosh, :api_client` and `config :courier, :mailing`, all shared by
@@ -38,8 +36,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
   @provider_account_id "cf-account-abc123"
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The eight fields the API promises, sorted. The credential and
-  # `provider_account_id` are deliberately absent; a ninth key is a defect.
   @response_fields ~w(account_id domain id inserted_at provider status updated_at verified_at)
 
   @moduletag account: @account
@@ -69,7 +65,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     %{server: server}
   end
 
-  # --- helpers ---------------------------------------------------------------
 
   defp authed(account), do: put_req_header(build_conn(), "x-courier-account", account)
 
@@ -92,8 +87,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
   defp data(conn), do: Jason.decode!(conn.resp_body)["data"]
   defp errors(conn), do: Jason.decode!(conn.resp_body)["errors"]
 
-  # The exact record set Cloudflare Email Sending publishes for an onboarded
-  # domain: the `cf-bounce` MX trio, the SPF TXT and the DKIM TXT.
   defp seed_cloudflare_dns(domain \\ @domain) do
     :ets.insert(
       SendingDomainDns.table(),
@@ -117,9 +110,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     )
   end
 
-  # Point the deployment's configured sender at `domain` — the key the credential
-  # lookup uses — so `Courier.Deliver` asks the send path's question about the row
-  # this file registered through the API.
   defp set_from(domain) do
     mailing = Application.get_env(:courier, :mailing, [])
 
@@ -141,7 +131,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     end)
   end
 
-  # --- registration ----------------------------------------------------------
 
   describe "POST /v1/sending_domains" do
     test "answers 201 with the row under the caller's account, unverified" do
@@ -154,7 +143,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
       assert row["domain"] == @domain
       assert row["provider"] == "cloudflare"
       assert row["status"] == "enabled"
-      # Registration alone proves nothing: the row starts unusable.
       assert row["verified_at"] == nil
       assert is_binary(row["id"])
     end
@@ -165,7 +153,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
       assert conn.status == 422
       assert %{"field" => "account_id", "code" => "unknown_field"} in errors(conn)
 
-      # And the refusal is real: the account named in the body has nothing.
       assert data(authed(@other_account) |> get("/v1/sending_domains")) == []
     end
 
@@ -206,7 +193,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     end
   end
 
-  # --- listing and reading ---------------------------------------------------
 
   describe "GET /v1/sending_domains" do
     test "lists only the caller's own domains" do
@@ -237,7 +223,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     end
   end
 
-  # --- verification ----------------------------------------------------------
 
   describe "POST /v1/sending_domains/:id/verify" do
     test "the full proof marks the domain verified and posts the TENANT's token", %{
@@ -257,9 +242,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     end
 
     test "without Cloudflare's MX records it is refused, and the domain stays unverified" do
-      # Seeded but empty, so the DNS check answers a MISMATCH rather than a
-      # lookup failure: a domain whose onboarding is incomplete is a 422 about
-      # the domain, while a resolver that could not answer is a 503.
       :ets.insert(SendingDomainDns.table(), {{:mx, "cf-bounce." <> @domain}, []})
       id = data(register(@account))["id"]
 
@@ -268,8 +250,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
       assert conn.status == 422
       assert %{"field" => "domain", "code" => "dns_mx_mismatch"} in errors(conn)
 
-      # And the API still reports it unverified, which is the seam's claim: the
-      # API cannot produce a sendable domain without the proof.
       assert data(authed(@account) |> get("/v1/sending_domains/#{id}"))["verified_at"] == nil
     end
 
@@ -303,7 +283,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
     end
   end
 
-  # --- revocation ------------------------------------------------------------
 
   describe "POST /v1/sending_domains/:id/revoke" do
     test "revokes the caller's domain, keeping the row" do
@@ -324,13 +303,10 @@ defmodule CourierWeb.SendingDomainsControllerTest do
              |> Map.fetch!(:status) ==
                404
 
-      # And it is still enabled for its owner — the 404 was a refusal, not a
-      # silent success.
       assert data(authed(@account) |> get("/v1/sending_domains/#{id}"))["status"] == "enabled"
     end
   end
 
-  # --- the two properties this packet exists for -----------------------------
 
   describe "a response never contains a provider credential" do
     test "the register response's keys are the eight the document declares" do
@@ -345,7 +321,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
       seed_cloudflare_dns()
       id = data(register(@account))["id"]
 
-      # The row now holds a sealed credential that has been opened to send with.
       conn = authed(@account) |> post("/v1/sending_domains/#{id}/verify")
 
       assert conn.status == 200
@@ -370,9 +345,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
 
   describe "the registered row is not usable until it is proven" do
     test "an unverified row registered through the API cannot send", %{server: server} do
-      # Registered THROUGH THE DOOR, then the send path asked its own question
-      # about it. The API's answer said `verified_at: null`, and the send path
-      # agrees: no mail, no provider request.
       assert data(register(@account))["verified_at"] == nil
       set_from(@domain)
 
@@ -392,8 +364,6 @@ defmodule CourierWeb.SendingDomainsControllerTest do
       assert authed(@account) |> post("/v1/sending_domains/#{id}/revoke") |> Map.fetch!(:status) ==
                200
 
-      # Clear the verification send, so a request after revocation is the thing
-      # the assertion below is about rather than the proof's own dial.
       CloudflareServer.take(server)
       set_from(@domain)
 

@@ -1,195 +1,29 @@
-# config/kamal-backup.yml — what courier backs up, where it goes, and how long
-# it is kept.
-#
-# THIS FILE IS RENDERED, NOT A TEMPLATE, AND THAT IS THE FIRST THING TO KNOW.
-#
-#   kit ships `templates/kamal/kamal-backup.yml.erb`, and its README says to
-#   copy it here. The ERB has to be rendered BEFORE the file lands, and this one
-#   is the rendered result: `app:` below is the literal string `courier`, not an
-#   interpolation.
-#
-#   The reason is in the tool, not in taste. Kamal evaluates ERB when it reads
-#   `config/deploy.yml`, because Kamal owns that file. `kamal-backup` does not:
-#   `KamalBackup::ConfigFile#data` reads this path with `YAML.safe_load` and
-#   nothing else (kamal-backup 0.5.2, `lib/kamal_backup/config_file.rb:57`). An
-#   unrendered `app: <%= service %>` is therefore not a syntax error — YAML
-#   reads it as the literal scalar — and the failure is a restic repository
-#   whose snapshots are written under the path
-#   `databases/<%= service %>/primary/postgres.pgdump` and tagged
-#   `app:<%= service %>`, which no `kamal-backup list` filtered on `app:courier`
-#   will ever find. A backup nobody can find is a backup nobody reads.
-#
-#   The file this came from, and the ref it came from, are named at the bottom.
-#
-# HOW IT IS REACHED, AND BY WHOM. This file is not read by courier. It is mounted
-# read-only into a container by the `backup` accessory in `config/deploy.yml`
-# (`files: - config/kamal-backup.yml:/app/config/kamal-backup.yml:ro`), and that
-# accessory is the only thing that reads it. Delete the mount from
-# `config/deploy.yml` and this file becomes a document; that is why
-# `test/courier/backup_config_test.exs` reads both files and holds them to each
-# other rather than reading this one alone.
 
-# The Kamal service name, and therefore the snapshot path
-# (`databases/<app>/primary/postgres.pgdump`) and the `app:` restic tag. It is
-# the same string `config/deploy.yml` carries as `service:`. Renaming it orphans
-# every existing snapshot, because restic tracks these paths.
 app: courier
 
-# Which accessory in `config/deploy.yml` this config belongs to. The name is how
-# kamal-backup finds the container to run in and that container's secrets.
 accessory: backup
 
-# ONE DATABASE, NAMED, WITH A REASON.
-#
-# courier owns exactly one database. Its migrations create seven tables and an
-# eighth through Oban's own DDL:
-#
-#   notification_preferences   a user's answer about one notification type
-#   webhook_endpoints         a tenant's URL and its SEALED signing secret
-#   webhook_deliveries        the attempt log for those endpoints
-#   outbox_events             the CloudEvents envelope of every published event
-#   email_suppressions        the suppression list — mailboxes that said no
-#   idempotency_keys          stored responses, and the expiry sweep's index
-#   oban_jobs                 the relay's queue
-#
-# All seven application tables are content, so all of them are in the same dump
-# and there is no second database to leave out. That is a different situation
-# from a service with a cache and a queue on their own servers, where backing
-# those up buys a snapshot of something derivable.
-#
-# `name:` is a LABEL for the snapshot path and the restic tag. It is not a
-# database name — the connection is `url` below. `primary` is the name to keep:
-# renaming it orphans every existing snapshot.
 databases:
   - name: primary
     adapter: postgres
     url:
-      # A Kamal SECRET NAME, resolved from the backup accessory's environment,
-      # which is built from the `env.secret` list under `accessories: backup` in
-      # `config/deploy.yml` and from nothing else.
-      #
-      # It is the same variable name `config/runtime.exs` requires for
-      # `Courier.Repo` in production, deliberately: a backup that dumps a
-      # database this release does not connect to is a backup of the wrong
-      # database, and the only way to be sure it is the right one is that the
-      # two files cannot disagree about a name.
       secret: DATABASE_URL
     password:
-      # Passed to pg_dump as PGPASSWORD, and separate from the URL for the reason
-      # kit's template gives: a connection URL carrying a password puts a
-      # credential in an argument, and `ps` shows arguments to every user on the
-      # machine. It is the SAME password as the one inside DATABASE_URL.
       secret: DATABASE_PASSWORD
 
 restic:
-  # R2 is S3-compatible, so the repository is an S3 endpoint. The whole URL is a
-  # secret rather than assembled here: the bucket name is an operator's choice,
-  # and a config that guesses it is a config that writes a full database dump
-  # somewhere the operator did not choose. Format:
-  #   s3:https://ACCOUNT_ID.r2.cloudflarestorage.com/courier-db-backups
   repository:
     secret: RESTIC_REPOSITORY
-  # restic's own encryption password. It is the ONLY thing standing between a
-  # leaked bucket and a readable database dump, and it is not the same value as
-  # any credential courier uses.
-  #
-  # It is not in this repository, not in the database, and NOT in the backup:
-  # `backup_config_test.exs` asserts that no key material is named here, because
-  # a restic password written into the config it encrypts is a password in git.
   password:
     secret: RESTIC_PASSWORD
-  # Create the repository if it is absent.
-  #
-  # This is the difference between "backups are on" and "backups are on after
-  # somebody created the bucket" — and it creates the REPOSITORY inside a bucket
-  # you have already created, not the bucket itself. R2 has no Object Lock and no
-  # versioning, so a deleted snapshot is gone.
   init_if_missing: true
-  # RETENTION, WRITTEN OUT RATHER THAN INHERITED.
-  #
-  # kamal-backup 0.5.2's defaults happen to be exactly these five numbers
-  # (`Config::DEFAULT_RETENTION`), so leaving the block out would work today.
-  # It is written out anyway, because a retention policy that lives in someone
-  # else's default is a retention policy that changes when their gem releases:
-  # the diff would be a version bump, and the reviewer's eye would be on the gem
-  # rather than on the thing that decides how far back a restore can reach.
-  #
-  # What it buys, in plain terms: every snapshot from the last week, one a day
-  # back a month, one a week back two months, one a month back a year, and two a
-  # year indefinitely. Roughly 26 snapshots.
   retention:
     keep_last: 7
     keep_daily: 7
     keep_weekly: 4
     keep_monthly: 6
     keep_yearly: 2
-  # Verify the repository's structure after each backup. Costs time proportional
-  # to the metadata, not the data; a repository that has been silently losing
-  # blocks is the failure this catches, and it is only detectable while there is
-  # still something to find.
   check_after_backup: true
 
 backup:
-  # At most one backup per day, which the tool reads as 86,400 seconds.
-  #
-  # This REPLACES a crontab: the scheduler is a foreground loop inside the backup
-  # container, and the "last backup finished at" timestamp lives in the
-  # accessory's state volume (`courier_backup_state`, mounted by
-  # `config/deploy.yml`). A cron entry fires on wall-clock time whether or not
-  # the last run finished, so a backup that took six hours would be started again
-  # the moment it ended, on a host that was already struggling.
-  #
-  # THE NUMBER THIS BUYS, because it is the number an operator quotes to a
-  # customer at 2am: a scheduled dump is NOT point-in-time recovery. If courier's
-  # database is destroyed, every transaction committed since the previous backup
-  # FINISHED is gone — up to 24 hours of them. The window is measured from the
-  # end of the last run, not to a wall-clock deadline, so one cycle is the
-  # interval PLUS that run's duration, and `pg_dump` takes its snapshot at the
-  # START of the dump. There is no WAL shipping and no base backup behind this.
-  # README.md carries the same number, and a test holds the two together.
   schedule: 1d
-
-# ---------------------------------------------------------------------------
-# WHAT IS DELIBERATELY NOT HERE
-# ---------------------------------------------------------------------------
-#
-# **No `paths:` key, so no file snapshot is ever taken.** Two reasons, and the
-# second is the one that would change if courier grew.
-#
-#   1. courier keeps no state on local disk. Its migrations create no `bytea`,
-#      no object-store key and no attachment table; its image writes nothing to
-#      a volume; there is no `config/storage.yml` and no Active Storage. A
-#      database dump IS courier's entire durable state, so a restic file
-#      snapshot would be a second copy of nothing. `evidence` reports this as
-#      `latest_file_backup: null`, which is the correct answer rather than a
-#      gap.
-#   2. The day something DOES keep state on disk, the omission stops being
-#      harmless and starts being a silent hole. `backup_config_test.exs` asserts
-#      the shape that makes it harmless today — no `paths:`, and no table in
-#      courier's schema that stores bytes — so the day somebody adds one, the
-#      suite says the README's "nothing on local disk" sentence has become
-#      false.
-#
-# **No second database.** See above: courier has one, and a backup of a cache or
-# a queue is extra storage that will be restored into a shape nobody wants.
-#
-# **No key material.** `COURIER_SECRET_BOX_KEY` — the AES-256-GCM key every
-# `webhook_endpoints.secret` is sealed under — is deliberately absent, and it
-# cannot be in a database dump because it is not in the database. It lives in
-# `.kamal/secrets` on the operator's machine and in the deployment's
-# environment. A restore therefore brings back every sealed secret as
-# ciphertext: the rows come back, and courier cannot read its own
-# `webhook_endpoints.secret` values until that key is supplied unchanged. README
-# says so where an operator restoring will read it.
-#
-# ---------------------------------------------------------------------------
-# Copied from anywaye/kit, `templates/kamal/kamal-backup.yml.erb`, at kit commit
-# d201080 (the kit-20 merge that replaced kit's own backup toolchain with
-# kamal-backup). Rendered with KIT_SERVICE=courier, as that template requires.
-#
-# `kit.ref` in this repository still pins a095992, which PREDATES that template —
-# nothing in courier's kit stack could have fetched it, and the render was done
-# by hand from a kit checkout. That is a kit-ref bump, not a courier change, and
-# it is recorded in the packet report rather than smuggled in here: a file
-# copied from a ref this repository does not pin is the first half of "where did
-# this come from", and this comment is the second.

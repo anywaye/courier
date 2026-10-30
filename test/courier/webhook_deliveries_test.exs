@@ -21,9 +21,6 @@ defmodule Courier.WebhookDeliveriesTest do
 
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account_id
 
   defp endpoint! do
@@ -44,7 +41,6 @@ defmodule Courier.WebhookDeliveriesTest do
     end
 
     test "doubles from the configured base" do
-      # 300s, 600s, 1200s, 2400s, 4800s, 9600s — the numbers, not a property.
       base = config()[:backoff_base_seconds]
 
       for attempt <- 1..5 do
@@ -76,10 +72,6 @@ defmodule Courier.WebhookDeliveriesTest do
     end
 
     test "jitters within a quarter of the wait, so a recovered consumer is not hit by every endpoint at once" do
-      # The spec §Deliverability asks for "some level of random jitter to retries
-      # to prevent cases where the failures are due to recurring load caused by
-      # the webhook attempts themselves". A hundred endpoints recovering from one
-      # outage would otherwise all retry on the same second.
       base = config()[:backoff_base_seconds]
 
       waits = for _attempt <- 1..50, do: WebhookDeliveries.backoff(1)
@@ -89,10 +81,6 @@ defmodule Courier.WebhookDeliveriesTest do
     end
 
     test "the jitter is bounded by the base, so the wait still grows" do
-      # Jitter added *on top of* an exponential would let a later attempt wait
-      # less than an earlier one, and a consumer under load would then be hit
-      # harder the more times courier had already failed to reach it. Bounded by
-      # the wait rather than added to it, the ordering holds for every pair.
       waits = for attempt <- 1..8, do: WebhookDeliveries.backoff(attempt)
 
       assert waits == Enum.sort(waits)
@@ -100,10 +88,6 @@ defmodule Courier.WebhookDeliveriesTest do
     end
 
     test "a full budget spans about a day, which is the shape the spec asks for" do
-      # §Deliverability recommends "a retry schedule spanning multiple days". This
-      # is eight attempts over roughly sixteen hours: the same shape at a scale
-      # one service-sized courier can defend, rather than a week of hammering a
-      # consumer that has already asked courier to stop.
       total =
         Enum.sum(
           for attempt <- 1..config()[:max_attempts],
@@ -196,10 +180,6 @@ defmodule Courier.WebhookDeliveriesTest do
     end
 
     test "the second attempt is not scheduled before the first one's backoff has elapsed" do
-      # The property the brief asks for, asserted on the recorded value rather
-      # than by sleeping through the window: the wait after attempt N is a
-      # function of N, and the schedule is non-decreasing, so attempt N+1 cannot
-      # be due before attempt N's wait is over.
       endpoint = endpoint!()
 
       first = WebhookDeliveries.fail!(endpoint, event_id(1), status_code: 500, duration_ms: 10)
@@ -226,9 +206,6 @@ defmodule Courier.WebhookDeliveriesTest do
       endpoint = endpoint!()
       WebhookDeliveries.insert!(endpoint, event_id(1))
 
-      # Spend the whole budget, one recorded attempt at a time. The row is
-      # exhausted on the last one, which is the assertion: the cap ends the
-      # budget rather than letting an attempt past it.
       delivery =
         Enum.reduce(1..config()[:max_attempts], nil, fn _attempt, _last ->
           WebhookDeliveries.fail!(endpoint, event_id(1), status_code: 500, duration_ms: 10)
@@ -243,11 +220,6 @@ defmodule Courier.WebhookDeliveriesTest do
 
   describe "the webhook id" do
     test "is the same on a redelivery, so a consumer can deduplicate on it" do
-      # PLAN.md §3: delivery is at-least-once, so every consumer is idempotent.
-      # The only thing that makes that possible is an id that does not change
-      # between attempts — the spec §Webhook metadata is explicit that it
-      # "remains the same no matter how many times a webhook that has failed is
-      # retried".
       endpoint = endpoint!()
 
       first = WebhookDeliveries.insert!(endpoint, event_id(1))
@@ -269,8 +241,6 @@ defmodule Courier.WebhookDeliveriesTest do
     end
 
     test "differs between two endpoints for the same event, so each has its own id" do
-      # Two consumers of the same event are two deliveries, and a shared id would
-      # make one of them look like a duplicate of the other.
       one = endpoint!()
       other = create_second!()
 
@@ -295,9 +265,6 @@ defmodule Courier.WebhookDeliveriesTest do
       endpoint = endpoint!()
       WebhookDeliveries.insert!(endpoint, event_id(1))
 
-      # Straight SQL, because `insert!/3` deliberately absorbs this violation —
-      # it is the fan-out's idempotency. Proving the constraint exists means
-      # bypassing the code that hides it.
       assert {:error, %Postgrex.Error{postgres: %{code: :unique_violation}}} =
                Repo.query(
                  "INSERT INTO webhook_deliveries (id, endpoint_id, event_id, webhook_id, status, attempt, inserted_at, updated_at) VALUES ($1::uuid, $2::uuid, $3::uuid, 'msg_x', 'pending', 0, now(), now())",
@@ -332,9 +299,6 @@ defmodule Courier.WebhookDeliveriesTest do
     end
 
     test "counts attempts from one, not from zero" do
-      # Attempt 0 is a row that has not been tried. A delivery that exists has been
-      # tried at least once, and an off-by-one here makes the first attempt look
-      # like a retry.
       assert WebhookDeliveries.insert!(endpoint!(), event_id(1)).attempt == 0
 
       endpoint = create_second!()
@@ -354,8 +318,6 @@ defmodule Courier.WebhookDeliveriesTest do
     endpoint
   end
 
-  # Two distinct, fixed uuids. Written out rather than generated so a failure
-  # names the same event every time it happens.
   defp event_id(1), do: "11111111-1111-1111-1111-111111111111"
   defp event_id(2), do: "22222222-2222-2222-2222-222222222222"
 

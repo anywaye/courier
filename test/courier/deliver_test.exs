@@ -23,19 +23,10 @@ defmodule Courier.DeliverTest do
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
   @other_user_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
-  # The address the unsubscribe tests use. A per-file constant and not a shared
-  # one: `email_suppressions` has no `account_id` and its rows are permanent, so an
-  # address another test also unsubscribed would decide this one's outcome.
   @email "unsubscribe-deliver@example.com"
 
-  # A tenancy key, not a credential and not a secret: the account a stored
-  # preference belongs to. The delivery payload carries no account, and that is
-  # what this block exists to show is fine.
   @account_id "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account_id
 
   defp payload(overrides \\ %{}) do
@@ -50,17 +41,8 @@ defmodule Courier.DeliverTest do
     )
   end
 
-  # Read with no `order_by`, deliberately — see the assertion at the end of
-  # "every type courier sends". courier promises what each row *is*, not what
-  # order the database hands rows back in, so nothing here may depend on the
-  # second one.
   defp outbox, do: Repo.all(OutboxEvent)
 
-  # The rows that record a SEND. Separate from `outbox/0` because the one-click
-  # unsubscribe announces itself — it writes a `courier.notification.suppressed`
-  # row of its own — and the claim under test is "no send was recorded", not "the
-  # outbox is empty". A test asserting the second would be asserting something
-  # false, and fixing it by clearing the table would be asserting something else.
   defp sends,
     do: Repo.all(from event in OutboxEvent, where: event.type == ^Courier.Events.delivered_type())
 
@@ -82,8 +64,6 @@ defmodule Courier.DeliverTest do
     test "the sent message carries the returned id, as a real Message-ID header" do
       assert {:ok, result} = Deliver.welcome(payload())
 
-      # Swoosh's Test adapter hands the message over as `{:email, email}`, and
-      # `assert_email_sent/0` returns that message as it received it.
       assert {:email, sent} = assert_email_sent()
       assert sent.headers["message-id"] == "<#{result.message_id}@anywaye.com>"
     end
@@ -118,9 +98,6 @@ defmodule Courier.DeliverTest do
     end
 
     test "the recorded data is about the send, not a copy of the payload" do
-      # The event goes to every subscriber on NATS. A verification token or an
-      # invitation id in there would be a credential leak into a fan-out, so the
-      # data is the send's own fields and nothing else.
       {:ok, _} = Deliver.welcome(payload())
 
       assert [event] = outbox()
@@ -160,9 +137,6 @@ defmodule Courier.DeliverTest do
       assert {:ok, change_new} =
                Deliver.email_change_new(payload(%{previous_email: "kaka@example.com"}))
 
-      # The receipt is the money type: `user_id` is the anywaye customer the
-      # event names, the amount arrives rendered, and the invoice id is the one
-      # optional field in the catalog.
       assert {:ok, receipt} =
                Deliver.receipt(payload(%{amount_display: "19.00 USD", invoice_id: "in_1UQ"}))
 
@@ -174,14 +148,6 @@ defmodule Courier.DeliverTest do
       assert change_new.notification_type == "email_change_new"
       assert receipt.notification_type == "receipt"
 
-      # Sorted on both sides, and that is the whole point of this assertion. What
-      # courier promises is that each of the seven sends recorded a row under
-      # its own notification type — a set of seven, one per type. `outbox/0` reads
-      # with no `ORDER BY`, so the order rows come back in is PostgreSQL's choice
-      # and not a contract; comparing sequences here asserted an ordering nobody
-      # promised and failed in roughly one run in eight. Sorting keeps the
-      # assertion exactly as strong (all six types present, each exactly once,
-      # nothing else) while dropping the part that was never courier's promise.
       assert outbox() |> Enum.map(& &1.data["notification_type"]) |> Enum.sort() ==
                Enum.sort(
                  ~w(welcome password_reset team_invitation account_security email_change_current
@@ -200,11 +166,6 @@ defmodule Courier.DeliverTest do
 
   describe "preferences" do
     setup do
-      # An account, because a preference now records the account entitled to it.
-      # Which account it is does not matter here and that is the point being
-      # asserted four times over: `Courier.Deliver` reads `enabled?/3`, which
-      # takes a user and no account, so the delivery path is unaffected by which
-      # tenant the answer was stored under.
       {:ok, _} =
         NotificationPreferences.update(@account_id, @user_id, %{
           "preferences" => [%{"notification_type" => "welcome", "email_enabled" => false}]
@@ -244,9 +205,6 @@ defmodule Courier.DeliverTest do
 
   describe "a one-click unsubscribe" do
     setup do
-      # Minted through the real endpoint's own path — `issue/3`, then
-      # `unsubscribe/1` — rather than by writing a row, so what is set up here is
-      # exactly what a `POST` from a mail client would leave behind.
       {:ok, token} = Unsubscribes.issue(@user_id, "welcome", @email)
       {:ok, :recorded} = Unsubscribes.unsubscribe(token)
       :ok
@@ -265,9 +223,6 @@ defmodule Courier.DeliverTest do
     end
 
     test "another type still goes out, and that is the whole point of the row" do
-      # A one-click unsubscribe is an instruction about ONE type, so it is recorded
-      # as an `email_suppressions` row with **no state** — a stateful row there is
-      # read by the address-level check and would stop a password reset as well.
       assert {:ok, _result} =
                Deliver.password_reset(
                  payload(%{email: @email, url: "https://anywaye.com/reset?t=1"})
@@ -278,10 +233,6 @@ defmodule Courier.DeliverTest do
     end
 
     test "and it is a different refusal from a declined preference" do
-      # Two facts about the same person with two different remedies, and a caller
-      # that cannot tell them apart cannot act: one is a `PUT` away from being sent
-      # again and the other is not. `Courier.UnsubscribesTest` proves the row is
-      # state-less; this proves the send path names them differently.
       assert {:error, {:unsubscribed, "welcome"}} = Deliver.welcome(payload(%{email: @email}))
 
       {:ok, _} =

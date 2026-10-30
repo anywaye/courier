@@ -3,7 +3,6 @@ defmodule Courier.ChartTest do
   courier's Helm chart is a real deploy artifact, and its content is the
   contract the substrate's `Application` pulls.
 
-  ## What this test proves
 
   The chart at `chart/` is the deploy artifact for the anywaye launch
   stack — the Argo `Application` in
@@ -27,7 +26,6 @@ defmodule Courier.ChartTest do
     the generator after W85 generated this chart, so the chart had to be
     brought forward to match.
 
-  ## The publish loop, and why the caller is asserted too
 
   The chart above is only the pull half. The push half is
   `ci/publish.yml` — kit's caller template
@@ -51,14 +49,12 @@ defmodule Courier.ChartTest do
     `Application` pins. The chart version IS the tag; a service that bumps
     one and not the other is a service that never deploys.
 
-  ## Every absence assertion is paired with a presence one
 
   The secret-reference assertion is paired with the presence of the
   `secretName` value and the `envFrom` wiring in the deployment
   template, because a boundary that deletes everything passes every
   "deletes nothing" test.
 
-  ## It runs with no database
 
   `use ExUnit.Case`, not `Courier.DataCase`. Every claim here is about
   files on disk, so this belongs to the no-database tier — and a chart
@@ -72,12 +68,6 @@ defmodule Courier.ChartTest do
   @chart_dir Path.join(@repo_root, "chart")
   @workflow_path Path.join(@repo_root, "ci/publish.yml")
 
-  # The substrate's `Application` pins this targetRevision
-  # (`kit/templates/substrate/manifests/applications/courier.yaml`). It is a
-  # constant here rather than a read of kit's tree: the gate must run where
-  # kit is not checked out, and the claim is that the chart's version EQUALS
-  # it — the equality is asserted, with both sides named in the failure
-  # message, which is stronger than either file agreeing with itself.
   @target_revision "0.1.0"
 
   defp read_file(path) do
@@ -88,12 +78,6 @@ defmodule Courier.ChartTest do
     File.read!(@workflow_path)
   end
 
-  # One block of the workflow file — the `on:`, `permissions:` or `with:`
-  # block — as its trimmed entries. Read by indentation, the way
-  # `KamalConfig` reads the two Kamal files: courier has no YAML dependency
-  # and adding one is a decision this repository has not made (`AGENTS.md`).
-  # A block that is not there raises rather than reading as empty, because
-  # an empty set agrees with every other empty set.
   defp block(workflow, key) do
     lines = String.split(workflow, "\n")
 
@@ -111,10 +95,6 @@ defmodule Courier.ChartTest do
     |> Enum.reject(&String.starts_with?(&1, "#"))
   end
 
-  # The job's `with:` block as a map of inputs. `push` and `chart-dir` are
-  # the two the publish loop runs on: the reusable workflows default `push`
-  # to false and `chart-dir` to `chart/`, so a caller that says nothing
-  # publishes nothing from the wrong directory.
   defp with_block(workflow) do
     workflow
     |> block("with:")
@@ -128,9 +108,6 @@ defmodule Courier.ChartTest do
     |> Map.new()
   end
 
-  # The `uses:` value — the workflow this caller calls. Matched on the line
-  # itself, so a comment mentioning a workflow (`# uses: …`) cannot satisfy
-  # it: a comment is not a call.
   defp uses(workflow) do
     workflow
     |> String.split("\n")
@@ -144,10 +121,6 @@ defmodule Courier.ChartTest do
               "a caller that inlines the steps has forked kit's composition"
   end
 
-  # The directory the caller's `chart-dir:` input names, or the reusable
-  # workflow's own default. `chart.reusable.yml` reads the chart's name and
-  # version from the `Chart.yaml` in that directory and takes neither as an
-  # input, so this is the directory the push actually publishes.
   defp chart_dir(inputs) do
     case inputs do
       %{"chart-dir" => dir} -> dir
@@ -201,14 +174,8 @@ defmodule Courier.ChartTest do
     test "grants packages: write — a reusable workflow can request a permission but cannot grant itself one" do
       grants = block(workflow(), "permissions:")
 
-      # The grant that is the caller's to make: omitting it is a 401 at the
-      # push that reads like a wrong password rather than like a missing
-      # grant.
       assert "packages: write" in grants
 
-      # The checkout's grant, paired so a boundary that deleted every
-      # permission does not pass — the same rule the secret-reference
-      # assertion above follows.
       assert "contents: read" in grants
     end
 
@@ -217,8 +184,6 @@ defmodule Courier.ChartTest do
     end
 
     test "the chart directory it names holds Chart.yaml at the version the substrate's Application pulls" do
-      # `chart-dir` is relative to the repository root, which is where the
-      # reusable workflow checks it out — not relative to `chart/`.
       dir = chart_dir(with_block(workflow()))
       chart_path = Path.join([@repo_root, dir, "Chart.yaml"])
       chart_yaml = File.read!(chart_path)
@@ -254,14 +219,11 @@ defmodule Courier.ChartTest do
       deployment = read_file("templates/deployment.yaml")
       values = read_file("values.yaml")
 
-      # The wiring: envFrom secretRef is present.
       assert deployment =~ ~r/envFrom:/
       assert deployment =~ ~r/secretRef:/
 
-      # The reference: secretName is a name, not a value.
       assert values =~ ~r/^secretName: courier-secrets$/m
 
-      # The absence: no credential is inlined in values.yaml.
       refute values =~ ~r|DATABASE_URL:\s*ecto://|
       refute values =~ ~r|SECRET_KEY_BASE:\s*[a-zA-Z0-9]{40,}|
       refute values =~ ~r|COURIER_IDENTITY_TOKEN:\s*\S|
@@ -282,21 +244,14 @@ defmodule Courier.ChartTest do
       values = read_file("values.yaml")
       deployment = read_file("templates/deployment.yaml")
 
-      # The container port is 4000 (from the Elixir language table).
       assert deployment =~ ~r/containerPort: 4000/
 
-      # The service port must match — a Service that forwards to a
-      # different port than the container listens on routes to nothing.
       assert values =~ ~r/^  port: 4000$/m
     end
   end
 
   describe "the generated Application template" do
     test "is absent — the substrate owns courier's Application" do
-      # The generator emits chart/templates/application.yaml, but the
-      # substrate already owns courier's Application in
-      # kit/templates/substrate/manifests/applications/courier.yaml.
-      # Two Applications named `courier` in `argocd` fight each other.
       refute File.exists?(Path.join(@chart_dir, "templates/application.yaml"))
     end
   end
@@ -309,25 +264,17 @@ defmodule Courier.ChartTest do
     test "is gated on ingress.enabled — an ungated Ingress is always-on" do
       ingress = read_file("templates/ingress.yaml")
 
-      # The guard is there.
       assert ingress =~ ~r/\{\{- if \.Values\.ingress\.enabled \}\}/
 
-      # It precedes any apiVersion, so the whole document is inside the
-      # gate — with the knob off, `helm template` emits no Ingress at all.
-      # The `s` flag lets `.` span the lines between the guard and the
-      # apiVersion (the no-host guard and the fail sit between them).
       assert ingress =~
                ~r/\{\{- if \.Values\.ingress\.enabled \}\}\n.*apiVersion: networking\.k8s\.io\/v1/ms
 
-      # And the gate closes the document.
       assert ingress =~ ~r/\{\- end \}\}\s*$/
     end
 
     test "refuses to render an enabled Ingress with no host — a silent misroute" do
       ingress = read_file("templates/ingress.yaml")
 
-      # An enabled Ingress with no host fails the render rather than
-      # misrouting — the class of defect kit's /up healthcheck was.
       assert ingress =~ ~r/\{\{- if not \.Values\.ingress\.host \}\}/
       assert ingress =~ ~r/\{\{- fail /
     end
@@ -335,17 +282,10 @@ defmodule Courier.ChartTest do
     test "carries the generator's values block — off by default, traefik edge, the cluster's issuer" do
       values = read_file("values.yaml")
 
-      # Off by default: the substrate's first sync happens before any
-      # operator has set a host, and a chart that suddenly routes
-      # traffic is a defect.
       assert values =~ ~r/^ingress:\n  enabled: false$/m
 
-      # The edge is Traefik, k3s's default ingress controller
-      # (DEPLOYMENT.md).
       assert values =~ ~r/^  className: traefik$/m
 
-      # The ClusterIssuer the substrate's install creates once per
-      # cluster (kit step 7) — the chart names it and never creates it.
       assert values =~ ~r/^  clusterIssuer: letsencrypt-prod$/m
     end
 
@@ -353,38 +293,12 @@ defmodule Courier.ChartTest do
       ingress = read_file("templates/ingress.yaml")
       values = read_file("values.yaml")
 
-      # The template takes the class from the value, so the Ingress and
-      # the values cannot disagree about the edge.
       assert ingress =~ ~r/ingressClassName: \{\{ \.Values\.ingress\.className \}\}/
       assert values =~ ~r/^  className: traefik$/m
     end
   end
 
   describe "the image digest — the one that reaches the pod" do
-    # THE CONTRACT (anywaye/kit/ci/chart.reusable.yml, lines
-    # 58-116 "THE IMAGE DIGEST — THE ONE THAT REACHES THE POD, AND THE ONE
-    # THAT WAS MEASURED MISSING" and the `pin the image by digest` step
-    # 277-365): the chart's `values.yaml` carries
-    # `image.digest: "sha256:<64 hex>"`, written by the publish workflow
-    # from the image job's build output BEFORE `helm package` on every
-    # `push: true` run. It INSERTS the key when the chart has not yet
-    # adopted it. The Deployment template MUST read that field — a
-    # deployment that does not render `image.digest` ignores a value it
-    # never reads, so Argo's diff stays identical and the pod keeps the
-    # old image. Measured 2026-10-15: the website was republished seven
-    # times and the pod kept the old image — Argo diffed the rendered
-    # Deployment as identical, reported Synced, and rolled nothing; the
-    # manager worked around it by pinning a sha tag in the Application
-    # values.
-    #
-    # The committed digest is the image built from the current master.
-    # The publish run overwrites this line with the digest it just built,
-    # so the OCI chart always names the bytes beside it, and this committed
-    # value is the floor a `push: false` run and a fresh clone render.
-    # The TAG does not move with it: it stays at the chart's release
-    # version, because `--set image.digest=` renders `repository:<tag>` and
-    # the empty-digest path is asserted to render the tag the chart was
-    # released with.
 
     test "commits a digest that is sha256:<64 hex> and equal to the registry's current image" do
       values = read_file("values.yaml")
@@ -410,16 +324,6 @@ defmodule Courier.ChartTest do
     end
 
     test "a malformed digest is refused — it must not render repository@not-a-digest" do
-      # Kit's `pin the image by digest` step refuses a malformed digest with
-      # `^sha256:[0-9a-f]{64}$`; a template that rendered
-      # `repository@not-a-digest` would be the defect that step exists to
-      # prevent — a pod in image-pull failure with nothing naming this field.
-      # The template cannot silently fall back to the tag either: a human who
-      # pasted a bad digest expects a pin and would silently get a stale tag.
-      # So it FAILS the render. `fail` in a Helm template surfaces as a
-      # non-zero `helm template` exit, which this assertion reads as a throw.
-      # A template that rendered `repository@not-a-digest` would be the defect
-      # the kit step exists to prevent.
 
       for bad <- ["not-a-digest", "sha256:zzzz"] do
         {output, status} = helm_template(["--set", "image.digest=#{bad}"])
@@ -438,15 +342,9 @@ defmodule Courier.ChartTest do
     test "keeps the committed-tag path in values.yaml — a fresh clone with no digest renders exactly as today" do
       values = read_file("values.yaml")
 
-      # The tag stays beside the digest. The digest is the half that cannot
-      # move; the tag is the human-readable half beside it. A chart that
-      # dropped the tag would break `--set image.digest=` (the empty branch).
       assert values =~ ~r/^  tag: "0\.1\.0"$/m
 
       deployment = read_file("templates/deployment.yaml")
-      # The template still carries both branches — `repository:tag` and
-      # `repository@digest`. Assert the source contains both so a future
-      # `caf gen chart` that drops one goes red.
       assert deployment =~ ".Values.image.digest"
       assert deployment =~ ".Values.image.repository"
       assert deployment =~ ".Values.image.tag"

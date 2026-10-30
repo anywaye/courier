@@ -9,7 +9,6 @@ defmodule Courier.UnsubscribeToken do
   three facts the unsubscribe needs — which user, which notification type, which
   address — **without the address being derivable from the token**.
 
-  ## The token is stored as a digest, and that is the whole security property
 
   The token is 32 bytes from `:crypto.strong_rand_bytes/1`, URL-safe base64 with
   no padding, and it exists in exactly two places: the `List-Unsubscribe` header
@@ -29,7 +28,6 @@ defmodule Courier.UnsubscribeToken do
       direction of the operation: a webhook signing secret has to be read *back*
       to sign with, and an unsubscribe token never does anything but be looked up.
 
-  ## What is deliberately absent
 
   No expiry, and that is a decision rather than an omission. The header is read by
   mail clients for as long as somebody keeps the message, and Gmail's requirement
@@ -55,14 +53,8 @@ defmodule Courier.UnsubscribeToken do
   @primary_key {:id, Ecto.UUID, autogenerate: true}
   @foreign_key_type :binary_id
 
-  # 32 random bytes, base64url, no padding. Bounded here rather than trusted: the
-  # value is the only credential an unauthenticated `POST` to
-  # `/unsubscribe/:token` is checked against, and a token row whose value is
-  # 40 KB is a row an endpoint will hash on every request.
   @token_bytes 32
   @token_length 43
-  # Hex-encoded SHA-256: 32 bytes is 64 characters, and the bound is what makes a
-  # column this narrow safe to index.
   @digest_length 64
 
   @doc "The number of random bytes in a token."
@@ -141,12 +133,6 @@ defmodule Courier.UnsubscribeToken do
     |> unique_constraint(:token_digest)
   end
 
-  # The same shape `Courier.Mailers` validates a recipient with and
-  # `Courier.Suppression` validates a report with, in all three cases for the same
-  # reason: one definition of "an address courier can send to", so the mint
-  # boundary and the compose boundary cannot disagree about it. A token minted for
-  # an address courier would refuse to send to is a token that produces a
-  # preference nothing can act on.
   defp validate_email(changeset) do
     validate_change(changeset, :email, fn :email, email ->
       if Regex.match?(~r/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/, email),
@@ -155,10 +141,6 @@ defmodule Courier.UnsubscribeToken do
     end)
   end
 
-  # Only a type courier actually sends can carry an unsubscribe, and
-  # `Courier.NotificationPreference`'s own validation would catch the far end of
-  # it. This catches it here, so a token is never minted for a type the send path
-  # refuses — a row that could only ever be a no-op.
   defp validate_type(changeset) do
     validate_change(changeset, :notification_type, fn :notification_type, type ->
       if type in Courier.Notifiers.types(), do: [], else: [notification_type: "is not a notification type"]

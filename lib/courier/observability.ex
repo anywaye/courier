@@ -5,7 +5,6 @@ defmodule Courier.Observability do
   `record/2` is the one to read, and it exists for a reason that is worth stating
   plainly before the code.
 
-  ## Why an allowlist at all
 
   Telemetry is the one place sensitive content leaks by accident. courier sends
   email on behalf of other services, signs webhooks with a secret, and holds a
@@ -30,7 +29,6 @@ defmodule Courier.Observability do
   misconfigured, and a service that exports a span carrying a caller's body and
   relies on the collector to take it back out is one control, not two.
 
-  ## What is deliberately not here
 
     * `error.message`. A message is unbounded, it is a cardinality bomb on any
       metric derived from it, and on a service that renders mail it is a
@@ -56,21 +54,6 @@ defmodule Courier.Observability do
   """
   def service_name, do: @service_name
 
-  # The complete set of attribute names a anywaye span may carry.
-  #
-  # A projection of `core/schemas/telemetry/traces.schema.json`, and the
-  # transcriptions are checked against each other: kit's gate compares the
-  # COLLECTOR's allowlist to the same file on disk, and this repository's own test
-  # asserts that every name here is a name core has. Two transcriptions held
-  # against one document beat one held against nothing.
-  #
-  # Read the list as the security control it is. Every name is a fact about HOW a
-  # request was served — which method, which route template, which status, which
-  # class of failure — and none of them is a fact about WHAT the caller said.
-  #
-  # A comment and not an `@doc`, because `@doc` binds to the next function or
-  # module attribute, and attaching one here made the `@doc` on
-  # `allowed_span_attributes/0` a redefinition of it.
   @allowed_span_attributes ~w(
     http.request.method
     http.response.status_code
@@ -161,20 +144,8 @@ defmodule Courier.Observability do
        traffic" on a route that is busy.
     4. **Non-scalar** — dropped. A list or a map can be a payload.
   """
-  # NOT `when is_map(span)`. A span in the Erlang SDK is a RECORD — a tuple — not a
-  # map, so that guard sent every real call down the catch-all clause below and
-  # recorded nothing at all. The symptom was a suite where every "no canary reached
-  # a span" assertion passed and every "the allowed data arrived" assertion failed
-  # with an empty attribute list, which is the shape a redaction failure looks like
-  # and is not one. The first version of this function is a good illustration of why
-  # the presence assertions exist.
   def record(span, attributes) when is_map(attributes) do
     if :otel_span.is_recording(span) do
-      # `:maps.to_list` over a map gives no order, and OTel's `set_attributes`
-      # takes a list — so this builds the accepted set first and the order it ends
-      # up in is whatever the map has. That is fine for correctness and worth
-      # knowing for tests: a test asserting on the whole attribute map compares
-      # maps, not sequences.
       accepted =
         attributes
         |> Enum.flat_map(fn {name, value} -> attribute(name, value) end)
@@ -221,8 +192,6 @@ defmodule Courier.Observability do
     if v in ~w(OK ERROR), do: {:ok, v}, else: :error
   end
 
-  # Everything else, including nil, atoms, tuples, lists and maps. A payload is a
-  # map, and a rendered payload in a span is every field of it.
   defp coerce(_name, _value), do: :error
 
   @doc """
@@ -301,14 +270,6 @@ defmodule Courier.Observability do
         )
       end
     else
-      # The class is NOT recorded, and this is the schema rather than a
-      # preference. core's traces schema makes the pair a biconditional in both
-      # directions: a failed status obliges an error class AND an error class
-      # obliges a failed status. A span carrying a class and an `:ok` status is
-      # therefore a span two different queries read differently, and nothing reports
-      # the disagreement.
-      #
-      # The status mirror is still written, so a log-indexed query can filter on it.
       record(span, %{"otel.status_code" => "OK"})
     end
 

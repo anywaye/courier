@@ -38,16 +38,12 @@ defmodule Courier.TestSupport.CloudflareServerTest do
     {:ok, first, first_port} = CloudflareServer.start_link()
     {:ok, second, second_port} = CloudflareServer.start_link()
 
-    # The old harness raised on the line above. The tables being per-server is
-    # what makes these two lines independent rather than last-write-wins.
     :ok = CloudflareServer.set_response(first, 401, ~s({"refused":"first"}))
     :ok = CloudflareServer.set_response(second, 200, ~s({"accepted":"second"}))
 
     assert post(first_port, "/accounts/first/email/sending/send").status == 401
     assert post(second_port, "/accounts/second/email/sending/send").status == 200
 
-    # And the request tables are the servers' own: each recorded exactly the
-    # request that reached it, and none of the other's.
     assert [first_request] = CloudflareServer.take(first)
     assert [second_request] = CloudflareServer.take(second)
 
@@ -62,10 +58,6 @@ defmodule Courier.TestSupport.CloudflareServerTest do
     assert :ets.whereis(:courier_cloudflare_response) == :undefined
   end
 
-  # A real POST through the real Bandit listener. The body carries no `email`
-  # key and no `message-id` header, so the plug's two provider refusals do not
-  # fire and the server answers with the response the test configured — the
-  # same round trip the delivery tests make.
   defp post(port, path) do
     Req.post!("http://127.0.0.1:#{port}#{path}",
       body: ~s({"to":{"address":"x@example.com","name":"X"}}),

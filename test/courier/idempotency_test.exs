@@ -23,11 +23,6 @@ defmodule Courier.IdempotencyTest do
   @endpoint "/v1/webhook_endpoints"
   @other_endpoint "/v1/webhook_endpoints/8f3c2b1a-0000-4000-8000-000000000001/test"
 
-  # THE ACCOUNT THIS FILE WRITES AS. `idempotency_keys` is one of the three
-  # protected tables, so an INSERT with no identity set is refused `42501` — the
-  # policy's `with check` is `account_id = anywaye.current_account_id()`. It was
-  # not refused while the suite connected as `postgres`, because a superuser
-  # bypasses RLS whatever FORCE says; see `Courier.DataCase`.
   @moduletag account: @account
 
   defp claim_key(overrides \\ %{}) do
@@ -58,11 +53,6 @@ defmodule Courier.IdempotencyTest do
     end
 
     test "expires the claim 24 hours out, which is core's retention" do
-      # Asserted on the stored value rather than by calling `retention_hours/0` and
-      # comparing it to itself: the number that has to be 24 is the one in the row.
-      # Bracketed by the clock either side of the call rather than compared to
-      # `86_400 / 3600`, because truncating a diff to hours turns 24 into 23 and
-      # teaches the reader nothing about the value.
       before = DateTime.utc_now()
       assert {:ok, claim} = claim_key()
       after_call = DateTime.utc_now()
@@ -77,9 +67,6 @@ defmodule Courier.IdempotencyTest do
     end
 
     test "the same key under another account is a different key" do
-      # core: "The same key on a different endpoint or principal is a different
-      # key." Two tenants choosing `11111111-…` must not collide, and a shared
-      # index on the key alone would.
       assert {:ok, _claim} = claim_key()
 
       assert {:ok, _other} =
@@ -117,17 +104,6 @@ defmodule Courier.IdempotencyTest do
     test "is nil for another account's claim, because the scope includes the principal" do
       assert {:ok, _claim} = claim_key()
 
-      # `as_account/2` MATTERS HERE, and it is the difference between this test
-      # proving something and this test being satisfied by accident. Run as the
-      # file's own account — the identity the row belongs to — the RLS `select`
-      # policy hides the row on its own and `fetch/3` returns nil whether or not
-      # its own `account_id` predicate is there. **A boundary that refuses
-      # everybody satisfies this assertion for free.**
-      #
-      # As the OTHER account the policy admits the table and the row is visible to
-      # it, so the only thing left that can refuse is `fetch/3`'s own
-      # `where: account_id == ^account_id`. That is the thing under test, so that
-      # is the identity the call has to run as.
       assert as_account(@other_account, fn ->
                Idempotency.fetch(@other_account, @endpoint, @key)
              end) == nil
@@ -136,9 +112,6 @@ defmodule Courier.IdempotencyTest do
 
   describe "retention" do
     test "an expired claim is discarded, so a day-old key behaves as a new one" do
-      # The row still exists, so a unique index on the triple would refuse this
-      # forever. This is the assertion that retention is real rather than a column
-      # that says 24 hours.
       expired = DateTime.add(DateTime.utc_now(), -60, :second)
       assert {:ok, first} = claim_key(%{expires_at: expired})
 
@@ -146,8 +119,6 @@ defmodule Courier.IdempotencyTest do
       claimed_id = second.id
       assert second.id != first.id
 
-      # The expired row went, rather than being shadowed: one row, and it is the
-      # new claim's.
       assert Repo.aggregate(IdempotencyKey, :count) == 1
       assert %IdempotencyKey{id: ^claimed_id} = Idempotency.fetch(@account, @endpoint, @key)
     end
@@ -179,9 +150,6 @@ defmodule Courier.IdempotencyTest do
 
       assert completed.state == :completed
       assert completed.response_status == 201
-      # Byte-for-byte, because on this endpoint the body carries the signing secret
-      # and a re-serialized copy of a response holding a credential is a second
-      # copy of the credential.
       assert completed.response_body == body
       assert completed.response_content_type == "application/json; charset=utf-8"
     end
@@ -197,8 +165,6 @@ defmodule Courier.IdempotencyTest do
 
   describe "releasing a claim" do
     test "frees the key immediately rather than at the end of the window" do
-      # A request that did not succeed must be retryable, so the row goes rather
-      # than sitting there for a day refusing the retry with a 409.
       assert {:ok, claim} = claim_key()
       assert {1, nil} = Idempotency.release(claim.id)
       assert Idempotency.fetch(@account, @endpoint, @key) == nil
@@ -213,18 +179,12 @@ defmodule Courier.IdempotencyTest do
     end
 
     test "refuses a non-uuid" do
-      # courier-12 measured that courier accepted `not-a-uuid` without complaint
-      # before this existed. A key that is not a uuid is not what the contract says
-      # the header is, and an unbounded one lands in a unique index.
       refute Idempotency.valid_key?("not-a-uuid")
       refute Idempotency.valid_key?("")
       refute Idempotency.valid_key?(String.duplicate("a", 5000))
     end
 
     test "refuses anything that is not a binary at all" do
-      # A header is a string or it is not a header, and `get_req_header/2` can
-      # hand back a list containing something else only if something upstream
-      # wrote it. Refusing beats answering.
       refute Idempotency.valid_key?(nil)
       refute Idempotency.valid_key?(%{})
       refute Idempotency.valid_key?(:not_a_key)

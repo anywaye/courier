@@ -9,7 +9,6 @@ defmodule Courier.Idempotency do
   arithmetic can be tested without a plug pipeline and the wiring can be tested
   without a database.
 
-  ## Why the claim is written before the work
 
   A key that is only recorded *after* the action cannot prevent anything. Two
   requests with one key would both run, both mutate, and both try to store — and
@@ -18,7 +17,6 @@ defmodule Courier.Idempotency do
   and the row exists in between in the `in_flight` state, which is what a second
   request with the same key finds.
 
-  ## Why the unique index is read, and not `ON CONFLICT DO NOTHING`
 
   The first draft of this module used `on_conflict: :nothing` and looked for a
   returned row with a nil `id`, which is how Ecto reports "nothing was inserted".
@@ -37,7 +35,6 @@ defmodule Courier.Idempotency do
   than in a check a caller might forget, and it is the same index either way —
   this is only about how the losing insert finds out that it lost.
 
-  ## Expiry is enforced on the way in, not by a job
 
   core says 24 hours. Nothing sweeps the table on a timer — a second supervision
   tree for a table this size is a service that can be down — so `claim/1` deletes
@@ -46,7 +43,6 @@ defmodule Courier.Idempotency do
   been used, which is what "retention: 24 hours" means, and the sweep only ever
   runs on a key somebody is actually presenting.
 
-  ## What is stored, and what is not
 
   Only a 2xx is stored, and `release/1` deletes the claim for anything else. The
   reason is that a stored 4xx pins a *caller's* mistake for a day — a client that
@@ -65,10 +61,6 @@ defmodule Courier.Idempotency do
 
   @retention_hours 24
 
-  # The index that decides whether a claim was taken. Named in one place because
-  # it is named in two — the migration that creates it and the changeset that
-  # declares it — and a third spelling in `refusal/1` is a claim that silently
-  # stops being `:taken`.
   @claim_index "idempotency_keys_account_id_endpoint_key_index"
 
   @typedoc "Why a claim did not happen."
@@ -91,36 +83,8 @@ defmodule Courier.Idempotency do
   """
   @spec claim(map()) :: {:ok, IdempotencyKey.t()} | {:error, refusal()}
   def claim(attrs) do
-    # The expired-row sweep and the insert are deliberately **not** in one
-    # transaction together, and that is a considered choice rather than an
-    # omission. The insert carries its own savepoint (see below), so sharing a
-    # transaction would buy no containment — and it would widen the window in
-    # which a concurrent presenter waits on this triple's rows.
-    #
-    # What atomicity would buy here is nothing. The sweep deletes rows that are
-    # already past their retention window, so deleting them is correct whether or
-    # not this insert then wins — and if the insert loses, the rows it swept were
-    # rows the winner has no use for either. The one interleaving worth checking
-    # is two requests sweeping and inserting the same expired row, and it is safe:
-    # one deletes and inserts, the other deletes nothing and then loses the unique
-    # index to the first, and `fetch/3` hands it the winner's row.
     discard_expired(attrs)
 
-    # `mode: :savepoint` is the whole of the failure containment, and it is
-    # there for the scoped request path. A losing insert is a unique-violation
-    # STATEMENT error, and Postgres aborts the enclosing transaction on one —
-    # so under a scoped request transaction (see `CourierWeb.Plugs.Idempotency`)
-    # a bare insert would poison the request's own commit and turn every retry
-    # into a 503. The savepoint rolls back only the insert, leaving the
-    # enclosing transaction healthy, so `{:error, :taken}` still means taken.
-    #
-    # What is deliberately NOT here is an inner `Repo.transaction/1` with a
-    # `Repo.rollback/1` on the losing branch: nested Ecto transactions are NOT
-    # savepoints, and an inner rollback marks the whole transaction failed —
-    # measured, the outer commit then answers `{:error, :rollback}` and the
-    # retry is a 503 anyway. (Ecto's own `Repo.transaction/2` documentation
-    # states the same rule: a constraint failure inside a transaction aborts
-    # it, and `mode: :savepoint` is the documented remedy.)
     %IdempotencyKey{}
     |> IdempotencyKey.changeset(Map.put_new(attrs, :expires_at, expires_at()))
     |> Repo.insert(mode: :savepoint)
@@ -130,14 +94,6 @@ defmodule Courier.Idempotency do
     end
   end
 
-  # The one refusal that means "someone else has this key" rather than "the claim
-  # was malformed". It is matched on the index by name, not merely on
-  # `constraint: :unique`, so a future unique index on this table cannot silently
-  # turn into a 409 a client is told to retry.
-  #
-  # The name arrives as a **string**, from the adapter, even though the
-  # `unique_constraint/3` it was declared with was given an atom — compared as
-  # strings so the two spellings of the same thing cannot disagree.
   defp refusal(changeset) do
     taken? =
       Enum.any?(changeset.errors, fn {_field, {_message, opts}} ->
@@ -196,22 +152,6 @@ defmodule Courier.Idempotency do
   @spec purge_expired() :: {integer(), nil}
   def purge_expired, do: Repo.delete_all(expired_claims())
 
-  # The `where([k], ...)` form and not `where(queryable, expires_at: ^now)`, and
-  # the difference is not stylistic. **The keyword form does not apply the
-  # schema's field type to an interpolated value**: a `DateTime` handed to it
-  # arrives at the database uncast, so the comparison against a
-  # `timestamp without time zone` column silently matches nothing.
-  #
-  # Measured, because a green test would not have caught it — the first version of
-  # this function used the keyword form and returned `{0, nil}` against a table
-  # that plainly held an expired row:
-  #
-  #     raw SQL   SELECT count(*) … WHERE expires_at < $1   -> 1
-  #     keyword   where(IdempotencyKey, expires_at: ^now)   -> []
-  #     macro     where([k], k.expires_at < ^now)           -> the row
-  #
-  # The macro form knows the field and casts the value as that field's type, so
-  # every query in this module uses it.
   defp expired_claims do
     now = less_than_now()
     where(IdempotencyKey, [k], k.expires_at < ^now)
@@ -230,8 +170,6 @@ defmodule Courier.Idempotency do
   def valid_key?(key) when is_binary(key), do: match?({:ok, _}, Ecto.UUID.cast(key))
   def valid_key?(_key), do: false
 
-  # Both halves of the expiry decision live here so `claim/1` and `purge_expired/0`
-  # cannot be built against different clocks.
   defp discard_expired(%{account_id: account_id, endpoint: endpoint, idempotency_key: key}) do
     IdempotencyKey
     |> where([k], k.account_id == ^account_id and k.endpoint == ^endpoint)

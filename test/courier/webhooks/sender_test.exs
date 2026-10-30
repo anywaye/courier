@@ -85,10 +85,6 @@ defmodule Courier.Webhooks.SenderTest do
     end
 
     test "sends the exact payload it signed, byte for byte" do
-      # §Signature scheme: the payload sent must be the payload signed. A sender
-      # that re-encoded the body between signing and sending would produce a
-      # signature no consumer can verify, and the failure would look like the
-      # consumer's bug.
       payload = ~s({"type":"ping","data":{"url":"https://anywaye.com/x?a=1.2"}})
 
       {_result, request} = send_request(%{payload: payload})
@@ -122,8 +118,6 @@ defmodule Courier.Webhooks.SenderTest do
     test "carry a signature a verifier accepts" do
       {_result, request} = send_request()
 
-      # The whole point of adopting the spec: a consumer runs a library and gets a
-      # verdict, without learning anything about courier.
       assert Verifier.verify(request.body, request.headers, @secret, now: @timestamp) == :ok
     end
 
@@ -190,9 +184,6 @@ defmodule Courier.Webhooks.SenderTest do
 
   describe "the Retry-After header" do
     test "is read when the consumer sent one" do
-      # §Delivery success and failure: "some responses may also include a
-      # `retry-after` header ... which should be taken into consideration when
-      # scheduling the next attempt."
       result = send_with(%{response_status: 429, response_headers: %{"retry-after" => "120"}})
 
       assert result.retry_after_seconds == 120
@@ -203,9 +194,6 @@ defmodule Courier.Webhooks.SenderTest do
     end
 
     test "a date form is read as absent, not as a number of seconds" do
-      # `Retry-After` also allows an HTTP date. Reading "Wed, 21 Oct 2026 07:28:00
-      # GMT" as an integer is either a parse failure or, worse, a small number —
-      # and either way a retry scheduled for the wrong moment.
       result =
         send_with(%{
           response_status: 503,
@@ -218,9 +206,6 @@ defmodule Courier.Webhooks.SenderTest do
 
   describe "a transport failure" do
     test "is reported, not raised" do
-      # A connection refused is an ordinary outcome for a consumer that is down,
-      # not an exception for courier to crash on. The delivery pipeline's whole
-      # job is to record it and decide whether to try again.
       result = send_with(%{url: "https://down.example.com", error: :econnrefused})
 
       refute result.success?
@@ -286,8 +271,6 @@ defmodule Courier.Webhooks.SenderTest do
     end
 
     test "distinguishes no response from a response" do
-      # A 500 and a connection refused produce the same row shape and want
-      # different things done about them, so the text has to tell them apart.
       no_response = %Sender.Result{success?: false, status_code: nil, error: :econnrefused}
 
       assert Sender.describe(no_response) =~ "no response"

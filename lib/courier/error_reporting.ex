@@ -3,7 +3,6 @@ defmodule Courier.ErrorReporting do
   courier's own error reporting: the SDK seam, the client-side volume control, and
   the rule about which errors are reported at all.
 
-  ## This is a seam, and the default is off
 
   `enabled?/0` reads `config :courier, :error_reporting`. In test it is `false` and
   `capture/2` is a no-op, so the suite neither opens a socket nor emits an
@@ -18,7 +17,6 @@ defmodule Courier.ErrorReporting do
   does not report errors, and says nothing about it at boot — the same reasoning
   `Courier.ErrorRelay.Sink.Noop` gives at length.
 
-  ## Which signals, and the OTel rule that decides it
 
   The brief asks whether to report per-request errors only or background failures
   too, and the OTel semantic conventions answer it before taste does:
@@ -50,7 +48,6 @@ defmodule Courier.ErrorReporting do
   So: the two uncaught kinds, and nothing handled. Both are wired to the same
   capture path, and which one fired is visible in the event's `error.type`.
 
-  ## The client-side limiter, and why it is not the throttle
 
   Sentry does not sample errors by design — `sample_rate` applies to transactions
   and an exception is reported every time it happens. That is the right default
@@ -68,7 +65,6 @@ defmodule Courier.ErrorReporting do
 
   This one is the cheap early exit; the relay's is the one that makes the promise.
 
-  ## `error.type` is set here, because this is where the class is known
 
   The OTel spec is explicit that `error.type` is "a class, not a message" and
   SHOULD be predictable and low-cardinality. courier's classes come from core's
@@ -78,7 +74,6 @@ defmodule Courier.ErrorReporting do
   itself, is what keeps the error store joinable to the trace signal: same
   attribute name, same enum, so a change of backend is a change of DSN.
 
-  ## It never raises
 
   Every function here is total. The one thing that must not happen is a reporting
   path taking down the request that was being reported, so `capture/2` returns
@@ -138,9 +133,6 @@ defmodule Courier.ErrorReporting do
       :ok
     end
   rescue
-    # The last line of defence, and the reason this function is documented as
-    # total. A reporting path that raises inside a `rescue` clause turns a
-    # recovered request into a crashed one, which is the opposite of the promise.
     exception ->
       Logger.error(
         "[error-reporting] capture raised and the error is lost: #{Exception.message(exception)}"
@@ -174,50 +166,16 @@ defmodule Courier.ErrorReporting do
     if allowed?(error_type), do: to_string(error_type), else: "_OTHER"
   end
 
-  # --- the SDK call ----------------------------------------------------------
 
   defp do_capture(exception, error_type, context) do
     Sentry.capture_exception(exception,
-      # `tags`, not `extra`. The relay's allowlist keeps a small closed set of
-      # tags and drops `extra` wholesale, so a fact that matters has to arrive as
-      # a tag or not at all — and putting operator context in `extra` is how a
-      # prompt or a token ends up in a retained store.
       tags: %{
         "error.type" => normalise_type(error_type),
         "service.name" => "courier",
         "deployment.environment" => environment(),
         "release" => release()
       },
-      # **The stack trace, explicitly.** The SDK does not find it on its own:
-      # `Sentry.Event.create_event/2` reads `Keyword.get(opts, :stacktrace)` and
-      # there is no default, so an event captured without this option has
-      # `stacktrace: nil` and reaches the store with **no frames at all**. That is
-      # not obvious and it is not a small thing: "enough detail to act" *is* the
-      # file and the line, and the class alone tells you which of a thousand
-      # `RuntimeError`s in a BEAM stack you are looking at.
-      #
-      # `Process.info(self(), :current_stacktrace)` rather than `__STACKTRACE__`,
-      # because `__STACKTRACE__` is only defined inside a `rescue`/`catch`/`after`
-      # clause and this function is also called from an Oban `handle_info` failure
-      # where there is no clause to put it in. It is a message to the VM rather
-      # than a compiler special form, so it is available everywhere — and it
-      # returns `nil` in a process with no current stacktrace, which is the
-      # correct answer rather than an error.
-      #
-      # The frames' `vars` — the function arguments, which in Elixir are the bound
-      # local variables — *are* rendered by the SDK and then removed by the
-      # filter, along with the exception's message. That is the trade
-      # `Courier.ErrorRelay.Policy` argues in full.
       stacktrace: current_stacktrace(),
-      # Empty `user` and empty `extra` rather than omitted, and **no `contexts`
-      # option at all** — `Sentry.capture_exception/2` has no `:contexts` key and
-      # raises `unknown options [:contexts]` if it is given one. That raise is
-      # caught by the `rescue` below, so the version of this file that passed
-      # `contexts: %{}` reported **nothing at all** and returned `{:error,
-      # :sdk_raised}` while looking, in a passing test, like a working reporting
-      # path. Contexts come from `Sentry.Context` and the SDK's own runtime
-      # integration; the filter keeps only `runtime`, `device`, `os` and `trace`,
-      # and the relay keeps the same four.
       user: %{},
       extra: Map.new(context)
     )
@@ -232,12 +190,7 @@ defmodule Courier.ErrorReporting do
       {:error, :sdk_raised}
   end
 
-  # --- the small normalisers -------------------------------------------------
 
-  # The stack the SDK renders, or `nil` when there is not one. A VM message rather
-  # than `__STACKTRACE__`, which only exists inside a `rescue`/`catch`/`after`
-  # clause — and the background-failure path this module also serves has no such
-  # clause to put it in.
   defp current_stacktrace do
     case Process.info(self(), :current_stacktrace) do
       {:current_stacktrace, [_ | _] = stacktrace} -> stacktrace
@@ -252,10 +205,6 @@ defmodule Courier.ErrorReporting do
   defp release,
     do: Application.get_env(:courier, :error_reporting, []) |> Keyword.get(:release, "unknown")
 
-  # `is_exception/1` and not `%Exception{}`. An Elixir exception is a map with a
-  # `__struct__` of `:error` or `:exit`, not a struct, so the struct pattern does
-  # not exist and does not compile — which is a nice illustration of why a guard
-  # is the right tool for "is this one of a family" and a pattern is not.
   defp normalise(failure) when is_exception(failure), do: failure
   defp normalise(failure) when is_binary(failure), do: RuntimeError.exception(failure)
   defp normalise(failure), do: RuntimeError.exception(inspect(failure))

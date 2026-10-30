@@ -5,7 +5,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
   code, a `trace_id` that matches the `X-Trace-Id` header, per-field errors on a
   422, and a 404 for a user whose preferences belong to another account.
 
-  ## The authorization matrix is the same three questions the webhooks ask
 
   `CourierWeb.Plugs.Principal` decides who is asking and `notification_preferences`
   records the account, so the three answers here are the three answers
@@ -33,16 +32,8 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # Two accounts, and the tests below use them to say the difference between "you
-  # asked" and "this is yours" is a difference courier actually makes. Neither is
-  # a credential and neither is a secret: they are tenancy keys, minted per test
-  # like the ones courier-15 gave its six row-counting tests, so a row left
-  # behind by a neighbour is not a row this test can see.
   @account_id "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account_id
   @other_account_id "2b3c4d5e-6f7a-4b9c-8d1e-2f3a4b5c6d7e"
 
@@ -55,11 +46,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     body(conn)
   end
 
-  # The account a request is made as. `nil` is an anonymous request, and
-  # `build_conn/0` rather than `Plug.Test.conn/3` because the verb helpers build
-  # the request conn themselves and discard everything a `Plug.Test` conn
-  # carries; a header set on a `build_conn/0` survives, because that is the conn
-  # the request is dispatched *from*.
   defp as(account_id) do
     case account_id do
       nil -> build_conn()
@@ -83,9 +69,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
   end
 
   describe "the authorization matrix" do
-    # Both verbs × every caller, asserted rather than described. A user id in the
-    # path is a string anybody can write, so the only question this surface has
-    # is whether courier asks one before answering.
     @actions [
       {:get, "/v1/notification_preferences/6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061", :show},
       {:put, "/v1/notification_preferences/6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061", :update}
@@ -101,10 +84,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "the refusal happens before routing reaches a controller" do
-      # A 401 rather than a 404 or a 422 is itself the assertion: the plug runs in
-      # the pipeline, so an anonymous caller never reaches an action and no action
-      # has to remember to check. `conn.assigns.action` is nil for a request that
-      # was halted in a plug.
       for {method, path, _name} <- @actions do
         conn = Phoenix.ConnTest.dispatch(anonymous_conn(), @endpoint, method, path)
 
@@ -113,12 +92,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "the refusal is the same one the webhook endpoints answer, byte for byte" do
-      # "Behind a plug" is a claim about the router. This is the claim a client
-      # makes when it receives one: it has to be able to handle a 401 without
-      # knowing which resource produced it, so the two bodies are compared rather
-      # than each being checked against a copy of the envelope. Only the two
-      # fields that are *meant* to differ — the path named and the trace id — are
-      # dropped.
       here =
         anonymous_conn()
         |> get("/v1/notification_preferences/#{@user_id}")
@@ -133,9 +106,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "another account cannot read this one's preferences" do
-      # The rows exist and belong to the owning account, so this is a resource the
-      # caller cannot see: 404, never a 403, because a 403 would confirm that this
-      # user id has preferences at all.
       written =
         owner_conn()
         |> put_preferences(@user_id, %{
@@ -146,35 +116,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
       assert %{"data" => %{"preferences" => [welcome | _]}} = written
       assert welcome["email_enabled"] == false
 
-      # 200 WITH THE DEFAULTS, and the 404 this used to assert is now
-      # UNREACHABLE. That is a contract change, and it is a consequence of the
-      # role switch rather than a preference -- so it is worth being exact about.
-      #
-      # `Courier.NotificationPreferences.addressable/2` decides this case by
-      # READING the stored row's `account_id` and comparing it in Elixir. As the
-      # database OWNER that read sees every account's rows and the comparison runs.
-      # As **`courier_app`** the read is a subject of the `select` policy
-      # (`account_id = anywaye.current_account_id()`), so the other account's row is
-      # not returned at all: `owner/1` reads `nil`, `addressable/2` reads that as
-      # "nothing stored", and the answer is the same as for a user courier has
-      # never heard of. Measured as `courier_app`:
-      #
-      #     begin; select anywaye.begin_account('<other>');
-      #     select account_id from notification_preferences where user_id = '<theirs>';
-      #     -- 0 rows
-      #
-      # **The new answer leaks strictly LESS than the old one.** A 404 confirms a
-      # row exists and belongs elsewhere; 200-with-defaults is byte-identical to
-      # the answer for a user who does not exist, so nothing about any row is
-      # disclosed. The 404 existed ONLY to withhold that fact, and this withholds
-      # it more completely.
-      #
-      # So the assertion is on the property rather than the code: this account gets
-      # the same **preferences** it would get for a user nobody has written for.
-      # The `user_id` is dropped rather than the whole bodies compared, because the
-      # response echoes the id that was asked for and the two requests asked for
-      # different ones -- comparing whole bodies fails on that alone, which turns a
-      # correct assertion red for no reason at all.
       other =
         other_conn()
         |> get("/v1/notification_preferences/#{@user_id}")
@@ -189,12 +130,8 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert other == unknown_user
 
-      # And the defaults, not somebody else's stored `false`. Without this the
-      # comparison above would also be satisfied by both being the OWNER's
-      # values, which is the leak.
       assert Enum.all?(other, & &1["email_enabled"])
 
-      # And the owner's row is untouched by the other account having read it.
       assert %{"email_enabled" => false} =
                owner_conn()
                |> get_preferences(@user_id)
@@ -203,14 +140,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "another account cannot write this one's preferences, and writes nothing" do
-      # The write half is the dangerous one: a refusal that still stored the batch
-      # would be a 404 and a breach. So this asserts the row afterwards rather
-      # than the status alone, and reads it as the owner.
-      #
-      # The owner's write comes first, which is the rule the previous two tests
-      # rest on: the first authenticated `PUT` for a user is what records the
-      # account that owns them, because courier cannot look a user up and ask
-      # (see `Courier.NotificationPreferences`'s moduledoc).
       owner_conn()
       |> put_preferences(@user_id, %{
         "preferences" => [%{"notification_type" => "welcome", "email_enabled" => false}]
@@ -234,21 +163,10 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "an account that has never been asked about a user gets the defaults, not a 404" do
-      # The 404 above is about a user whose preferences belong to somebody else.
-      # A user nobody has written anything for is courier's normal case: it does
-      # not own users, so it cannot tell that user from one that does not exist,
-      # and answering a 404 would be it claiming to know something about the
-      # requester it does not know.
       conn = other_conn() |> get("/v1/notification_preferences/#{@user_id}")
 
       assert conn.status == 200
 
-      # Eight preferences, not three: `account_security` is the fourth type
-      # `Courier.Mailers` can send, `email_change_current` /
-      # `email_change_new` the fifth and sixth, `receipt` the seventh, added by
-      # the payment consumer, and `payment_failed` the eighth, added by its
-      # sibling. `NotificationPreferences.types/0` delegates to it — so the
-      # defaults cover it too.
       assert %{
                "data" => %{
                  "user_id" => @user_id,
@@ -268,11 +186,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "an account_id beside the batch is not the account the row is stored against" do
-      # The body's only key courier reads is `preferences`, so a top-level
-      # `account_id` names nothing at all — it cannot reach the row, and the
-      # account the row belongs to stays the one that asked. Asserted from the
-      # other side, because "the body was ignored" and "the body was honoured and
-      # the account happened to match" are the same 200.
       conn =
         owner_conn()
         |> put_preferences(@user_id, %{
@@ -282,13 +195,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert conn.status == 200
 
-      # The other account now gets the DEFAULTS rather than a 404, for the reason
-      # the read test above spells out: the RLS `select` policy hides the owner's
-      # row from it, so the read cannot distinguish "belongs to somebody else" from
-      # "was never written". The claim this test exists for is that the body's
-      # `account_id` did not become the row's account -- so it is asserted from the
-      # OWNER's side, where the stored value is readable, rather than from the
-      # other account's, where it is not.
       assert %{"email_enabled" => false} =
                owner_conn()
                |> get_preferences(@user_id)
@@ -297,10 +203,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "an account_id inside an entry is a 422 naming the field" do
-      # The entry is the unit courier validates, and `account_id` is not one of
-      # its fields — so this is refused rather than quietly dropped. Refused,
-      # because a caller that sent one and got a 200 would believe the row it
-      # asked for exists.
       conn =
         owner_conn()
         |> put_preferences(@user_id, %{
@@ -314,15 +216,11 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
   end
 
-  # The status of a response, asserted on its own, so a test whose point is the
-  # status and not the body reads as one line instead of three.
   defp assert_status(conn, status) do
     assert conn.status == status
     conn
   end
 
-  # The body of a refusal with the two fields that are meant to differ removed, so
-  # two refusals can be compared as what they are: the same answer.
   defp refusal(conn) do
     assert conn.status == 401
 
@@ -337,12 +235,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
 
       assert %{"data" => %{"user_id" => @user_id, "preferences" => preferences}} = body(conn)
 
-      # The eight types `Courier.Mailers` can send — `account_security` is the
-      # fourth, added by the sessions-revoked consumer, `email_change_current` /
-      # `email_change_new` the fifth and sixth, added by the email-change
-      # packet, `receipt` the seventh, added by the payment consumer, and
-      # `payment_failed` the eighth, added by its sibling. They are in this list
-      # because `NotificationPreferences.types/0` delegates to `Mailers.types/0`.
       assert Enum.map(preferences, & &1["notification_type"]) ==
                ~w(welcome password_reset team_invitation account_security email_change_current email_change_new receipt payment_failed)
 
@@ -372,9 +264,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "an unknown user is not a 404: courier does not own users, so there is nothing to find" do
-      # identity owns the user table. A user courier has never seen is the normal
-      # case here, not an error, and a 404 would be courier claiming to know
-      # something about the requester it does not know.
       conn =
         get(owner_conn(), "/v1/notification_preferences/00000000-0000-0000-0000-000000000000")
 
@@ -497,9 +386,6 @@ defmodule CourierWeb.NotificationPreferencesControllerTest do
     end
 
     test "a malformed body is a 400, because the client could not have known" do
-      # The content-type goes on before the body: `put/3` with a binary body
-      # refuses to build a request that has not said what the body is, and it
-      # would raise in the test process before courier ever saw the request.
       conn =
         owner_conn()
         |> put_req_header("content-type", "application/json")

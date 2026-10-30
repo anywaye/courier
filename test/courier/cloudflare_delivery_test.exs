@@ -19,7 +19,6 @@ defmodule Courier.CloudflareDeliveryTest do
   is mocked, and nothing here would pass against an adapter that returned
   `{:ok, _}` for a refused send.
 
-  ## Why the whole conversation is driven rather than stubbed
 
   Each test configures the adapter and calls `Courier.Mailers.deliver/2` —
   the same two lines production runs. A test that built a `%Swoosh.Email{}` by
@@ -28,11 +27,6 @@ defmodule Courier.CloudflareDeliveryTest do
   send, and the two have been broken independently in this repository.
   """
 
-  # `async: false`, and the reason is the application environment rather than
-  # the network: these tests replace `config :courier, Courier.Mailer` and
-  # `config :swoosh, :api_client`, which the whole VM shares, so two of them
-  # running at once would deliver through each other's adapter. Same rule as
-  # the other `*ConfigTest` files in this suite.
   use ExUnit.Case, async: false
 
   alias Courier.Mailers
@@ -69,21 +63,12 @@ defmodule Courier.CloudflareDeliveryTest do
 
       payload = decode!(request.body)
 
-      # The sender courier built: `config :courier, :mailing`'s from address.
       assert payload["from"] == %{"address" => "no-reply@anywaye.com", "name" => "Anywaye"}
 
-      # The recipient the platform handed in — Cloudflare's `to` is the address
-      # itself, not a personalizations wrapper.
       assert payload["to"] == %{"address" => "roundtrip@example.com", "name" => "Round Trip"}
 
-      # The subject is courier's, from the `:mailing` configuration, rendered
-      # through the template — so this is also the assertion that the subject
-      # templates still resolve.
       assert payload["subject"] == "Welcome to Anywaye"
 
-      # The content is the rendered template in both formats. A message that
-      # "arrives" with a subject and no body is still useless, and would pass
-      # an assertion about the envelope alone.
       assert payload["text"] =~ "Round Trip"
       assert payload["html"] =~ "Round Trip"
     end
@@ -460,9 +445,6 @@ defmodule Courier.CloudflareDeliveryTest do
           )
         )
 
-      # Reply-to is not a Cloudflare field — it travels as a header if present.
-      # The adapter under test sends the API-shaped fields; this asserts the
-      # ones that must arrive.
       assert {:ok, _receipt} = Courier.Mailer.deliver(email)
 
       assert [request] = CloudflareServer.take(server)
@@ -504,15 +486,11 @@ defmodule Courier.CloudflareDeliveryTest do
       assert [request] = CloudflareServer.take(server)
       payload = decode!(request.body)
 
-      # The REST API's named-address object is {address, name}; {email, name}
-      # is the Workers binding shape and is refused with 400
-      # invalid_request_schema (measured live on anywaye.com).
       assert payload["from"] == %{"address" => "no-reply@anywaye.com", "name" => "Anywaye"}
       assert payload["to"] == %{"address" => "shape@example.com", "name" => "Shape"}
       refute Map.has_key?(payload["from"], "email")
       refute Map.has_key?(payload["to"], "email")
 
-      # Bare address with no display name stays a bare string — also valid.
       assert payload["bcc"] == nil or is_binary(payload["bcc"]) or is_map(payload["bcc"])
     end
 
@@ -542,11 +520,6 @@ defmodule Courier.CloudflareDeliveryTest do
       {:ok, _server, port} = CloudflareServer.start_link()
       put_adapter(port)
 
-      # The header `Courier.Deliver.tag/2` attaches to EVERY message it sends:
-      # `<courier-<uuid>@anywaye.com>` under the lowercase `message-id` key.
-      # Before this packet the adapter forwarded it verbatim and Cloudflare
-      # refused the whole message with 400 / 10202 — which the test server now
-      # reproduces, so a regression here is red, not silently accepted.
       assert {:ok, _receipt} =
                Courier.Mailer.deliver(tagged_welcome("usr_msgid", "msgid@example.com"))
     end
@@ -558,7 +531,6 @@ defmodule Courier.CloudflareDeliveryTest do
       assert {:ok, _receipt} =
                Courier.Mailer.deliver(tagged_welcome("usr_no_header", "no-header@example.com"))
 
-      # Assert on the request that ARRIVED, not on an internal helper.
       assert [request] = CloudflareServer.take(server)
       payload = decode!(request.body)
 
@@ -586,9 +558,6 @@ defmodule Courier.CloudflareDeliveryTest do
       assert [request] = CloudflareServer.take(server)
       payload = decode!(request.body)
 
-      # RFC 8058: both headers are accepted by Cloudflare and are how the bulk
-      # mail courier sends stays compliant. Dropping them would be a
-      # deliverability and compliance regression, not a tidy-up.
       assert payload["headers"]["List-Unsubscribe"] == "<https://anywaye.com/u?t=1>"
       assert payload["headers"]["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     end
@@ -602,8 +571,6 @@ defmodule Courier.CloudflareDeliveryTest do
 
       put_adapter(port)
 
-      # The provider's id is the one its bounce and delivery reports quote, so
-      # discarding it leaves courier with nothing to correlate against.
       assert {:ok, %{id: "a1b2c3d4-provider-owned"}} =
                deliver(:welcome, %{
                  user_id: "usr_provider_id",
@@ -630,9 +597,6 @@ defmodule Courier.CloudflareDeliveryTest do
     end
   end
 
-  # A welcome message carrying the exact edit `Courier.Deliver.tag/2` makes:
-  # `<courier-<uuid>@anywaye.com>` under the lowercase `message-id` key. It goes
-  # through `Mailers.build/2`, the same composer the rest of the file uses.
   defp tagged_welcome(user_id, email) do
     {:ok, built} = Mailers.build(:welcome, %{user_id: user_id, email: email, name: "Tagged"})
 
@@ -643,7 +607,6 @@ defmodule Courier.CloudflareDeliveryTest do
     )
   end
 
-  # An adapter aimed at the loopback test server.
   defp put_adapter(port, api_key \\ @api_key, account_id \\ @account_id) do
     Application.put_env(:courier, Courier.Mailer,
       adapter: Courier.Adapters.CloudflareEmail,

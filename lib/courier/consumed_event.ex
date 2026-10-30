@@ -39,25 +39,14 @@ defmodule Courier.ConsumedEvent do
 
   @type t :: %__MODULE__{}
 
-  # `:string` and not `Ecto.UUID`, because this is the **publisher's** uuid read
-  # off an envelope and courier validates nothing about its shape. An `Ecto.UUID`
-  # type would cast it and raise on anything that is not exactly 36 hex
-  # characters — turning a malformed event from a refusal into a crash in the
-  # subscriber, which is the one failure mode this whole table exists to prevent.
-  # The column is `NOT NULL` primary key either way, which is the part that
-  # carries the dedupe.
   @primary_key {:id, :string, autogenerate: false}
 
   schema "consumed_events" do
-    # The envelope's id, and the primary key — see the moduledoc.
     field :type, :string
     field :source, :string
     field :subject, :string
     field :data, :map, default: %{}
 
-    # The order the facts happened, and what `claim/0` orders on. NOT NULL in the
-    # database; a row with no time would sort to the end of every batch on
-    # PostgreSQL's default for NULL, which is silently wrong rather than refused.
     field :time, :utc_datetime_usec
 
     field :consumed_at, :utc_datetime_usec
@@ -83,18 +72,6 @@ defmodule Courier.ConsumedEvent do
     |> cast(attrs, [:type, :source, :subject, :data, :time])
     |> validate_required([:type, :source, :data, :time])
     |> put_change(:id, attrs[:id])
-    # **The dedupe declared as a constraint, not handled as an exception.**
-    # Without this line `Repo.insert/1` RAISES `Ecto.ConstraintError` on the
-    # second delivery of the same envelope, because Ecto only converts a
-    # constraint violation into a changeset error for constraints the changeset
-    # has declared — and an at-least-once bus makes that second delivery
-    # ordinary operation. So this is not error handling around an edge case; it
-    # is what makes the table's one promise (`Courier.Consumers.record/2`
-    # answers `{:error, :already_consumed}`) reachable at all.
-    #
-    # Matched on the constraint NAME rather than on the rendered message, because
-    # the message is assembled by the adapter and a driver upgrade would change
-    # the words.
     |> unique_constraint(:id, name: :consumed_events_pkey)
   end
 end

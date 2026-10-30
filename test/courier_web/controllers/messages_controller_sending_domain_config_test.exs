@@ -12,7 +12,6 @@ defmodule CourierWeb.MessagesControllerSendingDomainConfigTest do
   half of that vocabulary and nothing else — the send path's own refusals are
   unchanged (`Courier.DeliverSendingDomainTest`).
 
-  ## `async: false`, and why
 
   The from-domain a message sends as is `config :courier, :mailing`'s `:from`,
   and application env is VM-global: for the length of this module any other test
@@ -23,7 +22,6 @@ defmodule CourierWeb.MessagesControllerSendingDomainConfigTest do
   makes for the adapter, and the same reason `deliver_sending_domain_test.exs`
   gives for `set_from/1`.
 
-  ## Every count here is over courier's own rows
 
   "No mail was sent" is asserted on the test adapter's own mailbox, and "no
   outbox row" on an address this file mints fresh per call — never on the
@@ -42,8 +40,6 @@ defmodule CourierWeb.MessagesControllerSendingDomainConfigTest do
   @provider_account_id "cf-account-abc123"
   @token "tenant-provider-token-not-the-deployment-key"
 
-  # The file seeds `tenant_sending_domains`, a protected table, so the sandbox
-  # connection needs an identity for the writes. See `Courier.DataCase`.
   @moduletag account: @account
 
   setup do
@@ -69,10 +65,6 @@ defmodule CourierWeb.MessagesControllerSendingDomainConfigTest do
 
   defp problem(conn), do: Jason.decode!(conn.resp_body)
 
-  # Point courier's configured sender at `domain`. The from-address is
-  # configuration in this single-sender deployment, and `Courier.Mailers` reads
-  # it when it builds the message; the domain part is the key the credential
-  # lookup uses. `DeliverSendingDomainTest` sets it the same way.
   defp set_from(domain) do
     mailing = Application.get_env(:courier, :mailing, [])
 
@@ -95,9 +87,6 @@ defmodule CourierWeb.MessagesControllerSendingDomainConfigTest do
     row
   end
 
-  # Proven without the DNS proof and the verification send, so this file is
-  # about the SEND path's refusal and not about the proof. The proof is
-  # `Courier.TenantSendingDomainsTest`'s subject.
   defp register_verified(domain, account \\ @account) do
     domain
     |> register(account)
@@ -105,9 +94,6 @@ defmodule CourierWeb.MessagesControllerSendingDomainConfigTest do
     |> Repo.update!()
   end
 
-  # Every message the test adapter handed to this process. The send happens
-  # inside the request, so the mailbox already holds it; `after 0` and not a
-  # sleep.
   defp sent do
     do_sent([])
   end

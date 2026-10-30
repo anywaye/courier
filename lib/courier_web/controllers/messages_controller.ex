@@ -2,7 +2,6 @@ defmodule CourierWeb.MessagesController do
   @moduledoc """
   `POST /v1/messages` — courier's HTTP door into `Courier.Deliver`.
 
-  ## The contract, in one sentence
 
   **A 200 means the provider accepted the message for delivery and courier wrote
   the `courier.email.delivered` row in the same transaction. It does not mean the
@@ -10,7 +9,6 @@ defmodule CourierWeb.MessagesController do
   courier does not have a delivery receipt to report one with. `data.status` reads
   `accepted` for the same reason and never `delivered`.
 
-  ## Synchronous, and why
 
   The whole send happens inside the request: the preference is read, the
   suppression list is consulted, the provider is dialled, and the outbox row is
@@ -29,7 +27,6 @@ defmodule CourierWeb.MessagesController do
   honest — a 503 with a code the caller retries — and that the retry is free under
   an `Idempotency-Key`.
 
-  ## The status a caller can act on
 
   Four refusals, distinguishable by status and `code` alone, because a client
   branches on those and not on `detail`:
@@ -77,7 +74,6 @@ defmodule CourierWeb.MessagesController do
   send path and `CourierWeb.MessagesControllerSendingDomainConfigTest` is this
   door.
 
-  ## The pre-flight, which is the same gate the boot checks
 
   `Courier.MailerAdapter` refuses to boot a courier whose adapter cannot deliver,
   and `Courier.Application` checks the *effective* adapter a second time. This
@@ -92,7 +88,6 @@ defmodule CourierWeb.MessagesController do
   It is scoped to production exactly as `verify_boot!/1` is, because `Test` and
   `Local` are the correct adapters in the environments that configure them.
 
-  ## Why the account is not read from the body
 
   `conn.assigns.current_account`, from `CourierWeb.Plugs.Principal`, and nowhere
   else — and `CourierWeb.Messages` refuses an `account_id` in a body as the
@@ -100,7 +95,6 @@ defmodule CourierWeb.MessagesController do
   recipient's mailbox is not a question courier asks, because the suppression table
   has none to ask with.
 
-  ## Authorization
 
   One question, and it is answered before the action: is there a principal. The
   default resolver authenticates nobody, so a courier deployed without identity's
@@ -181,12 +175,6 @@ defmodule CourierWeb.MessagesController do
     end)
   end
 
-  # `type` is the one piece of the request the context takes as an argument rather
-  # than as payload, and it is read from `params` here rather than from the
-  # validated payload because it is not payload. By the time this runs
-  # `CourierWeb.Messages.validate/1` has established that it is a non-blank string,
-  # and `Courier.Deliver.email/2` takes either spelling and rejects a type courier
-  # does not send, so there is no atom conversion and no guessing.
   defp accepted(result, payload) do
     %{
       data: %{
@@ -199,18 +187,7 @@ defmodule CourierWeb.MessagesController do
     }
   end
 
-  # --- the refusals ---------------------------------------------------------
 
-  # The whole action runs inside one transaction carrying the caller's account,
-  # so the row-level-security policies on `notification_preferences` (read by
-  # `Courier.Deliver`) have an identity to key on. A plug cannot hold such a
-  # transaction open across the controller — see `Courier.Tenancy` — so each
-  # action opens its own, with the account `CourierWeb.Plugs.Principal` stashed.
-  #
-  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable
-  # by construction: every context rolls back only inside its own inner
-  # transaction. Handled as a 503 rather than matched away, on the same rule as
-  # `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller retries.
   defp scoped(conn, fun) do
     case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
       {:ok, conn} -> conn
@@ -233,10 +210,6 @@ defmodule CourierWeb.MessagesController do
   end
 
   defp adapter_deliverable? do
-    # `config_env/0` rather than `Mix.env/0`, for the reason
-    # `Courier.MailerAdapter.config_env/0` gives: it is not set inside a RELEASE,
-    # and a release reading it would treat itself as development and hand out
-    # deliveries it cannot make.
     MailerAdapter.config_env() != :prod or MailerAdapter.deliverable?(effective_adapter())
   end
 
@@ -265,8 +238,6 @@ defmodule CourierWeb.MessagesController do
     Problem.send(conn, 422, :validation_failed, "The message was not valid.", fields)
   end
 
-  # The changeset's own errors rather than a rewritten list, so the per-type
-  # required fields live in exactly one place (`Courier.Mailers`).
   defp invalid_payload(conn, changeset) do
     Problem.send(
       conn,
@@ -301,12 +272,6 @@ defmodule CourierWeb.MessagesController do
     ])
   end
 
-  # A 422 and not a 409, and the reason is in the moduledoc: this refusal is
-  # visible and changeable through the preferences API, so it is the request that
-  # is wrong rather than a collision the caller cannot resolve.
-  #
-  # `errors[]` is core's for 422 only, which is what makes `type` nameable here
-  # and what keeps the two refusals distinguishable without parsing `detail`.
   defp declined(conn) do
     Problem.send(
       conn,
@@ -318,20 +283,6 @@ defmodule CourierWeb.MessagesController do
     )
   end
 
-  # A 422, and its own `code` so a machine can tell it from a declined
-  # **preference** — the two are the same status on purpose and different facts,
-  # and a caller that cannot tell them apart cannot tell whether the remedy is a
-  # `PUT /v1/notification_preferences/{user_id}` (which reverses it) or nothing at
-  # all (which it does not).
-  #
-  # The remedy this one names honestly: there is no surface that puts a one-click
-  # unsubscribe back. `email_suppressions` is immutable by design and this row is
-  # one of them, and the detail says so rather than pointing a caller at a `PUT`
-  # that would not help. See `Courier.Unsubscribes` for why the answer lives in
-  # that table rather than in the preferences one.
-  #
-  # **No address in the response**, for the reason the 409 below gives: this is a
-  # fact about somebody's mailbox and the table has no `account_id` to scope it.
   defp unsubscribed(conn) do
     Problem.send(
       conn,
@@ -344,11 +295,6 @@ defmodule CourierWeb.MessagesController do
     )
   end
 
-  # The two states, in words, because an operator's response to each is different:
-  # a pile of `undeliverable` is list hygiene, a pile of `complained` is a content
-  # and sender-reputation problem. No state code in the envelope, because
-  # `Courier.Suppressions` is not exposed through any route and this response must
-  # not become the one place a caller can enumerate it.
   defp suppressed(conn, :undeliverable) do
     Problem.send(
       conn,
@@ -369,19 +315,7 @@ defmodule CourierWeb.MessagesController do
     )
   end
 
-  # The send path's three sending-domain refusals. `Courier.Deliver` chooses the
-  # sender by the message's FROM domain: a row this account owns that is not
-  # usable (unverified or revoked) is a REFUSAL rather than a fallback to the
-  # deployment's credential, because that would be one tenant's mail leaving on a
-  # domain it did not prove. None of the three is courier failing, so none is a
-  # 500 — the state is the caller's and each is told apart by status and `code`.
 
-  # A domain the caller registered and did not finish proving. `verified_at` is
-  # the switch, and the remedy is the verification route. 409 and not 422: it is
-  # the resource's own state, not a malformed request — the same reasoning the
-  # suppression 409 gives. **The domain is named and the credential behind it is
-  # not**: the row carries a sealed provider token, and a refusal is the last
-  # place it should leave courier.
   defp unverified_sending_domain(conn, domain) do
     Problem.send(
       conn,
@@ -394,9 +328,6 @@ defmodule CourierWeb.MessagesController do
     )
   end
 
-  # A domain the caller proved and then revoked. The row is kept as history, it is
-  # never selected again, and there is no API that reverses a revocation — so the
-  # detail says so rather than pointing a caller at a route that does not exist.
   defp revoked_sending_domain(conn, domain) do
     Problem.send(
       conn,
@@ -407,12 +338,6 @@ defmodule CourierWeb.MessagesController do
     )
   end
 
-  # A from-domain this account never registered and that is not the deployment's
-  # own sender. A 422 and not a 409 because there is no resource in a state — the
-  # caller can register and prove the domain, which is a correction to the
-  # request rather than a conflict with something that exists. No `errors[]`:
-  # core reserves it for a field at fault, and the from-domain is not a field of
-  # this request (a body carrying `from` is refused as an unknown field).
   defp no_sending_domain(conn, domain) do
     Problem.send(
       conn,
@@ -424,10 +349,6 @@ defmodule CourierWeb.MessagesController do
     )
   end
 
-  # 503 and not 500: courier is fine and its dependency is not, which is the whole
-  # difference between a caller retrying and a caller filing a bug. The reason is
-  # logged rather than returned, because a provider's error string is its own and
-  # this repository is public.
   defp provider_refused(conn, reason) do
     Logger.error("message send failed at the provider: #{inspect(reason)}")
 
@@ -440,17 +361,6 @@ defmodule CourierWeb.MessagesController do
     )
   end
 
-  # A bulk message whose one-click unsubscribe token could not be minted. The
-  # transaction unwound with the provider never dialled, so nothing was sent and
-  # nothing was recorded — which makes this a 503 and a retryable one, on exactly
-  # the reasoning the provider's own refusal gets. It is a distinct clause rather
-  # than a branch of `provider_refused/2` because the operator's question is
-  # different: nothing left the building, and the fault is a row courier could not
-  # write rather than a relay that said no.
-  #
-  # Unreachable today — every type courier sends is transactional, so no token is
-  # ever minted — and it is here because the alternative is a `WithClauseError` on
-  # the first bulk type, which is a crash on the send path rather than a refusal.
   defp unsubscribe_failed(conn, reason) do
     Logger.error(
       "message send refused: the one-click unsubscribe token could not be minted: " <>
@@ -478,11 +388,6 @@ defmodule CourierWeb.MessagesController do
     )
   end
 
-  # 500 and not 422, on purpose: the caller's request was fine and courier's own
-  # template rendered nothing, so telling the caller to change their body would be
-  # sending them to fix something they did not break. It is still a 500 rather than
-  # a 2xx because the alternative is the silent default this repository refuses —
-  # a bodiless mail reported as accepted.
   defp empty_message(conn) do
     Logger.error("message rendered with no body in either format; refusing to send it")
 

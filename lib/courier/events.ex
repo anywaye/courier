@@ -26,7 +26,6 @@ defmodule Courier.Events do
   the envelope's `source` and the manifest's `name`, so a type says who emitted
   it without a lookup.
 
-  ## A builder is a shape, not an emission
 
   Four of the five catalogued types have a builder here and `courier.email.queued`
   does not. The two statements are different on purpose, because collapsing them
@@ -77,16 +76,6 @@ defmodule Courier.Events do
     courier.notification.suppressed
   )
 
-  # schemas/events/courier/notification/suppressed.schema.json:
-  # properties.reason.enum. Transcribed from core rather than invented here,
-  # because a caller writing the refusal's reason should be picking from a set
-  # somebody else published rather than spelling a string and hoping. It is a
-  # superset of what courier can produce today and that is deliberate: `reason` is
-  # core's enum, and narrowing it here would make a `rate_limited` refusal
-  # unpublishable rather than unimplemented. Which of the three courier can reach
-  # is `Courier.Deliver`'s to say — `:suppressed` is a user declining,
-  # `{:suppressed_address, _}` is a previous bounce or complaint, and
-  # `rate_limited` has no producer because the send path has no rate limiter.
   @reasons ~w(preference_off address_suppressed rate_limited)
 
   @doc """
@@ -247,7 +236,6 @@ defmodule Courier.Events do
   `data.email` is here so a consumer can join on whichever the manager picks
   without re-reading anybody's data.
 
-  ## Its one caller, and what it is not
 
   `Courier.Unsubscribes` calls this from the one-click endpoint, in the same
   transaction as the `notification_preferences` row that turns the type off. The

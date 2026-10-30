@@ -3,13 +3,4 @@ set -eu
 
 cd -P -- "$(dirname -- "$0")"
 
-# `start`, NOT `eval`, and the difference is a test rather than a convention.
-#
-# `config/runtime.exs` tells the server apart from a one-shot command by
-# `RELEASE_COMMAND`, which the release's own `courier` script sets from this
-# argument before the VM starts. `start` leaves the server's credential contract
-# enforced; `eval` would drop it, so a courier that lost its identity token would
-# boot and answer 503 to every authenticated request instead of refusing at
-# boot and naming the variable. PHX_SERVER=true is what makes the endpoints
-# listen; `start` is what keeps the contract in front of them.
 PHX_SERVER=true exec ./courier start

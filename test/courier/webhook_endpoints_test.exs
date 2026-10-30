@@ -21,9 +21,6 @@ defmodule Courier.WebhookEndpointsTest do
   @account_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
   @other_account_id "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
-  # THE ACCOUNT THIS FILE WRITES AS. `webhook_endpoints` is protected, so an
-  # INSERT with no identity set is refused `42501`. See `Courier.DataCase` for
-  # why the suite can now see that at all.
   @moduletag account: @account_id
 
   defp attrs(overrides \\ %{}) do
@@ -35,15 +32,6 @@ defmodule Courier.WebhookEndpointsTest do
     endpoint
   end
 
-  # How many endpoint rows exist for one account.
-  #
-  # Scoped to the tenancy key on purpose. `Repo.aggregate(WebhookEndpoint, :count)`
-  # is a claim about every other test in the repository as much as about this one:
-  # it is green only while nothing else has ever written a row, and it turns red
-  # the instant one is visible — a statement about the order the suite happened to
-  # run in, not about `Courier.WebhookEndpoints`. Counting one account's rows
-  # keeps the assertion on the code under test and makes it independent of every
-  # other test here and in every other file.
   defp rows_for(account_id) do
     Repo.aggregate(from(e in WebhookEndpoint, where: e.account_id == ^account_id), :count)
   end
@@ -78,8 +66,6 @@ defmodule Courier.WebhookEndpointsTest do
     end
 
     test "refuses a url with no scheme, on shape rather than on the guard" do
-      # The changeset catches this before any resolver is consulted, so a typo
-      # costs no DNS lookup and reports the typo rather than a network class.
       assert {:error, changeset} =
                WebhookEndpoints.create(attrs(%{url: "hooks.example.com/events"}))
 
@@ -98,8 +84,6 @@ defmodule Courier.WebhookEndpointsTest do
     end
 
     test "refuses a url with no host" do
-      # `https:///events` has a scheme and nothing to connect to. It is caught by
-      # the shape check, not the guard, so it costs no DNS lookup.
       assert {:error, changeset} = WebhookEndpoints.create(attrs(%{url: "https:///events"}))
       assert %{url: ["is not an absolute http(s) url"]} = errors_on(changeset)
     end
@@ -124,11 +108,6 @@ defmodule Courier.WebhookEndpointsTest do
     test "the same url in another account is a different endpoint" do
       create!()
 
-      # `as_account/2` because the unique index on `(account_id, url)` is what
-      # this test is about, and the index is only consulted if the insert is
-      # admitted. Run as this file's own account the RLS `insert` policy refuses
-      # the other account's row outright with `42501`, which is a correct answer
-      # to a different question and would leave the index untested.
       assert {:ok, _other, _secret} =
                as_account(@other_account_id, fn ->
                  WebhookEndpoints.create(attrs(%{account_id: @other_account_id}))
@@ -136,8 +115,6 @@ defmodule Courier.WebhookEndpointsTest do
     end
 
     test "stores nothing when the changeset is rejected" do
-      # This test's own account, so "no row was written" is a claim about what
-      # this call did and nothing else. See `rows_for/1`.
       account_id = Ecto.UUID.generate()
 
       {:error, _changeset} =
@@ -147,9 +124,6 @@ defmodule Courier.WebhookEndpointsTest do
     end
 
     test "stores nothing when the url is refused as an SSRF target" do
-      # The guard runs before the insert, so an endpoint pointing at the metadata
-      # service is not a row courier has to remember to refuse later. The account
-      # is this test's own — see `rows_for/1`.
       account_id = Ecto.UUID.generate()
 
       assert {:error, :blocked_address} =
@@ -181,8 +155,6 @@ defmodule Courier.WebhookEndpointsTest do
     end
 
     test "returns nothing for an account that does not own it" do
-      # Not an error, not a row: the answer to "do you have this?" for a resource
-      # the caller cannot see is no, and there is no existence to leak.
       endpoint = create!()
 
       assert WebhookEndpoints.get(endpoint.id, @other_account_id) == nil
@@ -202,10 +174,6 @@ defmodule Courier.WebhookEndpointsTest do
       mine = create!()
       theirs = create!(%{url: "https://other.example.com/events"})
 
-      # Seeded as the other account, or the RLS `insert` policy refuses it. The
-      # row has to EXIST for `list/1` returning only this account's two to be a
-      # statement about the query rather than about a third row never being
-      # written.
       assert {:ok, _theirs, _secret} =
                as_account(@other_account_id, fn ->
                  WebhookEndpoints.create(%{
@@ -214,9 +182,6 @@ defmodule Courier.WebhookEndpointsTest do
                  })
                end)
 
-      # Both of the account's rows, and nothing of the other account's. Asserted
-      # as a set of ids because a list endpoint that returned one account's
-      # endpoint to another account is the failure this test exists to catch.
       found = WebhookEndpoints.list(@account_id)
 
       assert Enum.map(found, & &1.id) == [mine.id, theirs.id]
@@ -317,9 +282,6 @@ defmodule Courier.WebhookEndpointsTest do
     end
 
     test "keeps the secret across an update" do
-      # Changing a description must not rotate the customer's signing secret: the
-      # consumer verifies with the secret they were given, and a silent rotation
-      # is every delivery failing verification for a day.
       endpoint = create!()
       secret = WebhookEndpoints.plaintext_secret(endpoint)
 
@@ -364,8 +326,6 @@ defmodule Courier.WebhookEndpointsTest do
       endpoint = create!()
       {:ok, _} = WebhookEndpoints.delete(endpoint)
 
-      # A second DELETE is a client retry, not a failure worth a 500, but it is
-      # not a success either: the row it claims to have deleted was already gone.
       reloaded = Repo.get(WebhookEndpoint, endpoint.id)
 
       assert reloaded == nil
@@ -419,10 +379,6 @@ defmodule Courier.WebhookEndpointsTest do
     end
 
     test "the count grows even when every call is handed the same stale struct" do
-      # A delivery worker holds one endpoint struct across many deliveries. If the
-      # count were incremented on the struct it was handed, every attempt would
-      # write the same number and the circuit would never open — so all five calls
-      # below pass the *same* struct to prove the row is the source of truth.
       endpoint = create!()
 
       for _attempt <- 1..5 do
@@ -432,8 +388,6 @@ defmodule Courier.WebhookEndpointsTest do
       assert Repo.get!(WebhookEndpoint, endpoint.id).consecutive_failures == 5
     end
 
-    # `count` calls of `trip/3`, each handed the struct the last one returned —
-    # except the first, which is handed the original — and the last result.
     defp fail_n_times(endpoint, count, threshold, reason) do
       Enum.reduce(1..count, {:ok, endpoint}, fn _attempt, {:ok, current} ->
         WebhookEndpoints.trip(current, threshold, reason)
@@ -452,10 +406,6 @@ defmodule Courier.WebhookEndpointsTest do
     end
 
     test "a success does not re-enable an endpoint a person turned off" do
-      # `status` is two things wearing one column: courier disabled it for its own
-      # reasons, or the customer did. Only courier's own reason is cleared, and
-      # only when courier wrote one — otherwise a single successful delivery
-      # would undo a decision the customer made about their own endpoint.
       endpoint = create!()
       {:ok, turned_off} = WebhookEndpoints.update(endpoint, %{status: "disabled"})
 
@@ -487,10 +437,6 @@ defmodule Courier.WebhookEndpointsTest do
 
       assert {:ok, enabled} = WebhookEndpoints.update(turned_off, %{status: "enabled"})
       assert enabled.status == :enabled
-      # The count survives, because the customer was never shown it: it is
-      # courier's own record of how the endpoint has behaved, and the circuit is
-      # measured against it. Only a *tripped* endpoint's count is cleared, because
-      # that is the one the customer was shown and overrode.
       assert enabled.consecutive_failures == 1
       assert enabled.disabled_reason == nil
     end
@@ -498,9 +444,6 @@ defmodule Courier.WebhookEndpointsTest do
 
   describe "the row itself" do
     test "carries no foreign key to accounts, because courier does not own them" do
-      # identity owns accounts. A `references(:accounts)` here would be a foreign
-      # key to a table in another service's database, which is how two services
-      # come to share a schema by accident.
       assert %{rows: [[fks]]} =
                Repo.query!("""
                SELECT count(*) FROM information_schema.table_constraints
@@ -513,10 +456,6 @@ defmodule Courier.WebhookEndpointsTest do
     test "is unique on account and url, in the database and not only in the changeset" do
       create!()
 
-      # Straight SQL, because the point is that the *database* refuses it. The
-      # context's `unique_constraint/3` turns the violation into a changeset
-      # error, which is the right behaviour for a request and the wrong way to
-      # prove a constraint exists.
       assert {:error, %Postgrex.Error{postgres: %{code: :unique_violation}}} =
                Repo.query(
                  "INSERT INTO webhook_endpoints (id, account_id, url, secret, status, inserted_at, updated_at) VALUES ($1::uuid, $2::uuid, $3, $4, 'enabled', now(), now())",

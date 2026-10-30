@@ -7,7 +7,6 @@ defmodule CourierWeb.MessagesControllerConfigTest do
   the suite that delivers mail would deliver it through the substituted adapter
   instead of the Test adapter. `on_exit` restores it before the next test starts.
 
-  ## Why these two live in their own file rather than in the endpoint's
 
   Neither case can be reached through `messages_controller_test.exs`, and the
   reasons are the point:
@@ -73,9 +72,6 @@ defmodule CourierWeb.MessagesControllerConfigTest do
     end
 
     test "is a 503 the caller can retry, not a 500" do
-      # 503 and not 500 because courier is fine and its dependency is not. The
-      # whole difference between that and a 500 is whether a generated client
-      # retries or files a bug against courier.
       conn = post_authed(body())
 
       assert conn.status == 503
@@ -92,8 +88,6 @@ defmodule CourierWeb.MessagesControllerConfigTest do
     end
 
     test "the provider's own error string is not echoed to the caller" do
-      # A provider's error text is its own, may quote a recipient, and this
-      # repository is public. The log line is where it belongs.
       conn = post_authed(body())
 
       assert conn.status == 503
@@ -109,9 +103,6 @@ defmodule CourierWeb.MessagesControllerConfigTest do
     end
 
     test "the transaction rolled back, so no event claims a delivery" do
-      # The same claim `Courier.DeliverAdapterTest` makes from the context side,
-      # asserted here because the thing being proved is what an HTTP caller is
-      # told: there is a 503 and nothing behind it.
       assert post_authed(body()).status == 503
 
       refute Enum.any?(Repo.all(OutboxEvent), &(&1.data["user_id"] == @user_id))
@@ -139,14 +130,6 @@ defmodule CourierWeb.MessagesControllerConfigTest do
     end
 
     test "neither credential appears in the refusal, in the body or in the log" do
-      # The startup line an operator reads is not where a password belongs, and
-      # neither is a response a caller reads. `Courier.MailerAdapter.describe/1`
-      # is what builds the log text; asserting on the *refusal* is the stronger
-      # claim, because the refusal is the one line this endpoint writes.
-      #
-      # Paired with an adapter that is refused, so nothing is dialled: this test
-      # must not depend on a hostname resolving, and a test that did would be a
-      # test that fails on a network nobody owns.
       Application.put_env(:courier, :environment, :prod)
 
       Application.put_env(:courier, Courier.Mailer,
@@ -213,9 +196,6 @@ defmodule CourierWeb.MessagesControllerConfigTest do
 
       assert refused.status == 503
 
-      # The same key now succeeds, which is the property that makes a 503
-      # retryable: a failed request releases its claim rather than storing the
-      # failure, so the caller is not locked out of its own key for 24 hours.
       Application.put_env(:courier, Courier.Mailer, adapter: Swoosh.Adapters.Test)
 
       retried =

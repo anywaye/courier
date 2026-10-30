@@ -16,7 +16,6 @@ defmodule Courier.TelemetryCanaryTest do
   router, because the allowlist being correct says nothing about what the request
   path actually records.
 
-  ## Why every absence assertion here is paired with a presence one
 
   A redaction boundary that deletes everything passes a "no canary" test and is
   useless. Three separate ways that happened in this repository while it was being
@@ -44,7 +43,6 @@ defmodule Courier.TelemetryCanaryTest do
   checked — which is the sentence this file used to make about a guard it was not
   calling.
 
-  ## What "this test's spans" means, since a narrower read is a vacuous one
 
   Each test reads only the spans its own request produced: `setup` drains
   `Courier.SpanCollector`, marks the exporter table, and the assertions read since
@@ -54,7 +52,6 @@ defmodule Courier.TelemetryCanaryTest do
   narrowing a read is that an empty result becomes possible where it was not before,
   so it is paired with the presence assertion above rather than trusted.
 
-  ## This file is a `Courier.DataCase`, and that arrived with the unsubscribe route
 
   Every request below used to be **refused before it reached a controller that
   touches a database** — an unauthenticated `PUT`, an anonymous `POST` — which is
@@ -72,7 +69,6 @@ defmodule Courier.TelemetryCanaryTest do
   the database tier, and the numbers in `ci/ci.yml` were re-measured
   in the commit that moved it.
 
-  ## The canary is SHORT, and that is deliberate
 
   A long canary would let a length ceiling be what makes a test pass, and a
   truncated leak is still a leak. This string is short enough that no bound in this
@@ -87,50 +83,11 @@ defmodule Courier.TelemetryCanaryTest do
 
   @endpoint CourierWeb.Endpoint
 
-  # Short, and in no allowlist and in no expected output.
   @canary "CANARY-4e1b-DO-NOT-EXPORT"
 
-  # Where the per-test watermark lives. The PROCESS DICTIONARY, not an ExUnit
-  # context key, and that is a deliberate choice rather than a shortcut: `setup`
-  # runs in the same process as the test, the watermark is per-test state, and a
-  # context key would mean threading `context` through all ten test signatures to
-  # carry a value that only the two helpers below ever read.
   @mark_key :courier_canary_mark
 
   setup do
-    # THIS MODULE'S OWN SPANS, and it takes two steps IN THIS ORDER because either
-    # one alone still reads somebody else's evidence.
-    #
-    # `Courier.SpanCollector` is a BATCHER, not a per-request sink. A span ends
-    # into its queue and leaves the queue when something flushes it — and the only
-    # two things that flush it are this file's own `flush/0` and the collector's
-    # five-second timer. So a test in another module that drives a request and
-    # never flushes leaves its span SITTING IN THE QUEUE, and the next flush — the
-    # one this test's own `request/4` makes — exports it into the shared table.
-    #
-    # MEASURED, on `mix test --seed 885732`, red on the commit this file is on.
-    # At the setup of "an id in an unmatched path reaches nothing at all" the queue
-    # held SIXTEEN spans belonging to three earlier modules (`/inbound/resend`,
-    # `/readyz`, `/healthz`), the exporter table was empty before `clear/0` and
-    # empty after it, and the test's own flush exported all SEVENTEEN at once. So
-    # the assertion "a 404 produced a span with a route" was reading sixteen spans
-    # with routes that this test never made, and it failed on sixteen spans of
-    # evidence about requests made in other files. At the other nine setups the
-    # queue held zero, which is the whole of why the rate is about one run in ten
-    # rather than one in one hundred: it depends on whether the modules scheduled
-    # just before this one happened to leave a backlog.
-    #
-    # The `clear/0` that used to be here was reading the wrong table. Nothing ever
-    # landed after it — the measured row count was zero both before and after — so
-    # it was clearing faithfully and the leak was upstream of it, in a queue it
-    # cannot see.
-    #
-    # So: DRAIN FIRST, so the next thing to be exported is this test's own span,
-    # and only then MARK. The mark alone is not enough, and the same measurement
-    # says why: those sixteen foreign spans are inserted into the table AFTER any
-    # mark taken now, because being exported late is exactly what being stuck in a
-    # queue means. `mark/0` filters by when a span ARRIVED, not by which test made
-    # it, and the two only agree once the queue is empty.
     Courier.SpanCollector.flush()
     Courier.SpanCollector.clear_failure()
 
@@ -140,11 +97,6 @@ defmodule Courier.TelemetryCanaryTest do
 
   describe "a request body never reaches a span" do
     test "a notification preference, keyed to a user, exports neither the id nor the answer" do
-      # `PUT /v1/notification_preferences/:user_id` — a user id in the PATH and a
-      # per-notification-type answer in the BODY. The path is the interesting half:
-      # the span records the route TEMPLATE, so the id must be nowhere on it. The
-      # body is the other half: a map of a user's answers is exactly the shape that
-      # ends up in a `params` attribute in somebody's debugging change.
       response =
         request(
           "PUT",
@@ -159,8 +111,6 @@ defmodule Courier.TelemetryCanaryTest do
     end
 
     test "a delivery ping carrying an id in the path exports neither" do
-      # `POST /v1/webhook_endpoints/:id/test` — a path parameter on the one resource
-      # whose whole nature is a secret.
       response =
         request("POST", "/v1/webhook_endpoints/wh_#{@canary}/test", %{}, authenticated: true)
 
@@ -170,16 +120,6 @@ defmodule Courier.TelemetryCanaryTest do
     end
 
     test "a one-click unsubscribe token exports neither, and is a 404 not a span error" do
-      # The sharpest value in this service after a signing secret. The token in
-      # `/unsubscribe/:token` IS the whole authorization for an unauthenticated
-      # `POST` that changes what a person receives, and it travels in a URL — which
-      # is the shape that ends up in a `Location`, a `url.full` attribute or a
-      # server access log. RFC 8058 §3.1 wants it opaque for exactly the reason
-      # that matters here: a leaked one is a live credential.
-      #
-      # The route is parameterised, so the span records the TEMPLATE and the token
-      # cannot ride in — which is the same property the webhook test above asserts,
-      # on the one surface where a concrete path would be worst.
       for verb <- ["GET", "POST"] do
         response = request(verb, "/unsubscribe/lu_#{@canary}", %{})
 
@@ -193,9 +133,6 @@ defmodule Courier.TelemetryCanaryTest do
     end
 
     test "a webhook endpoint carrying a URL and a signing secret exports neither" do
-      # The signing secret is the sharpest case: courier stores it SEALED, and a
-      # span attribute is the one place it would be stored in the clear on its way
-      # to being exported.
       response =
         request("POST", "/v1/webhook_endpoints", %{
           "url" => "https://example.com/hook/#{@canary}",
@@ -211,11 +148,6 @@ defmodule Courier.TelemetryCanaryTest do
 
   describe "a request PATH never reaches a span" do
     test "a parameterised route exports the TEMPLATE, so an id cannot ride in" do
-      # This is the cardinality guarantee and the content guarantee in one
-      # assertion, and it is the one that is only observable on a parameterised
-      # route: for `/healthz` the path and the template are the same string, so a
-      # service recording `conn.request_path` instead of the matched route passes
-      # every test that drives a fixed path.
       id = "01J9Z8QK5M4N7P2R3T6V8W9X0A"
 
       response = request("GET", "/v1/webhook_endpoints/#{id}", nil, authenticated: true)
@@ -257,9 +189,6 @@ defmodule Courier.TelemetryCanaryTest do
 
   describe "a request HEADER never reaches a span" do
     test "a bearer token, an API key and a cookie are all absent" do
-      # courier authenticates with a bearer token and mints one of its own, so a
-      # header attribute here is a credential in a searchable, retained store. There
-      # is no `http.request.header.*` on the allowlist at all.
       request("GET", "/v1/webhook_endpoints", nil,
         authenticated: true,
         headers: [
@@ -296,10 +225,6 @@ defmodule Courier.TelemetryCanaryTest do
 
   describe "an inbound traceparent never contributes its own characters" do
     test "a malformed header carrying content is IGNORED, not recorded" do
-      # A malformed `traceparent` starts a new trace and is never a 4xx — §3.2.2.3
-      # says ignore it, and an affordance that can take a customer's request down is
-      # a denial-of-service vector aimed at courier's own surface. The other half is
-      # that "ignore" must not mean "truncate and keep the usable part".
       response =
         request("GET", "/healthz", nil, headers: [{"traceparent", "00-#{@canary}-#{@canary}-01"}])
 
@@ -325,14 +250,7 @@ defmodule Courier.TelemetryCanaryTest do
     end
   end
 
-  # --- helpers ---------------------------------------------------------------
 
-  # The presence assertion, in every test above.
-  #
-  # `rendered!/0` raises when the export is empty, so this is simultaneously "the
-  # canary is absent" and "something was exported". A test that only ever asserted
-  # absence would be satisfied by a courier that records nothing, which is the
-  # failure three separate bugs in this repository produced while it was written.
   defp assert_no_canary do
     exported = rendered_request_spans()
 
@@ -340,7 +258,7 @@ defmodule Courier.TelemetryCanaryTest do
       raise """
       THE REDACTION BOUNDARY LEAKED.
 
-      The canary #{inspect(@canary)} reached an exportable span attribute. It was
+      The canary
       planted in a field a caller controls, so whatever route it took is a route by
       which a customer's email, a password, a webhook signing secret or a bearer token
       reaches a searchable, retained, widely-readable store — and courier sends mail on
@@ -349,66 +267,21 @@ defmodule Courier.TelemetryCanaryTest do
 
       The whole export:
 
-      #{exported}
       """
     else
       exported
     end
   end
 
-  # THIS file's spans, and by NOTHING ELSE: neither by name alone, nor by whatever
-  # the table happened to hold, nor by what the name filter is left holding after
-  # the next test's flush.
-  #
-  # The name filter is kept because a span opened by something other than this
-  # file's requests can also be called `courier.web.request`, and a test that only
-  # works when it happens to run alone is a test that will not. It is not what makes
-  # the two path tests independent, though. Name alone could not: BOTH of them
-  # assert about `courier.web.request`, so "the parameterised route" test's span and
-  # the "an id in an unmatched path" test's span are indistinguishable to it. That
-  # is why the earlier version of this comment claimed the name filter had solved a
-  # failure it had not solved: the comment said the cross-test bleed "cannot [be
-  # told apart]", and then the filter was the only defence against it.
-  #
-  # What is left of that failure, and what it is now: `setup` drains the collector's
-  # queue and marks the table, so "since the mark" and "made by this test" are the
-  # same set. See the measurement in `setup`.
   defp request_spans do
     Courier.TestSpans.finished_spans_since(Process.get(@mark_key))
     |> Enum.filter(&(&1.name == "courier.web.request"))
   end
 
-  # THIS file's spans as a string, GUARDED.
-  #
-  # The guard used to be missing, which is the defect this helper is here to close.
-  # The moduledoc above says `Courier.TestSpans.rendered!/0` "raises rather than
-  # returning an empty string" and calls that the single place it is checked — and
-  # this file never called it. It rendered through the private helper below, which
-  # returns "" for an empty export, so `assert_no_canary/0` below was satisfied by
-  # an empty string on every test in the file.
-  #
-  # Measured, not argued: with `Courier.TestSpanExporter.export/4` mutated to drop
-  # every span, all TEN tests in this file passed and the suite reported
-  # `Result: 10 passed` — a complete redaction suite that had exported nothing and
-  # proved nothing. `Courier.ObservabilityTest` caught the same mutation with eight
-  # failures, so the guard was alive in this repository; it was this file's copy of
-  # it that was not wired up.
-  #
-  # Which matters more here than anywhere else in the suite, because the previous
-  # commit made this file's read NARROWER (own spans only, via a watermark). A
-  # narrower read is a vacuous read unless something asserts that it read
-  # something, and at that point the only thing standing between "one span" and "no
-  # spans" was the absence of a crash.
   defp rendered_request_spans do
     Courier.TestSpans.render!(request_spans())
   end
 
-  # `Phoenix.ConnTest.dispatch/5` rather than `@endpoint.call/3`, because
-  # `Endpoint.call/3` does not split a query string out of the path: it hands
-  # `request_path: "/"` and a `query_string: ""` to the router, so every request
-  # 404s on the wrong path and the query-string test would be asserting about a
-  # route that was never matched. `dispatch/5` builds a conn the way a real server
-  # does.
   defp request(method, path, body, opts \\ []) do
     authenticated? = Keyword.get(opts, :authenticated, false)
     headers = Keyword.get(opts, :headers, [])
@@ -418,23 +291,8 @@ defmodule Courier.TelemetryCanaryTest do
       |> maybe_authenticate(authenticated?)
       |> put_req_header("content-type", "application/json")
 
-    # The body goes in as `dispatch/5`'s params argument, which JSON-encodes a map
-    # itself. There is no `put_req_body/2` in this Plug version — it was removed in
-    # Plug 1.16 — and building the body by hand would be one more place for a test
-    # to differ from what a client actually sends.
-    # `dispatch/5` returns the CONN, not a `{conn, opts}` pair — the pair is
-    # `recycle/2`'s shape and matching on it fails with a MatchError that prints
-    # the whole conn, which buries the actual mistake.
     conn = Phoenix.ConnTest.dispatch(conn, @endpoint, method, path, body)
 
-    # No explicit send. `dispatch/5` already sent the response — it calls
-    # `Plug.Conn.send_resp/1` on the way out, which is what fires
-    # `register_before_send` — and sending again raises `AlreadySentError`.
-    #
-    # Both of those were tried and both are written down because each looks right:
-    # `Phoenix.ConnTest.recycle/2` BUILDS a fresh conn for the next request rather
-    # than sending this one, and `Plug.Conn.send_resp/2` is the ADAPTER's
-    # `(state, status, headers, body)`, four arguments, not the conn's.
     flush()
     conn
   end
@@ -449,9 +307,6 @@ defmodule Courier.TelemetryCanaryTest do
 
   defp maybe_authenticate(conn, false), do: conn
 
-  # The export is on a 5s timer in production; in test it is on demand, and this is
-  # the on-demand call. A sleep would be a guess about the timer, and it would be
-  # wrong on the machine where it matters.
   defp flush do
     Courier.SpanCollector.flush()
     Process.sleep(0)

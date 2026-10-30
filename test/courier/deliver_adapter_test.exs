@@ -42,9 +42,6 @@ defmodule Courier.DeliverAdapterTest do
   end
 
   test "no event is recorded for a send that did not happen" do
-    # The outbox row and the provider call share a transaction. If the provider
-    # refuses, the transaction rolls back and there is nothing claiming a mail
-    # went out.
     assert {:error, {:delivery_failed, :provider_unavailable}} = Deliver.welcome(@payload)
 
     assert Repo.all(OutboxEvent) == []

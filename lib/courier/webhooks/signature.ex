@@ -36,9 +36,6 @@ defmodule Courier.Webhooks.Signature do
   @version "v1"
   @digest :sha256
 
-  # The spec's symmetric row: "Random. Between 24 bytes (192 bits) and 64 bytes
-  # (512 bits)". 32 bytes is inside the range and is a whole number of SHA-256
-  # blocks' worth of key.
   @secret_bytes 32
 
   @id_prefix "msg_"

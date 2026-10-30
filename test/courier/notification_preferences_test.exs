@@ -19,31 +19,12 @@ defmodule Courier.NotificationPreferencesTest do
   @one "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
   @two "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
-  # Tenancy keys, not credentials. Minted per test the way courier-15 minted
-  # accounts for its row-counting tests: a claim about what this account stored
-  # must not be a claim about every row in the table.
   @account "1a2b3c4d-5e6f-4a8b-9c0d-1e2f3a4b5c6d"
   @other_account "2b3c4d5e-6f7a-4b9c-8d1e-2f3a4b5c6d7e"
 
-  # The eight types `Courier.Mailers` can send. `account_security` is the
-  # fourth, added by the sessions-revoked consumer, `email_change_current` /
-  # `email_change_new` the fifth and sixth, added by the email-change packet,
-  # `receipt` the seventh, added by the payment consumer, and `payment_failed`
-  # the eighth, added by its sibling — and they are in this list because
-  # `NotificationPreferences.types/0` delegates to `Mailers.types/0`: a type
-  # courier can send is a type a user can be asked about. Both money types are
-  # in that set deliberately: the person they concern is the account's payer,
-  # and somebody who turns receipts or failure warnings off is deciding about
-  # their own accounting, which is theirs to decide. The core enum gap (the
-  # delivered-event schema still freezes three) is reported, not hidden here:
-  # `REPORT-courier-consumer-sessionsrevoked-01` for the first three,
-  # `REPORT-courier-consumer-paymentreceipt-01` for the fourth and
-  # `REPORT-courier-consumer-paymentfailed-01` for the fifth.
   @types ~w(welcome password_reset team_invitation account_security email_change_current
             email_change_new receipt payment_failed)
 
-  # THE ACCOUNT THIS FILE WRITES AS. `notification_preferences` is protected, so
-  # an INSERT with no identity set is refused `42501`. See `Courier.DataCase`.
   @moduletag account: @account
 
   defp types_of(preferences), do: Enum.map(preferences, & &1.notification_type)
@@ -186,10 +167,6 @@ defmodule Courier.NotificationPreferencesTest do
     end
 
     test "rejects an entry naming the account, which is not an entry field" do
-      # Not silently ignored. `account_id` is not part of a preference entry at
-      # all, so a body carrying one is a key courier does not have — the same
-      # answer as `sms_enabled` above, and deliberately not the same answer as
-      # `user_id`, which *is* an entry field that the path overwrites.
       assert {:error, changeset} =
                NotificationPreferences.update(@account, @one, %{
                  "preferences" => [
@@ -241,9 +218,6 @@ defmodule Courier.NotificationPreferencesTest do
     end
 
     test "cannot write one either, and writes nothing" do
-      # The owner's write comes first: recording the account that owns a user is
-      # what the *first* `PUT` for that user does, because courier cannot look a
-      # user up and ask which account it belongs to.
       {:ok, _} =
         NotificationPreferences.update(@account, @one, %{
           "preferences" => [pref("welcome", false)]
@@ -254,24 +228,17 @@ defmodule Courier.NotificationPreferencesTest do
                  "preferences" => [%{"notification_type" => "welcome", "push_enabled" => false}]
                })
 
-      # The refusal alone would pass with a context that stored the batch and then
-      # reported the refusal, so the row is read afterwards by its owner.
       found = stored(@one, "welcome")
       assert found.email_enabled == false
       assert found.push_enabled == true
     end
 
     test "gets the defaults for a user nobody has written anything for" do
-      # The distinction is the whole point of the 404 being narrow: a user with no
-      # rows is courier's normal case, because courier does not own users and
-      # cannot tell an account's user from one that does not exist.
       assert {:ok, preferences} = NotificationPreferences.list(@other_account, @one)
       assert Enum.all?(preferences, &(&1.email_enabled and &1.push_enabled))
     end
 
     test "an account that owns a user may still write as many times as it likes" do
-      # A 404 must be a statement about tenancy, not a one-shot claim: the owning
-      # account is the one that can keep answering for the user.
       for _ <- 1..3 do
         assert {:ok, _} =
                  NotificationPreferences.update(@account, @one, %{
@@ -329,12 +296,6 @@ defmodule Courier.NotificationPreferencesTest do
     end
 
     test "the answer is the user's, and the delivery path is not a tenancy question" do
-      # `enabled?/3` takes no account and deliberately does not: `Courier.Deliver`
-      # is asked about a *user*, a user id is a global uuid from identity, and
-      # there is exactly one row per (user, type) so there is nothing to choose
-      # between. Adding an account here would have meant inventing an account for
-      # a payload that does not carry one, and the row an account owns is the
-      # user's answer either way.
       {:ok, _} =
         NotificationPreferences.update(@account, @one, %{
           "preferences" => [pref("welcome", false)]
@@ -347,14 +308,8 @@ defmodule Courier.NotificationPreferencesTest do
   defp pref(type, email_enabled),
     do: %{"notification_type" => type, "email_enabled" => email_enabled}
 
-  # Every preference the owning account can see for a user, so an assertion is
-  # about what this account stored rather than about what it happened to be sent.
   defp stored_all(user_id), do: elem(NotificationPreferences.list(@account, user_id), 1)
 
-  # An error on a field courier does not have a column for is keyed by the string
-  # the request used, so `Keyword.keys/1` — which raises on a string key — cannot
-  # be used to look at them. Making those keys atoms would mean `String.to_atom/1`
-  # on a request body, which grows the atom table without bound.
   defp error_on?(changeset, field) do
     Enum.any?(changeset.errors, fn {key, _error} -> key == field end)
   end

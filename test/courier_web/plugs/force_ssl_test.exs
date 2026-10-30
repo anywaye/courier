@@ -6,14 +6,12 @@ defmodule CourierWeb.Plugs.ForceSSLTest do
   `POST /v1/messages` on a non-localhost peer (verify, reset and invitation
   mail all RED in the site loop-proof).
 
-  ## The signal
 
   `COURIER_FORCE_SSL`, read at boot by `config/runtime.exs` into
   `Application.get_env(:courier, :force_ssl_enabled)`. Set to `true` (or `1`)
   in genuine prod; absent everywhere else — local compose, the launch tier, CI
   — serves plain HTTP. No hostname allowlist: that list is what kept rotting.
 
-  ## Why a plug and not `force_ssl:` in `config/prod.exs`
 
   `force_ssl` is COMPILE-time endpoint configuration (Phoenix.Endpoint docs:
   compile-time config "may be set on config/dev.exs, config/prod.exs and so on,
@@ -22,12 +20,10 @@ defmodule CourierWeb.Plugs.ForceSSLTest do
   `CourierWeb.Plugs.ForceSSL` enforces the redirect per request, gated on the
   runtime flag.
 
-  ## The probes stay exempt regardless
 
   `/healthz` and `/readyz` answer plain HTTP in every environment — an
   orchestrator that gets a redirect reads courier as dead.
 
-  ## WHY `async: false`, WITH A REASON
 
   These tests toggle `Application.get_env(:courier, :force_ssl_enabled)`,
   which the whole VM shares. Each restores the previous value in an
@@ -51,9 +47,6 @@ defmodule CourierWeb.Plugs.ForceSSLTest do
   defp restore(value), do: Application.put_env(:courier, @flag_key, value)
 
   defp peer_conn(method, path) do
-    # `Plug.Test.conn/3` builds a plain-HTTP conn from a non-localhost peer
-    # (`www.example.com`): exactly the shape the launch compose network has,
-    # and the shape the old compile-time `force_ssl` redirected.
     Plug.Test.conn(method, path, "")
   end
 
@@ -68,8 +61,6 @@ defmodule CourierWeb.Plugs.ForceSSLTest do
     end
 
     test "config/runtime.exs reads the COURIER_FORCE_SSL signal" do
-      # Paired with the `enabled?/0` tests below: a signal nothing reads is a
-      # comment, and a flag nothing sets is one too.
       assert File.read!("config/runtime.exs") =~ "COURIER_FORCE_SSL",
              "config/runtime.exs reads no COURIER_FORCE_SSL, so nothing maps " <>
                "the deployer's opt-in onto the flag this plug enforces"
@@ -94,8 +85,6 @@ defmodule CourierWeb.Plugs.ForceSSLTest do
 
   describe "the plug with the signal absent" do
     test "a plain-HTTP POST /v1/messages from a non-localhost peer is NOT redirected" do
-      # THE RED PROOF, before the fix: with compile-time `force_ssl` this same
-      # conn shape is answered 307 -> https -> 405, and all three mails fail.
       Application.delete_env(:courier, @flag_key)
 
       conn = peer_conn(:post, "/v1/messages") |> ForceSSL.call(ForceSSL.init([]))
@@ -141,9 +130,6 @@ defmodule CourierWeb.Plugs.ForceSSLTest do
 
   describe "the endpoint wiring" do
     test "CourierWeb.Endpoint runs the plug — an unenforced flag enforces nothing" do
-      # Read off the endpoint's own source rather than a list kept here, for
-      # the same reason the pipeline order is read off router.ex elsewhere: a
-      # list kept here can agree with an endpoint that does not have the plug.
       source = File.read!(Path.join(__DIR__, "../../../lib/courier_web/endpoint.ex"))
 
       assert source =~ "CourierWeb.Plugs.ForceSSL",

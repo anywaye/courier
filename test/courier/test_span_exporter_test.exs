@@ -3,7 +3,6 @@ defmodule Courier.TestSpanExporterTest do
   The exporter table's READ API, which is what every redaction assertion in this
   repository stands on.
 
-  ## Why this file exists at all, and it is not tidiness
 
   `Courier.TestSpanExporter.mark/0` and `take_since/1` had NO CALLERS. Not in this
   repository, not in the canary tests that need exactly what they do. They were
@@ -26,7 +25,6 @@ defmodule Courier.TestSpanExporterTest do
   check — and `test/courier/telemetry_canary_test.exs` measured green while reading
   exactly nothing.
 
-  ## What is asserted here, and why against a real request
 
   The contract, driven through the real endpoint and the real collector, because the
   alternative is asserting the arithmetic of two integer helpers and calling that a
@@ -43,7 +41,6 @@ defmodule Courier.TestSpanExporterTest do
       exclude a span produced after it — which is why every caller has to drain
       `Courier.SpanCollector` first. See `Courier.TestSpanExporter.mark/0`.
 
-  ## Ordering, and it is not tidiness
 
   `async: false`. This file and `Courier.TelemetryCanaryTest` both read one shared
   table and both bracket their own work with a mark, and the drain in `setup` is
@@ -56,10 +53,6 @@ defmodule Courier.TestSpanExporterTest do
   use CourierWeb.ConnCase, async: false
 
   setup do
-    # Drain, then mark — the order, and the reason for it, are in
-    # `Courier.TestSpanExporter.mark/0`. Draining after marking would leave this
-    # file's own backlog inside its own window, which is the defect the canary test
-    # was filed for.
     Courier.SpanCollector.flush()
     mark = Courier.TestSpanExporter.mark()
 
@@ -67,9 +60,6 @@ defmodule Courier.TestSpanExporterTest do
   end
 
   test "a watermark hides what was already exported and shows what comes after", %{mark: mark} do
-    # `/healthz` before the mark, `/readyz` after it. `/readyz` answers 200 or 503
-    # depending on whether the repo is up, which does not matter here: what is
-    # asserted is WHICH spans come back, not what is on them.
     assert request("/healthz").status == 200
     Courier.SpanCollector.flush()
 
@@ -108,8 +98,6 @@ defmodule Courier.TestSpanExporterTest do
   end
 
   test "the window is a SUFFIX of the table, not a differently-ordered table" do
-    # Derived from the two reads rather than from a hand-written expectation, so it
-    # keeps holding as more callers share the table.
     request("/healthz")
     Courier.SpanCollector.flush()
 
@@ -130,20 +118,6 @@ defmodule Courier.TestSpanExporterTest do
   end
 
   test "a mark does NOT exclude a span produced after it, which is why callers drain" do
-    # THE CAVEAT, asserted rather than left in a comment, because it is the caveat
-    # that makes the canary test independent of its neighbours and it is exactly
-    # what a future refactor would delete as redundant.
-    #
-    # The mark is taken first, then the span is produced and exported. Nothing here
-    # is another test's span — it is this test's own — and it still lands inside the
-    # window, because a watermark filters by WHEN A ROW ARRIVED and not by WHICH
-    # TEST MADE IT. The only thing that makes those two the same set is an empty
-    # collector queue at the moment the mark is taken.
-    #
-    # So this test is not asserting that a watermark is enough. It is asserting that
-    # it is NOT, which is why `Courier.TelemetryCanaryTest` flushes the collector in
-    # its `setup` before it marks. Reverse this assertion and the drain becomes
-    # deletable — which is the point of writing it down.
     mark = Courier.TestSpanExporter.mark()
 
     request("/healthz")
@@ -156,9 +130,6 @@ defmodule Courier.TestSpanExporterTest do
   end
 
   defp request(path) do
-    # `dispatch/5` rather than `get/2`, because it is what the canary file uses and
-    # it needs no `@endpoint` to have been started. One helper rather than two call
-    # shapes, so "what a request is" is not a variable in a test about ordering.
     Phoenix.ConnTest.dispatch(Phoenix.ConnTest.build_conn(), @endpoint, "GET", path, nil)
   end
 end

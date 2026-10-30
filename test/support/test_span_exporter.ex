@@ -15,7 +15,6 @@ defmodule Courier.TestSpanExporter do
   need a registered owner per test, and an owner that outlives its test is a
   message to a dead pid.
 
-  ## Why this file is fussier than it looks
 
   Three things about the SDK's exporter interface are not guessable, and each was
   got wrong first. All three fail in the SAME way — silently — and that is what
@@ -50,19 +49,6 @@ defmodule Courier.TestSpanExporter do
   @impl true
   def init(_config), do: {:ok, %{}}
 
-  # One row, in whichever of the two shapes the table holds.
-  #
-  # The SDK's own export table is `duplicate_bag` with
-  # `{keypos, #span.instrumentation_scope}`, and `ets:tab2list/1` on a table with
-  # a `keypos` returns the OBJECT — the bare `#span{}` — with the key left in
-  # place at its own field position. The shape courier's queue used was a `set`
-  # keyed by `:erlang.unique_integer()`, where the same call returns
-  # `{span_id, span}` pairs.
-  #
-  # Matching only the second shape raised FunctionClauseError inside this exporter
-  # the moment courier started building the table the REAL exporter reads, and the
-  # symptom was the whole canary suite reporting "nothing to render (0 spans in)":
-  # the spans were there and the exporter could not see them.
   defp span_record(fields) when is_list(fields), do: List.to_tuple(fields)
   defp span_record(record), do: record
 
@@ -77,34 +63,6 @@ defmodule Courier.TestSpanExporter do
       |> Enum.map(&Courier.TestSpans.readable/1)
       |> Enum.sort_by(& &1.start_time)
 
-    # The row key is an id from the SAME SEQUENCE `mark/0` draws from, and that is
-    # the whole reason `mark/0` works at all.
-    #
-    # It used to be a plain `:erlang.unique_integer()` here and a
-    # `[:monotonic, :positive]` one in `mark/0`, on the reasonable assumption that
-    # they were two draws from one counter. They are not two draws from one counter;
-    # they are two DIFFERENT sequences, and on OTP 29 they do not even overlap:
-    #
-    #     iex> {m, r} = {erlang.unique_integer([:monotonic, :positive]),
-    #     ...>           erlang.unique_integer()}
-    #     iex> {m, r, r > m}
-    #     {1, -576460752303422142, false}
-    #
-    # The monotonic sequence counts up from 1; the plain one counts DOWN from
-    # -576460752303423488. So `id > mark` was false for every row, always, and
-    # `take_since/1` returned `[]` for every caller on every run.
-    #
-    # Nothing caught it because nothing called it: `mark/0` and `take_since/1` had
-    # no callers anywhere in the suite, which is also how a canary test can rely on
-    # them and read nothing without anything going red. `[:monotonic, :positive]` on
-    # BOTH sides is the fix, and monotonic rather than plain is the point — it is
-    # the only one of the two the OTP documentation guarantees to be strictly
-    # increasing, and a watermark resting on an ordering nobody promised is a
-    # watermark that works until it does not.
-    #
-    # `test/courier/test_span_exporter_test.exs` asserts this contract directly,
-    # because the failure mode is an EMPTY LIST rather than a wrong one, and an
-    # empty list is the one result no caller can tell from "nothing happened".
     :ets.insert(@table, Enum.map(spans, fn span -> {row_id(), span} end))
     :ok
   end
@@ -135,7 +93,6 @@ defmodule Courier.TestSpanExporter do
   table is a test deleting another test's evidence, so two tests asserting the same
   time pass or fail depending on the scheduler.
 
-  ## What a watermark is NOT, and this cost a day to find out
 
   **A mark taken now does NOT exclude spans another test made.** It excludes spans
   that were EXPORTED before the mark. The exporter is handed whatever
@@ -156,7 +113,6 @@ defmodule Courier.TestSpanExporter do
   example; `Courier.ObservabilityTest` still reads the whole table and still has
   the version of this defect that does not need a backlog to fire.
 
-  ## Why the table is never deleted
 
   Nothing prunes it, and that is bounded by the suite rather than by the code: one
   row per exported span, and a full `mix test` exports on the order of a thousand.
@@ -180,11 +136,6 @@ defmodule Courier.TestSpanExporter do
     |> Enum.map(&elem(&1, 1))
   end
 
-  # The row key, AND the watermark, from one sequence. See the comment on the
-  # insert in `export/4`, which is where the argument for it belongs; `mark/0` is
-  # here too so that the two cannot drift apart again — that drift is the entire
-  # defect this file's test covers, and it happened because they were written in
-  # different places and read as if they were the same counter.
   defp row_id, do: :erlang.unique_integer([:monotonic, :positive])
 
   @doc """

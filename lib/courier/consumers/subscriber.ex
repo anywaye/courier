@@ -16,14 +16,12 @@ defmodule Courier.Consumers.Subscriber do
   service that publishes into a bus nobody reads, which is the state this
   whole broker build exists to remove.
 
-  ## WHAT THE PROCESS DOES, IN ONE SENTENCE
 
   Hold a subscription to the **`identity.>` subject prefix**, and for every
   message delivered, hand the envelope to `Courier.Consumers.record/1` — the
   function whose primary key IS the dedupe — and log, loudly, anything that
   cannot be recorded.
 
-  ## WHY THE PREFIX AND NOT THE SUBSCRIBED TYPES
 
   `anywaye.yml`'s `consumes:` names four `identity.*` types and the registry
   has four handlers, but the subscription is to `identity.>` — the prefix,
@@ -39,7 +37,6 @@ defmodule Courier.Consumers.Subscriber do
   directions — but the floor of the bus is one prefix, not four exact
   subjects.
 
-  ## WHY THE PROCESS DOES NOT HANDLE, ONLY RECORDS
 
   `record/1` writes the row IN THE SAME PROCESS that owns the subscription,
   and the handler runs from the sweep. Two consequences, both load-bearing:
@@ -64,7 +61,6 @@ defmodule Courier.Consumers.Subscriber do
   the registry's job, and a subscriber with a handler dispatch in it is the
   two halves tangled together.
 
-  ## WHY IT ASKS THE CONNECTION PROCESS RATHER THAN OWNING A SOCKET
 
   `Courier.Nats` is the one connection the application holds: it dials, it
   retries on a fixed interval, it survives a broker outage without taking the
@@ -78,7 +74,6 @@ defmodule Courier.Consumers.Subscriber do
   would go silently deaf after the broker's first blip, which is precisely
   the "quietly stopped working" state this repository keeps refusing.
 
-  ## WHAT A REFUSAL LOOKS LIKE
 
   Nothing is swallowed. `record/1` answers `{:error, :already_consumed}` for
   a redelivery — ordinary operation under at-least-once, logged at debug and
@@ -102,22 +97,6 @@ defmodule Courier.Consumers.Subscriber do
   alias Courier.Consumers
   alias Courier.Nats
 
-  # THE SUBJECTS, DERIVED FROM THE CONSUMERS MAP AND NEVER HARDCODED.
-  #
-  # It was one constant — `"identity.>"` — while every consumer courier had was
-  # an identity event, and that was true until `billing.payment.succeeded`
-  # arrived: the receipt consumer was added to `config :courier, :consumers`,
-  # every test of the CONSUMER passed, and the subscription still asked the
-  # broker for `identity.>` alone. Measured on the launch stack (2026-10-16):
-  # courier logged "subscribed to identity.>", billing published a settled
-  # payment onto the bus, and the receipt landed in no mailbox — the registered
-  # consumer was dead wire, green tests and all. A registration that does not
-  # move the subscription is a message nobody receives, so the subscription is
-  # read off the same map the router reads.
-  #
-  # One prefix per SERVICE, not one per type: a subscription to a concrete type
-  # would be a subscription to a servant, and a service that gains a fifth
-  # event should not need courier redeployed before it can be heard.
   @spec subjects() :: [String.t()]
   def subjects do
     Consumers.subscribed()
@@ -127,12 +106,6 @@ defmodule Courier.Consumers.Subscriber do
     |> Enum.map(&(&1 <> ".>"))
   end
 
-  # How often the subscription is (re-)attempted. Fixed rather than growing,
-  # on the same terms as `Courier.Nats`'s own reconnect interval: the bus
-  # coming back is not an event to back away from, and one SUB every two
-  # seconds is nothing against a broker nobody is watching. It is also what
-  # re-subscribes after the broker's own reconnect, which loses subscriptions
-  # on the connection.
   @subscribe_interval 2_000
 
   @doc """
@@ -171,12 +144,6 @@ defmodule Courier.Consumers.Subscriber do
     end
   end
 
-  # The delivery, and the only thing done with it. `topic` is the event's
-  # type — core's "the type is the subject, with no mapping table" rule on the
-  # consuming side — and `body` is the envelope as it arrived. The record is
-  # `Courier.Consumers.record/1`, which keys on the envelope's own id and
-  # whose primary key IS the dedupe, so a second delivery of the same event is
-  # refused here by the database and not by anything this module decides.
   @impl GenServer
   def handle_info({:msg, %{topic: topic, body: body}}, state) do
     _ = record(topic, body)
@@ -187,17 +154,8 @@ defmodule Courier.Consumers.Subscriber do
 
   defp subscribe(connection, state) do
     if state.connection == connection and state.sids != [] do
-      # Already subscribed on this connection. The timer keeps running — the
-      # broker's next reconnect hands us a new pid and that is the signal to
-      # subscribe again.
       {:noreply, state}
     else
-      # EVERY subject, or none: a half-subscribed subscriber is the defect this
-      # function's history records (a second service's events arriving while
-      # the subscription still named the first), so one refused SUB rolls the
-      # whole attempt back to "no connection" and the timer tries the set
-      # again. The broker's reconnect loses every subscription on the
-      # connection, so the set is what re-arms — not one of them.
       case Enum.reduce_while(subjects(), {:ok, []}, &subscribe_one(connection, &1, &2)) do
         {:ok, sids} ->
           if state.connection != connection do
@@ -207,9 +165,6 @@ defmodule Courier.Consumers.Subscriber do
           {:noreply, %{state | connection: connection, sids: sids, logged_disconnected: false}}
 
         {:error, reason, subject} ->
-          # A refused SUB is a warning, not a crash: the retry timer is armed
-          # either way and this process surviving is what lets it succeed
-          # later.
           Logger.warning(
             "bus: the broker refused the subscription to #{subject} (#{inspect(reason)}); " <>
               "it will be attempted again"
@@ -227,10 +182,6 @@ defmodule Courier.Consumers.Subscriber do
     end
   end
 
-  # No broker. Logged ONCE, because "the bus is dark" is a fact an operator
-  # needs once, not forty times a minute, and a log storm during an outage is
-  # the outage with more lines. The retry timer is armed in `handle_info/2`
-  # before this branch, so nothing here has to remember it.
   defp dark(state) do
     unless state.logged_disconnected do
       Logger.warning(
@@ -242,15 +193,6 @@ defmodule Courier.Consumers.Subscriber do
     {:noreply, %{state | connection: nil, sids: [], logged_disconnected: true}}
   end
 
-  # The envelope, decoded and recorded — or a NAMED refusal with nothing from
-  # the payload in it.
-  #
-  # `Jason.decode/1` first, because the bytes on the wire are what the
-  # publisher signed and courier records exactly what it received; a payload
-  # that is not JSON is a fact about the bus that no handler can act on and
-  # is recorded as one (`{:error, :unreadable_envelope}` from `record/1`
-  # covers a decoded-but-keyless shape; this arm covers bytes that are not a
-  # JSON object at all).
   defp record(topic, body) do
     body
     |> decode()
@@ -263,32 +205,16 @@ defmodule Courier.Consumers.Subscriber do
         :ok
 
       {:error, :already_consumed} ->
-        # At-least-once, answering. Debug, because a redelivery is the bus
-        # working and a warning on every one would train an operator to
-        # ignore this line.
         Logger.debug("bus: a redelivered #{topic} event was deduped by its id")
         :ok
 
       {:error, reason} ->
-        # LOUD, AND WITHOUT THE PAYLOAD. The topic and the reason are what an
-        # operator can act on; the envelope's `data` is another service's
-        # message content and does not go into a log line. This is the
-        # consumer's half of the redaction boundary.
         Logger.warning("bus: could not record a #{topic} delivery: #{describe(reason)}")
 
         :ok
     end
   end
 
-  # The reason, SHAPED so it cannot carry the payload.
-  #
-  # This is the whole of the boundary on this side, and it is a function
-  # rather than a convention because the obvious version leaks: a
-  # `Jason.DecodeError` holds the bytes it could not parse in `data`, so
-  # `inspect/1` on it prints the message content into the log — measured,
-  # with a payload this suite planted and the assertion above catching it. An
-  # `Ecto.Changeset` carries the rejected VALUE in `errors`, so only the field
-  # NAMES are named.
   defp describe({:undecodable_envelope, _reason}), do: "the bytes were not a JSON object"
 
   defp describe(:unreadable_envelope),

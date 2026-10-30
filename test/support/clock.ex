@@ -3,7 +3,6 @@ defmodule Courier.TestSupport.Clock do
   A monotonic millisecond clock a test can move, and the only reason
   `Courier.ErrorRelay`'s throttle is testable without waiting.
 
-  ## Why the relay takes a clock as a function
 
   A token bucket's behaviour lives in the *shape* of its refill schedule — one
   token per `60_000 / per_minute` milliseconds, capped at `burst` — and a wall
@@ -16,7 +15,6 @@ defmodule Courier.TestSupport.Clock do
   it is `System.monotonic_time(:millisecond)`, read once per event; here it is
   this process.
 
-  ## Named, therefore `async: false` where it is used
 
   A named `Agent`, so two tests moving the clock at once would make every refill
   assertion depend on the interleaving. `Courier.ErrorRelayTest` is

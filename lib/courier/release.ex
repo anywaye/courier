@@ -3,7 +3,6 @@ defmodule Courier.Release do
   Used for executing DB release tasks when run in production without Mix
   installed.
 
-  ## WHY MIGRATIONS RUN AS THE OWNER AND NOT AS `:ecto_repos`
 
   `migrate/0` used to iterate `Application.fetch_env!(:courier, :ecto_repos)`,
   which is `[Courier.Repo]` — and `Courier.Repo` connects as **`courier_app`**,
@@ -20,7 +19,6 @@ defmodule Courier.Release do
   are the same database and the same `priv/repo/migrations`; they differ only in
   the credential, and picking the credential is exactly what this function is for.
 
-  ## IT FAILS BY NAME WHEN THE OWNER IS NOT CONFIGURED
 
   `config/runtime.exs` only configures `Courier.OwnerRepo` when
   `COURIER_OWNER_DATABASE_URL` is set, and it does **not** require it at boot: the
@@ -70,7 +68,6 @@ defmodule Courier.Release do
   end
 
   defp load_app do
-    # Many platforms require SSL when connecting to the database
     Application.ensure_all_started(:ssl)
     Application.ensure_loaded(@app)
   end

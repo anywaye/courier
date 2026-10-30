@@ -1,348 +1,6 @@
-# courier's HTTP surface, per anywaye/core/docs/openapi-conventions.md.
-#
-# This file now describes every route courier's router serves except two, and the
-# two are named here: `/healthz` and `/readyz` are infrastructure probes that run
-# before auth, routing and the rest of the platform exist, and no customer codes
-# against them. A document that claims to describe courier and quietly omits part
-# of it is worse than one that says what it covers — which is why the omissions
-# are declared in this header *and* enforced by
-# `test/courier_web/openapi_document_test.exs`, which fails if this file and
-# `lib/courier_web/router.ex` disagree in either direction.
-#
-# `GET` and `PUT /v1/notification_preferences/{user_id}` were in the router with
-# tests behind them and absent from here, which is the drift this file's check now
-# prevents from recurring. They are the other half of the public surface, not an
-# afterthought, and they are documented as thoroughly as the webhooks.
-#
-# > **Every operation in this document is authenticated, and exactly two of them
-# > are not authenticated by a token.** They are the two exceptions, and they are
-# > named here because a blanket claim is the shape that hides the first
-# > exception — and this file now has two, for two different reasons, so the
-# > blanket claim had to be replaced rather than extended.
-# >
-# > **`receiveResendReport` is authenticated by a SIGNATURE.** An inbound provider
-# > webhook is not a tenant operation. Resend signs its webhook with Svix and sends
-# > no bearer token, so a principal would answer every delivery with a `401`; and
-# > behind no plug at all it would be an unauthenticated `POST` that records
-# > suppressions, which is a denial of service on the whole product delivered by
-# > the feature meant to prevent it. Core settles it, in
-# > `docs/openapi-conventions.md` §Auth: "Inbound webhooks are **not**
-# > JWT-authenticated: they are signed, per the sender's convention, and the
-# > receiver checks the signature before parsing." So the operation declares
-# > `security: [{webhookSignature: []}]` and nothing else, and the document can say
-# > that truthfully because the router agrees:
-# > `test/courier_web/router_test.exs` asserts it is **not** behind the
-# > authenticated pipeline and that it is behind `:api`.
-# >
-# > Its `401` therefore does not mean "no bearer token", and it is a reusable
-# > response of its own (`SignatureRejected`) rather than the `Unauthorized` every
-# > other operation shares — the same decision `MessageConflict` and
-# > `NotificationPreferencesNotFound` made, for the same reason: a different
-# > meaning wants a different sentence.
-# >
-# > **`oneClickUnsubscribe` and `unsubscribeByLink` are authenticated by the
-# > OPAQUE TOKEN IN THEIR PATH**, and they declare `security: []` — which says
-# > "this operation presents no credential scheme", **not** "this operation is
-# > unauthenticated". The distinction is the point, and it is worth reading twice
-# > because `security: []` is exactly the spelling courier-05 used by mistake:
-# >
-# >   * RFC 8058 §3.1 forbids this request from carrying authorization at all —
-# >     "The POST request MUST NOT include cookies, HTTP authorization, or any
-# >     other context information." A mail client holds no bearer token, sends no
-# >     cookie, and is not allowed to send either. Behind
-# >     `CourierWeb.Plugs.Principal` **every one-click unsubscribe in the world
-# >     would be a 401**, and Gmail and Yahoo require the button to work.
-# >   * What the token *is* is stated in full in the `UnsubscribeToken` parameter:
-# >     32 bytes of `:crypto.strong_rand_bytes/1`, stored only as a SHA-256, with
-# >     the address nowhere in it. An unknown one is a **404**, not a 401, because
-# >     it is a resource address rather than a presented credential.
-# >
-# > So these two are the only operations in this file that a generated client has
-# > no business calling, and the document says so on each of them. They are here
-# > because `test/courier_web/openapi_document_test.exs` holds this file and the
-# > router to each other in both directions: a route the router serves and this
-# > file does not describe is a method the next generated client will not have,
-# > and an operation filed under `/v1` that cannot take a bearer token is a method
-# > a generated client *will* call wrongly. Both failure modes are worse than the
-# > two exceptions above.
-# >
-# > **Two of core's own rules therefore report on these three operations, and that
-# > is measured rather than assumed.** `anywaye-contract lint` fails
-# > `openapi.paths-are-versioned` for all three paths and
-# > `openapi.idempotency-key` for the two `POST`s — the same two rules, on the
-# > same two grounds, before and after this packet added a third operation
-# > (`/inbound/resend` was already reported by both at `2.2.0`). The harness
-# > cannot know that a mail client is not a tenant or that a mail client is
-# > forbidden by RFC 8058 §3.1 from sending a header, and both are load-bearing
-# > enough to be worth a contract violation rather than a compromise: version
-# > these paths and a generated client sends a bearer token to a mail client that
-# > will never present one.
-# >
-# > The two notification-preferences operations, which are the other half of that
-# > history, were once served with `security: []` and a `> DECISION NEEDED
-# > (courier-05)` above this line recording the gap. That is closed: both are
-# > behind the plug, `info.version` went to **2.0.0**, and the cost was paid then
-# > because there was no 2.x client. `receiveResendReport` is the first operation
-# > in this file with `security` other than `bearerAuth`, and it is not a gap — it
-# > is the only way an inbound webhook can be authenticated truthfully.
-# > `oneClickUnsubscribe` and `unsubscribeByLink` are the second and third, and
-# > each says in its own description what stands in for the credential.
-#
-# The three answers on those two operations are the same three the webhooks give,
-# because they go through the same plug and are decided in the same context:
-#
-#   * **anonymous → 401**, from `CourierWeb.Plugs.Principal`, whose default
-#     resolver authenticates nobody — so a courier deployed without identity's JWT
-#     verifier locks these routes rather than serving them.
-#   * **another account → 404**, for a user whose stored preferences belong to
-#     somebody else. Not a 403: core's conventions forbid a 403 that leaks the
-#     existence of a resource the caller cannot see.
-#   * **a user nobody has written preferences for → 200**, with the defaults. The
-#     404 above is deliberately narrow — courier holds no foreign key to identity's
-#     users, so with no stored rows it knows nothing about the user, and a 404
-#     would be courier claiming to know something about the requester it does not
-#     know.
-#
-# **A user's preferences belong to an account, and the account is recorded rather
-# than asked for.** `notification_preferences.account_id` is written from the
-# principal, never from a request, and the unique index stays on
-# `(user_id, notification_type)` — a user has one set of preferences, not one per
-# account, so the account is the row's owner rather than part of its identity.
-# The consequence a caller can observe: the **first** authenticated `PUT` for a
-# user id is what records the owning account, because courier cannot ask identity
-# which account a user belongs to. An account that writes for an unwritten user id
-# claims that user and gets no access to anything that existed.
-#
-# ## What courier does not return, and why that is written down here
-#
-# A document that omits a reachable response is worse than one that says what it
-# covers, so the omissions are declared rather than left to be found. Each of the
-# following was measured against this repository's endpoint rather than read off
-# it, and each is the reason no operation below declares it:
-#
-#   * **403 `forbidden`** — nothing sends it. `CourierWeb.Plugs.Principal`
-#     answers 401 for an anonymous caller and 503 when it cannot ask identity,
-#     and never 403; and a resource in another account is a 404, because core
-#     forbids a 403 that leaks existence. courier has no role a claim could
-#     grant it, so there is no input to a 403.
-#   * **409 on a duplicate `url`** — a duplicate `url` is a **422** whose
-#     `errors[0].code` is `taken`, which is the status convention's
-#     "semantically wrong", not a conflict. The 409s that *are* declared are for
-#     `Idempotency-Key` and for `sendMessage`, below.
-#   * **415 `unsupported_media_type`** — the parser is configured
-#     `pass: ["*/*"]`, so an unknown content type is neither parsed nor refused.
-#     The request reaches the controller and is answered 422 for the field it did
-#     not carry.
-#   * **429 `rate_limited`** — there is no limiter. Thirty rapid reads answer
-#     thirty 200s and thirty rapid writes answer thirty 201s.
-#
-# ## 503 `unavailable` is declared on every authenticated operation, and this line is what changed
-#
-# It used to sit in the list above with the note "only `GET /readyz` sends it",
-# which was true and is no longer. `sendMessage` has a dependency courier does not
-# control — an SMTP relay — and a send has to be able to say so:
-#
-#   * **the provider refused.** A 4xx or 5xx from the relay, a refused credential,
-#     a socket that would not open. Nothing was sent, no outbox row was written,
-#     and the retry is safe.
-#   * **courier cannot deliver at all.** `COURIER_MAIL_ADAPTER` names an adapter
-#     that never opens a socket, or names none. This is the same predicate
-#     `Courier.MailerAdapter` checks at boot, asked a third time per request — not
-#     because the boot gate is insufficient, but because **the refusal has to be
-#     visible to the caller**. A courier that booted with a silent adapter would
-#     otherwise answer 200, write an outbox row and publish
-#     `courier.email.delivered` for mail nobody receives, which is the whole
-#     failure the adapter work exists to end.
-#
-# **AND NOW EVERY OPERATION BEHIND `CourierWeb.Plugs.Principal` HAS ONE, because
-# authentication is a network hop.** courier resolves a caller by asking identity's
-# `POST /v1/introspections` about the token the request carries — identity's token is
-# opaque, so there is no claim to read and no key to verify against. That means a
-# dependency courier does not control sits on the request path of every `/v1`
-# operation, and every one of them can now answer:
-#
-#   * **identity is unreachable, slow or erroring.**
-#   * **courier's own credential is wrong** — identity answers 401 for a credential
-#     it does not accept and 403 for one that may not ask about the token it named.
-#     Both are facts about THIS DEPLOYMENT, not about the caller's token.
-#   * **identity answered in a shape courier cannot read.**
-#
-# It is 503 and not 500 because courier is fine and its dependency is not, and that
-# is the difference between a generated client retrying and a generated client
-# filing a bug against courier.
-#
-# **AND IT IS NOT A 401, which is the part worth reading twice.** A 401 says "your
-# credential is not acceptable". identity being down says nothing of the sort, and a
-# customer holding a perfectly good token who is told 401 will rotate it — and still
-# be refused. So the one case where a 503 would be *wrong* (a genuinely dead token)
-# is the case identity answers `200 {"active": false}` for, and courier turns that
-# into a 401 like any other refusal.
-#
-# **AND IT IS NOT A 200-either.** The alternative was to let the request through when
-# identity could not be reached. That is a resolver that fails OPEN under load, and
-# it is worse than the locked door courier shipped for a year: it does not fail, it
-# quietly serves.
-#
-# `GET /readyz` still sends a 503, and still is not an operation in this document.
-# `test/courier_web/plugs/principal_config_test.exs` holds this section to the
-# router in both directions: every operation behind the principal plug declares a
-# 503, and no operation outside it claims one.
-#
-# ## Idempotency-Key, and what each of the three answers means
-#
-# All three mutating `POST`s accept `Idempotency-Key`, as core's conventions
-# require of a POST that can be retried safely. `createWebhookEndpoint` registers a
-# destination that will receive at-least-once deliveries, and a caller that timed
-# out on it has no other way to learn whether the first attempt landed. `sendMessage`
-# is the strongest case of the three: a send is not idempotent by HTTP's definition,
-# so a caller that timed out and retried without the header **mails somebody twice**,
-# and there is no way for courier to tell the two messages apart afterwards.
-#
-# courier-12 measured that courier did **not** implement this, and said so here
-# rather than declaring a contract for behaviour that was not there. That gap is
-# closed as of courier-14, and this section is rewritten rather than deleted, so
-# the reader can see that the header was once accepted and ignored and is now the
-# mechanism the 409s below exist for.
-#
-#   * **Same key, same body, already answered** — the stored response, byte for
-#     byte, with `Idempotency-Replayed: true`. For `createWebhookEndpoint` that
-#     response carries the signing secret, which exists in exactly one 201 and
-#     cannot be re-derived, so a client that lost the first response to a timeout
-#     gets the secret back from its retry.
-#   * **Same key, different body** — 409 `idempotency_key_reused`.
-#   * **Same key, same body, first attempt still running** — 409 `conflict`.
-#     Core's five sentences do not describe the concurrent case, and this is
-#     courier's answer: not `idempotency_key_reused`, because the bodies are
-#     identical and saying otherwise is a lie a retry loop is built on, and not a
-#     503, because nothing is unavailable. `conflict` is core's own word for a
-#     request that collides with current state.
-#
-# Three things the header does **not** do, each measured rather than assumed:
-#
-#   * **A request with no key is processed normally** and records nothing. A
-#     retry without a key is the client's bug, and it is answered as though the
-#     key were absent.
-#   * **Only a 2xx is stored.** A 4xx leaves the key free immediately, so a
-#     client that fixed its request and retried with the same key gets its new
-#     answer rather than a 409 about a key it never reused; a 5xx leaves it free
-#     too, so a transient courier failure is not pinned for a day.
-#   * **A key that is not a uuid is a 422.** courier-12 measured that a non-uuid
-#     and a 5000-character key were both accepted without complaint; the second
-#     of those was a string in a unique index, paid for by every write.
-#
-# Retention is 24 hours, scoped to the `(account, endpoint, key)` triple with
-# `endpoint` the concrete path. REPORT-courier-14-coreversion has the
-# measurements, including the two Elixir behaviours that had to be discovered the
-# hard way and are now written into the code that depends on them.
-#
-# ## The inbound provider surface, and why its 400 is signed-only
-#
-# `POST /inbound/resend` is the first operation here with **no `Idempotency-Key`**
-# and the only one authenticated by something other than a bearer token, and both
-# are decisions rather than gaps. The reasoning is long and it lives in the code —
-# `CourierWeb.InboundReports`'s moduledoc and `CourierWeb.InboundController`'s — so
-# what this header records is the two consequences a client needs and cannot
-# derive:
-#
-#   * **A provider retry is a 200, not a 409.** Delivery is at-least-once and a
-#     provider delivering the same report twice is normal, not an error.
-#     Deduplication is `email_suppressions`'s unique index on
-#     `(provider, provider_event_id)`, which `Courier.Inbound.Resend` derives from
-#     the report's own **content** rather than from the `webhook-id` header — a
-#     stronger key, because one delivery can name many recipients and keying on the
-#     header would collapse a broadcast into one row. The second delivery answers
-#     `200` with `data.duplicates` above zero and writes nothing.
-#   * **The 400 is reachable only by somebody holding the signing secret.** The
-#     obvious way to check this operation's 400 — POST a body that is not JSON, as
-#     `test/courier_web/openapi_error_responses_test.exs` does for every other
-#     operation — gets a **401**, and that is the security property rather than an
-#     inconvenience: courier refuses before it reads a byte of the body, so a forged
-#     request is told nothing about whether its payload parsed.
-#     `openapi_error_responses_test.exs` therefore asks this operation its 400 with a
-#     **signed** malformed body, which is the only way to reach the status, and the
-#     test says so where it does it.
-#
-# And the one thing this surface never does, which is stated here because the
-# operation is the only place a suppression could leak: **no response on this
-# operation carries an email address.** Not the `200` counts, not a `422`'s
-# `detail`, not a log-derived value echoed back. `email_suppressions` has no
-# `account_id` and is not exposed through any route, so an address in a response is
-# a way to ask courier questions about mailboxes it holds. The address appears in
-# courier's **logs**, which is where `Courier.Inbound.Resend`'s refusals put it and
-# where `POST /v1/messages`'s 409 does not.
-#
-# ## Two other facts about this surface, because a reader is owed them
-#
-#   * **`?order=` and `?offset=` are accepted and ignored.** Core's standard
-#     request shape is `?limit=&cursor=&order=asc|desc`; courier paginates
-#     oldest-first only, so a request carrying `order` is answered as if it were
-#     not there, and `offset` is ignored for the reason core gives for banning it.
-#     Neither is declared below, because neither is honoured.
-#   * **`limit` is capped silently.** `?limit=99999` is a 200 answering with at
-#     most 100 rows, not a 422. The cap is real and is stated in the parameter;
-#     what a client cannot see from here is that it was applied.
-#
-# ## Why `400` is on some operations and not others
-#
-# `CourierWeb.Plugs.ParseBody` wraps `Plug.Parsers`, and that reads a request body
-# for `POST`, `PUT`, `PATCH` and `DELETE` — and for no other verb. So the 400 is
-# reachable on exactly the operations that carry one of those verbs, which is not
-# the same as "every operation that takes input": `GET` sends no body and is
-# refused by neither the parser nor anything else, and a `400` declared on a `GET`
-# is a case a client writes and can never run.
-#
-# `DELETE` is the one that reads wrong. A `DELETE` carries no body in any sensible
-# client, so it looks bodyless, and a document that omits its 400 looks right —
-# until a client that does send one is answered with a body nobody documented. It
-# is declared for that reason, and
-# `test/courier_web/openapi_error_responses_test.exs` checks the agreement in both
-# directions so neither half can drift back.
 openapi: 3.1.0
 
 info:
-  # The document's own semantic version, which moves with the document and not
-  # with the `/v1` prefix. The prefix changes only on a breaking change, and then
-  # this number changes in the same commit.
-  #
-  # This is a **major** bump and the first one this document has taken, so the
-  # reason is stated rather than implied by the number. No path changed, no
-  # operation was added or removed, and no response body changed shape — but
-  # `GET` and `PUT /v1/notification_preferences/{user_id}` went from `security:
-  # []` to requiring a bearer token, which is a change to what a client has to
-  # send and therefore a breaking change to the contract rather than an additive
-  # one. A client generated from 1.4.0 sends no token and receives a 401.
-  #
-  # The previous bump (1.3.0 → 1.4.0, courier-14) was a minor one for the
-  # opposite reason: `Idempotency-Key` and the two 409s it can now answer describe
-  # what courier began doing, and a client that sends no key is unaffected.
-  #
-  # The bump to 2.1.0 is minor, and it is the additive kind core's conventions
-  # describe: one new operation (`POST /v1/messages`) and no change to any
-  # existing path, verb, request field or response shape. A client generated from
-  # 2.0.0 keeps working against it, which is what makes it minor.
-  #
-  # The bump to 2.2.0 is minor for the same reason, and with one addition worth
-  # naming because it is not additive in the usual sense: one new operation
-  # (`POST /inbound/resend`), a new `webhookSignature` security scheme, and three
-  # new reusable responses — and **no existing path, verb, request field or
-  # response shape changed at all**. A client generated from 2.1.0 keeps working
-  # against it unchanged, including the nine operations that were already there
-  # and the document-level `security` they inherit.
-  #
-  # The inbound operation is not in `/v1` and that is deliberate rather than an
-  # exception to core's "path under /v1" checklist: `/v1` is courier's versioned
-  # contract with a **tenant**, every operation under it takes a bearer token, and
-  # PLAN.md MD6 has the platform generating client SDKs from this file — so an
-  # operation filed under `/v1` that cannot take a bearer token is a method a
-  # generated client will call wrongly. The checklist's line is about the
-  # customer-facing API; an inbound webhook is not one.
-  #
-  # The bump to 2.4.0 is minor, and it is the additive kind core's conventions
-  # describe: four new operations on two new paths (`GET /v1/notifications`,
-  # `GET /v1/notifications/unread_count`, `POST /v1/notifications/{id}/seen` and
-  # `POST /v1/notifications/{id}/read`) and **no existing path, verb, request
-  # field or response shape changed at all**. A client generated from 2.3.0 keeps
-  # working against it, which is what makes it minor.
   version: 2.4.0
   title: Anywaye courier
   description: |
@@ -410,13 +68,6 @@ paths:
       tags: [inbound reports]
       operationId: receiveResendReport
       summary: One provider report about one or more recipients
-      # `webhookSignature`, not `bearerAuth` and **not** an empty `security: []`.
-      # The empty form is what this document spent courier-16 removing from two
-      # operations, and it would be wrong here for a different reason: it tells a
-      # generated client the operation is unauthenticated, which is the opposite of
-      # the truth. The truth is that it is authenticated by a signature the
-      # *sender* computes, and naming the mechanism is the only way a document can
-      # say that. See this file's header.
       security:
         - webhookSignature: []
       description: |
@@ -426,13 +77,11 @@ paths:
         hard-bounced address went on being mailed forever, and a sending domain's
         reputation died of a cause no dashboard names.
 
-        ## Who this is for
 
         **Resend, not a customer.** It is authenticated by the Svix signature on
         the request, never by a bearer token, and it is deliberately outside `/v1`
         for the same reason: `/v1` is this service's contract with a tenant.
 
-        ## What a 200 means, and what it counts
 
         The signature verified, courier read the report, and the counts say what
         happened to each recipient. There is no status for "courier read it and did
@@ -455,7 +104,6 @@ paths:
         row is written and the missing event is a log line, not a rollback that
         would throw the row away with it.
 
-        ## A redelivery is a 200, and this operation takes no `Idempotency-Key`
 
         A provider retries a webhook it got no answer for. That is **normal**:
         delivery is at-least-once. A second delivery of the same report is answered
@@ -476,7 +124,6 @@ paths:
         sends is one no provider sends: the retry identity here is the Svix
         signature, and the storage that makes it free is the unique index above.
 
-        ## The order, and what it means for the statuses
 
         The signature is checked **before the body is parsed**, and nothing
         upstream decodes it either — this operation's body is deliberately left
@@ -495,7 +142,6 @@ paths:
             nothing to correct, which is core's own line for 400 against 422. The
             same body unsigned is a 401.
 
-        ## Refusals that are courier's own, not the provider's
 
         `500` means **courier** is misconfigured — no signing secret, or one it
         cannot decode. It is deliberately not a 401: a route answering 401 to its
@@ -504,7 +150,6 @@ paths:
         could not be written; the transaction unwound, so nothing is half-recorded
         and the retry is safe.
 
-        ## What a caller cannot see
 
         **No response on this operation carries an email address.** Not the counts,
         not a 422's `detail`, not a value echoed back from the payload. The
@@ -600,7 +245,6 @@ paths:
         small JSON object saying the same thing the mail client's button would
         have done, and there is no prettier version of it here.
 
-        ## Who this is for, and what authenticates it
 
         **A mail client or a person, on the recipient's behalf.** Not a tenant and
         not a provider, which is why it is outside `/v1` and declares no security
@@ -619,7 +263,6 @@ paths:
         token is checked, and an `UnsubscribeToken` parameter is declared
         describing exactly what it is.
 
-        ## No redirect, ever
 
         RFC 8058 §3.1: "The mail sender MUST NOT return an HTTPS redirect, since
         redirected POST actions have historically not worked reliably, and many
@@ -628,7 +271,6 @@ paths:
         A redirect here would be the one thing that works for a browser and
         silently breaks the mail client that matters.
 
-        ## Nothing in a response is about a mailbox
 
         `{"data": {"status": "unsubscribed"}}` and nothing else — no address, no
         user id, no notification type, on any status. This is an unauthenticated
@@ -665,7 +307,6 @@ paths:
         redirect is on `unsubscribeByLink` above — the two operations differ only
         in the verb, which is §3.2's own arrangement.
 
-        ## The body is ignored, and the content type is not required
 
         RFC 8058 §3.2 says the receiver "sends the key/value pair in the
         `List-Unsubscribe-Post` header as the request body", and gives
@@ -679,7 +320,6 @@ paths:
         `Plug.Parsers` refusing a body it was told to parse and could not, which
         is a body that is not valid JSON on a route configured to read JSON.
 
-        ## A replay is the same 200, and it writes nothing
 
         A mail client is entitled to retry: a `POST` that timed out is a `POST`
         courier cannot distinguish from one that worked. So the second call answers
@@ -693,7 +333,6 @@ paths:
         scoped to a principal, and RFC 8058 §3.1 forbids this request from
         carrying authorization at all.
 
-        ## What it changes, and what it does not
 
         It records the recipient's own answer — `email_enabled: false` for that
         user and that notification type — so the next send of that type is refused
@@ -737,7 +376,6 @@ paths:
         existed those endpoints were reachable-looking and none of them could
         complete.
 
-        ## What a 200 means, precisely
 
         **The provider accepted the message for delivery, and courier wrote the
         `courier.email.delivered` outbox row in the same transaction.** It does
@@ -755,7 +393,6 @@ paths:
         the response, and a caller who cannot tell "suppressed" from "sent" retries
         forever.
 
-        ## Three refusals, told apart by status and `code`
 
         A client branches on `code` and not on `detail`, so the three outcomes
         below are distinguishable without parsing prose:
@@ -800,7 +437,6 @@ paths:
         retry is safe; and a failed request **releases** its `Idempotency-Key`
         rather than storing the failure, so a retry is not locked out for 24 hours.
 
-        ## Authentication
 
         Required, and not as a formality: an unauthenticated `POST` to a mail
         egress is an open relay, and it is the one surface where that would be
@@ -810,7 +446,6 @@ paths:
         and **never from the body** — a body carrying `account_id` is a 422 naming
         that field.
 
-        ## Why there is no `from`, and no `text`/`html`
 
         Both are deliberate refusals of the obvious design, and the argument is
         the same: courier sends *transactional* mail it renders from its own
@@ -825,7 +460,6 @@ paths:
         mail reported as delivered is the exact silent default this service has
         spent two packets refusing.
 
-        ## Idempotency
 
         Send `Idempotency-Key` and a retry with the same key and the same body
         returns the first response byte for byte with `Idempotency-Replayed:
@@ -834,7 +468,6 @@ paths:
         own problem rather than something courier hides. The header is documented
         here because silence about it would be the worse answer.
 
-        ## What a caller cannot see
 
         The suppression list is never exposed through a route. A 409 says a
         mailbox cannot be written to and does **not** echo the address back, and
@@ -1165,7 +798,6 @@ paths:
         is arbitrary but stable, and a list that reshuffled between two identical
         calls would be a pagination bug with no error message anywhere.
 
-        ## Query parameters
 
         * `unread=true` — only the ones with no `read_at`. The string `"true"`
           and nothing else; anything else, including absent, means all of them.
@@ -1176,7 +808,6 @@ paths:
           notifications older than it are returned. A value that does not parse
           is ignored rather than refused, for the same reason `limit` is.
 
-        ## What a caller cannot see
 
         `account_id` is courier's tenancy key and is never in a query, a body, or
         a response: the account is the caller's because the token says so, and a
@@ -1916,7 +1547,6 @@ components:
         document that overstates a credential is a document a generated client is
         built wrong from.
 
-        ## The scopes below are declared and NOT enforced
         Every operation here names a scope — `webhooks:read`, `notifications:write`,
         `messages:write` — and **courier does not check any of them yet.** That is
         a decision with a measured reason rather than an omission:
@@ -2675,40 +2305,6 @@ components:
                 description: The path in the *request*, which is what the caller can fix.
               code:
                 type: string
-                # Additive. `unknown_field`, `required` and
-                # `unknown_notification_type` are `sendMessage`'s, and each earns
-                # its place: `CourierWeb.Messages` has a closed vocabulary, so a
-                # key courier does not read (`account_id`, a misspelled
-                # `emai_enabled`) is a refusal the caller can act on rather than a
-                # field silently discarded — and a client that switches on `code`
-                # needs to tell "you sent me a field I do not have" from "the value
-                # in a field I do have is wrong".
-                #
-                # `notification_preferences_disabled` is the one code here that is
-                # not about syntax at all, and it is here rather than nowhere
-                # because `errors[]` is core's only machine-readable extension and
-                # a declined preference is a per-field refusal a client has to be
-                # able to act on. The alternative was a 409 indistinguishable from
-                # a suppressed mailbox, which is worse: two different remedies
-                # behind one code.
-                #
-                # The last three are `receiveResendReport`'s, and they are the same
-                # argument from the other direction. That operation's `errors[]` is
-                # courier declining to ACT on a report it read, and a provider has
-                # to be able to tell "you have introduced an event type courier does
-                # not read" from "you sent a bounce type courier does not know" from
-                # "one of your addresses is malformed" — three provider-side
-                # changes with three different fixes. A single `invalid_format`
-                # behind all three is a code that tells a sender nothing, and a
-                # refusal a reader cannot act on is a note rather than a diagnosis.
-                # `unsubscribed` arrived with the one-click endpoint and is the
-                # third refusal of the same shape and the third *remedy*: a
-                # declined preference is reversible through the `PUT` beside it, a
-                # suppressed mailbox is not courier's to reverse, and a
-                # one-click unsubscribe is neither — `email_suppressions` is
-                # immutable and no route clears a row. Three refusals at one status
-                # behind one code would tell a caller nothing about which of the
-                # three things to do next, so they are told apart here.
                 enum: [invalid_format, taken, blocked_scheme, blocked_host, blocked_address, dns_failure, unknown_field, required, unknown_notification_type, notification_preferences_disabled, unsubscribed, unsupported_event, unknown_bounce_type, invalid_recipient]
               detail:
                 type: string
@@ -3136,7 +2732,6 @@ components:
         for a request colliding with the current state of a resource, and it is the
         status that tells a generated client **not to retry**.
 
-        ## The recipient's mailbox is suppressed
 
         A hard bounce (RFC 5321 §5.1.1, permanent failure) and a spam complaint
         (RFC 2142 §5, an abuse report) are facts about a *mailbox*, recorded by a
@@ -3152,7 +2747,6 @@ components:
         by design, so this is a fact about a mailbox rather than about another
         tenant's data.
 
-        ## The sending domain is unusable
 
         courier chooses the sender by the message's from-domain, and a domain this
         account registered but has not proven — or has revoked — is a REFUSAL
@@ -3230,7 +2824,6 @@ components:
         rather than storing the failure, so retrying with the same key is not
         locked out for 24 hours.
 
-        ## Two causes, and which operations can get which
         One response covers both because OpenAPI has one slot per status, and
         `sendMessage` can get either.
 
@@ -3257,7 +2850,6 @@ components:
             outbox row was written, so nothing claims a delivery that did not
             happen.
 
-        ## It is deliberately NOT a 401
         A 401 says "your credential is not acceptable". A dependency being down
         says nothing of the sort, and a client that reads this as one will rotate a
         token that was never the problem and be refused again. The case where a 401
@@ -3268,7 +2860,6 @@ components:
         property that stops a status an attacker provoked from being an oracle for
         whether a leaked token was live.
 
-        ## The detail says nothing about the cause
         identity's status, the dial failure and the shape of its answer are in
         courier's logs under this response's `trace_id`. They are not here because
         this is a response anybody can provoke, and "courier could not confirm who

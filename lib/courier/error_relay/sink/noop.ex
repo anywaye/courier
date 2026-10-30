@@ -2,7 +2,6 @@ defmodule Courier.ErrorRelay.Sink.Noop do
   @moduledoc """
   A sink that discards, for a deployment that has a relay and nowhere to send.
 
-  ## Why this exists rather than a boot failure
 
   The alternative to this sink is refusing to start. That is the right answer
   for `COURIER_SECRET_BOX_KEY`, where a default would be a key in version
@@ -17,7 +16,6 @@ defmodule Courier.ErrorRelay.Sink.Noop do
   watching `forwarded` sees it climbing with nothing arriving anywhere. That is a
   diagnosable state. A process that refused to boot is not.
 
-  ## What it is for
 
   Nothing ships with it configured. It is the default a `dev` or `test`
   deployment gets, and it is the sink to configure in a self-hosting customer's

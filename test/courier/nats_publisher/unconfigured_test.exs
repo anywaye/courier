@@ -13,7 +13,6 @@ defmodule Courier.NatsPublisher.UnconfiguredTest do
       shape is one entry the supervisor does not start rather than a branch
       somewhere that has to remember not to.
 
-  ## Why this is a test about rows rather than about configuration
 
   Because "no loop started and no row is marked" is a claim about two things, and
   the second of them is a database assertion. A test that read
@@ -30,7 +29,6 @@ defmodule Courier.NatsPublisher.UnconfiguredTest do
   `NATS_URL` is set, this module when it is not — and `Courier.NatsTest` asserts
   the branch that follows from the variable.
 
-  ## `async: false`
 
   Application env is VM-global and `Courier.Nats` is a named process.
   """
@@ -76,7 +74,6 @@ defmodule Courier.NatsPublisher.UnconfiguredTest do
 
   describe "the publisher" do
     test "refuses rather than acknowledging" do
-      # The one assertion that cannot be made about Noop: it answers :ok.
       assert Unconfigured.publish(%{"type" => "courier.email.delivered"}) ==
                {:error, :nats_url_not_set}
     end
@@ -84,7 +81,6 @@ defmodule Courier.NatsPublisher.UnconfiguredTest do
 
   describe "with no broker configured" do
     test "no connection is started, and the tree says so" do
-      # No loop. Not "a loop that does nothing" — no process at all.
       assert Courier.Nats.supervised_child() == []
       assert is_nil(Process.whereis(Courier.Nats))
       assert Nats.connection() == {:error, :not_connected}
@@ -106,8 +102,6 @@ defmodule Courier.NatsPublisher.UnconfiguredTest do
     test "the row is still there to be published when a broker appears" do
       row = delivered_row!()
 
-      # Two passes, which is what an outbox with no broker does: claim, refuse,
-      # leave the row claimable. The row is neither dropped nor marked.
       assert {:error, %{failed: 1}} = perform_job(ProcessOutboxWorker, %{})
       assert {:error, %{failed: 1}} = perform_job(ProcessOutboxWorker, %{})
 
@@ -120,16 +114,7 @@ defmodule Courier.NatsPublisher.UnconfiguredTest do
 
   describe "the configuration that decides between the two halves" do
     test "no config file wires the suite's stand-in outside config/test.exs" do
-      # The one thing that cannot happen outside the suite: the Noop answering
-      # :ok. `config/test.exs` configures it and is the only file allowed to;
-      # "the test double is the default" is how a deployment drains its outbox
-      # into nowhere the first time somebody forgets a key.
       for path <- Path.wildcard("config/*.exs") do
-        # Comments stripped before the search. `config/runtime.exs` names the Noop
-        # in prose — "what the unset case deliberately does NOT do" — and a scan
-        # that counted comments would fail on the sentence explaining the
-        # refusal. A scan that only looked at assigned lines is the check that
-        # bites.
         statements =
           path
           |> File.read!()
@@ -146,8 +131,6 @@ defmodule Courier.NatsPublisher.UnconfiguredTest do
     test "runtime.exs names both halves of the NATS_URL condition" do
       source = File.read!("config/runtime.exs")
 
-      # The publisher that publishes, the publisher that refuses, and the guard
-      # that keeps both out of the suite. Three names, one condition.
       assert source =~ "Courier.NatsPublisher.Bus"
       assert source =~ "Courier.NatsPublisher.Unconfigured"
       assert source =~ "config_env() != :test"

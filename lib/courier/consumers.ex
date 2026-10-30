@@ -4,7 +4,6 @@ defmodule Courier.Consumers do
   one — every `consumes:` in every `anywaye.yml` was empty before this, so there
   was no subscriber anywhere and every service published into a bus nobody read.
 
-  ## THE ANSWER TO "WHAT DOES THE CONSUMER MARK, AND WHEN?"
 
   The relay marks `published_at` when the broker acknowledges. The consumer
   cannot use that rule, and the reason is structural:
@@ -23,7 +22,6 @@ defmodule Courier.Consumers do
   the relay acks *then* marks because nothing has happened yet, and the consumer
   handles *then* marks because something irreversible has.
 
-  ## WHY THIS IS A TABLE, AND WHY IT IS A SCHEMA CHANGE
 
   The packet asked whether a schema change could be avoided. It cannot, on core's
   own rule:
@@ -37,7 +35,6 @@ defmodule Courier.Consumers do
   redelivers. `consumed_events` keys on the envelope id, so the primary key is
   the dedupe and `record/2` answers `{:error, :already_consumed}`.
 
-  ## THE LOOP'S RULES, AND WHERE EACH CAME FROM
 
   Every one is the relay's rule (`Courier.Workers.ProcessOutboxWorker`) read from
   the other side, and the two are deliberately written to look alike so a reader
@@ -52,7 +49,6 @@ defmodule Courier.Consumers do
       dropped. An event stuck for an hour is an incident to alert on.
     * **One refusal does not hold up the batch behind it.**
 
-  ## WHAT HAPPENS TO AN EVENT COURIER DOES NOT SUBSCRIBE TO
 
   It is left claimable and un-attempted. Not a failure: it is not this
   consumer's business, and counting it would put a permanent non-zero on a
@@ -60,7 +56,6 @@ defmodule Courier.Consumers do
   `consumes:` entry added *later* pick up what was already delivered rather than
   starting from nothing.
 
-  ## WHY A RAISE IS A FAILED ROW AND NOT A DEAD CONSUMER
 
   Because a subscriber callback runs in the process that owns the subscription.
   An uncaught raise there takes down that process, which is a denial of service
@@ -71,7 +66,6 @@ defmodule Courier.Consumers do
   event is reached, because a test that only counted rows would pass with a loop
   that stopped at the first failure.
 
-  ## THE REGISTRY IS CONFIGURATION, AND IT IS A CLOSED SET
 
   `subscribed/0` is the list, read from `config :courier, :consumers`. It is
   asserted against `anywaye.yml`'s `consumes:` in both directions, because a
@@ -121,10 +115,6 @@ defmodule Courier.Consumers do
   @spec handler_for(String.t() | atom()) :: module() | nil
   def handler_for(type), do: registry()[to_string(type)]
 
-  # The registry read in ONE place, so `subscribed/0` and `handler_for/1` cannot
-  # disagree about what is configured — a consumer that subscribes to a type
-  # whose handler lookup reads a different key is a message dropped on the floor
-  # with a green test above it.
   defp registry, do: Application.get_env(:courier, :consumers, %{})
 
   @doc """
@@ -233,7 +223,6 @@ defmodule Courier.Consumers do
   that owns the subscription, and an uncaught raise there is a denial of service
   on the whole event stream.
 
-  ## WHY A REFUSED ENVELOPE IS MARKED HANDLED AND A FAILED ONE IS NOT
 
   Two different shapes, and the difference is whether a retry could ever succeed:
 
@@ -260,9 +249,6 @@ defmodule Courier.Consumers do
   defp dispatch(event, summary) do
     case handler_for(event.type) do
       nil ->
-        # Not this consumer's business. Left claimable and un-attempted, which is
-        # what makes a later `consumes:` entry pick up what was already
-        # delivered rather than starting from nothing.
         %{summary | skipped: summary.skipped + 1}
 
       handler ->
@@ -270,10 +256,6 @@ defmodule Courier.Consumers do
     end
   end
 
-  # The wrap is here and nowhere else, so every handler in the fleet gets it. A
-  # rescue alone would not be enough: `exit/1` and `throw/1` in a handler kill
-  # the loop as surely as a raise, and `:normal` exit is the shape a
-  # `Process.exit(self(), ...)` from inside a callback takes.
   defp run(handler, event, summary) do
     case safe_apply(handler, event) do
       {:ok, _result} ->
@@ -285,22 +267,10 @@ defmodule Courier.Consumers do
     end
   end
 
-  # **The handler's answer is returned AS IT IS — not wrapped.**
-  #
-  # `{:ok, handler.handle(event)}` looks right and is a total loss: a handler
-  # answering `{:error, :missing_acceptance_url}` comes back as
-  # `{:ok, {:error, :missing_acceptance_url}}`, `run/3` matches `:ok`, and the
-  # event is marked handled having sent nothing. The first draft of this line had
-  # the wrap in it, and the two arms of `Courier.ConsumersTest` that count
-  # `failed` caught it — every refusal was being recorded as a success, which is
-  # the one thing this loop must never do.
   defp safe_apply(handler, event) do
     handler.handle(event)
   rescue
     exception ->
-      # The reason is the exception's own message, which is what an operator
-      # needs; the stacktrace goes to the log, because a 2,000-character column
-      # is not a place to put one.
       Logger.error(
         "consumer handler raised on #{event.type} #{event.id}: #{Exception.message(exception)}"
       )
@@ -319,9 +289,6 @@ defmodule Courier.Consumers do
       {:ok, _} ->
         :ok
 
-      # A row that could not record its own failure is an incident, and logging
-      # it is all this can do — a `Repo.update!` here would kill the loop, which
-      # is the one thing that must never happen.
       {:error, write_error} ->
         Logger.error(
           "could not record the failed attempt on #{event.id}: #{inspect(write_error)}"
@@ -335,10 +302,6 @@ defmodule Courier.Consumers do
     %{summary | failed: summary.failed + 1, reason: summary.reason || reason}
   end
 
-  # The envelope's own attributes, read once and validated by SHAPE. An
-  # envelope courier cannot read an `id` from has nothing to dedupe on, and one
-  # with no `time` would sort to the end of every batch on PostgreSQL's default
-  # for NULL — silently, which is worse than a refusal.
   defp attributes(envelope) when is_map(envelope) do
     with {:ok, id} <- fetch_string(envelope, "id"),
          {:ok, type} <- fetch_string(envelope, "type"),
@@ -374,11 +337,6 @@ defmodule Courier.Consumers do
     end
   end
 
-  # `data` is stored as sent and defaults to `%{}` rather than being required.
-  # An envelope with no payload is a fact courier cannot act on, and the handler
-  # is where that becomes a named refusal — a table that insisted on it would
-  # refuse to *record* the event, which is how a poison message gets retried
-  # forever.
   defp data(envelope) do
     case Map.get(envelope, "data") do
       data when is_map(data) -> data
@@ -386,12 +344,6 @@ defmodule Courier.Consumers do
     end
   end
 
-  # `id` is the primary key and so is not in the cast list, which means a
-  # duplicate insert answers with a constraint error rather than a validation
-  # one. **Matched on the constraint NAME**, not on the message and not on the
-  # field: the message is assembled by the adapter and a driver upgrade would
-  # change the words, and matching on `:id` alone would also accept a second
-  # unique index somebody added later on some other column.
   defp unique_violation?(%Ecto.Changeset{errors: errors}) do
     Enum.any?(errors, fn
       {:id, {_message, opts}} -> to_string(opts[:constraint_name]) == "consumed_events_pkey"
@@ -402,9 +354,6 @@ defmodule Courier.Consumers do
   defp maybe_stamp({:ok, event}, opts) do
     case Keyword.fetch(opts, :inserted_at) do
       {:ok, inserted_at} ->
-        # A direct UPDATE rather than an option on `insert/2`, because Ecto's
-        # `returning: false` plus a follow-up write is two round trips and this
-        # path exists only for tests.
         ConsumedEvent
         |> where([row], row.id == ^event.id)
         |> Repo.update_all(set: [inserted_at: inserted_at, updated_at: inserted_at])
@@ -418,23 +367,6 @@ defmodule Courier.Consumers do
 
   defp maybe_stamp(other, _opts), do: other
 
-  # `last_error` is a bounded column and a provider error can be a whole HTML
-  # page. The bound lives here rather than in the migration because it is a
-  # property of the WRITE, and a changeset that raised on it would kill the
-  # consumer mid-batch.
-  #
-  # **A reason is not always a string, and `to_string/1` RAISES on a tuple.**
-  # The sessions-revoked consumer is the first handler whose refusal reaches
-  # here as `{:invalid_payload, changeset}` — a tuple, because `Courier.Mailers`
-  # answers a malformed payload with a changeset and the handler passes it
-  # through unchanged. `to_string/1` on a tuple raises `Protocol.UndefinedError`
-  # (tuples do not implement `String.Chars`), and the raise is inside
-  # `record_failure/3`, which `safe_apply/2`'s rescue does NOT cover — so it
-  # kills the loop, which is the one thing this module exists to prevent. The
-  # earlier handlers never hit this: `MemberInvited` refuses with an atom and
-  # `MemberAccepted`'s failure path is a rescued raise, which is a string. So
-  # the non-string arm is `inspect`, which never raises and keeps the reason
-  # readable on the row.
   defp bound(reason) do
     text = if is_binary(reason), do: reason, else: inspect(reason)
     String.slice(text, 0, 2_000)
@@ -444,9 +376,5 @@ defmodule Courier.Consumers do
   @doc "The attempt cap, read at runtime so an operator can retune without a rebuild."
   def max_attempts, do: tuning()[:max_attempts]
 
-  # `:consumer` and not `:consumers`, because `:consumers` is the REGISTRY — the
-  # type-to-handler map — and one key meaning two unrelated things is how a
-  # deployment ends up reading a batch size out of a handler map. The relay's
-  # `:outbox` has the same split and the same reason.
   defp tuning, do: Application.get_env(:courier, :consumer, [])
 end

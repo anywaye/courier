@@ -30,9 +30,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
 
   @account "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
 
-  # The account this file seeds as. The suite runs as `courier_app`, a subject of
-  # the row-level-security policies, so a write to a protected table with no
-  # identity set is refused `42501` -- see `Courier.DataCase`.
   @moduletag account: @account
   @other_account "7a6e5d4c-3b20-4f90-8d18-2c3e4f506172"
 
@@ -48,11 +45,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
     :ok
   end
 
-  # The conn a request is made as: the test's account header, and the idempotency
-  # key if the test asked for one. `build_conn/0` rather than `Plug.Test.conn/3`
-  # for the reason `webhook_endpoints_controller_test.exs` documents: the verb
-  # helpers need a conn with a `secret_key_base` and a host, and a header set on
-  # a `build_conn/0` survives because that is the conn the request dispatches from.
   defp as(account_id, key) do
     build_conn()
     |> conn_key(key)
@@ -62,9 +54,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
   defp owner(key \\ nil), do: as(@account, key)
   defp other(key), do: as(@other_account, key)
 
-  # A header is only set when the test asked for one, so "no key" is a conn with
-  # no such header rather than a conn with an empty one — `put_req_header/3` with
-  # `nil` would send the string "nil".
   defp conn_key(conn, nil), do: conn
   defp conn_key(conn, key), do: put_req_header(conn, KeyPlug.key_header(), key)
 
@@ -72,39 +61,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
 
   defp endpoint_count, do: Repo.aggregate(Courier.WebhookEndpoint, :count)
 
-  # PER-ACCOUNT COUNTS, each run UNDER ITS OWN IDENTITY.
-  #
-  # Two reasons, and the second is the one that took a driver test to find.
-  #
-  # First: a whole-table `Repo.aggregate(..., :count)` is a claim about every
-  # other test in the repository as much as about this one, and under an RLS
-  # `select` policy it is also a claim about the policy -- a body holding
-  # `@account`'s identity reads one row and the assertion fails with
-  #
-  #     left:  1
-  #     right: 2
-  #
-  # on a test whose two requests both did the right thing.
-  #
-  # Second: **a count taken from the test body is scoped to whatever identity the
-  # body happens to hold, and each request's scoped transactions change it.**
-  # Every controller action and the `:idempotent` plug opens its own
-  # `with_account/3`, and inside the sandbox each is a SAVEPOINT whose RELEASE
-  # does not discard a transaction-local setting. Measured, on a driver test
-  # that printed the identity at each step:
-  #
-  #     identity at start:          6f5d4c3b-...  (@account)
-  #     identity after OWNER post:  6f5d4c3b-...  (unchanged)
-  #     identity after OTHER post:  7a6e5d4c-...  (the other account)
-  #
-  # **That is a property of the sandbox, not a production leak**, and the
-  # difference is the whole of `Courier.Tenancy`'s argument for `is_local := true`:
-  # in production each scoped transaction COMMITS, which discards the setting
-  # in the database with nothing in courier to forget. The sandbox's
-  # transaction sits OUTSIDE them and nothing commits it until the test ends.
-  #
-  # So each count asks for the identity it wants rather than inheriting one, and
-  # `as_account/2` puts the previous one back so one count cannot colour the next.
   defp endpoints_for(account_id) do
     as_account(account_id, fn ->
       Repo.aggregate(
@@ -130,11 +86,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
 
   describe "a request without a key" do
     test "is processed normally, and records nothing" do
-      # core: "Requests without the key are processed normally. Retrying without
-      # a key is the client's bug." The proof it is processed *normally* and not
-      # silently deduplicated is that it really creates a second row — and the two
-      # urls differ, because `url` is unique per account and a duplicate is a 422
-      # for a reason that has nothing to do with idempotency.
       assert owner() |> post(@path, %{url: @url}) |> json_response(201)
       assert owner() |> post(@path, %{url: @other_url}) |> json_response(201)
 
@@ -168,12 +119,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
     end
 
     test "a header sent twice is treated as no header at all" do
-      # There is no rule saying which of two values wins, and picking the first
-      # would make the answer depend on a proxy's mood. So it is not a key.
-      #
-      # `put_req_header/3` *replaces*, so a duplicate cannot be built with it;
-      # `prepend_req_headers/2` can, which is what a proxy that appends its own
-      # header actually produces.
       conn =
         owner()
         |> prepend_req_headers([
@@ -193,9 +138,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
       first = owner(@key) |> post(@path, %{url: @url}) |> json_response(201)
       second = owner(@key) |> post(@path, %{url: @url}) |> json_response(201)
 
-      # Including the signing secret. It is the one field that exists in exactly
-      # one response and cannot be produced twice, so a replay that re-derived it
-      # rather than replaying it would hand out a secret the row never had.
       assert first["data"]["secret"] == second["data"]["secret"]
       assert first == second
     end
@@ -273,8 +215,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
 
   describe "a request that did not succeed" do
     test "leaves no row, so the same key can be used again" do
-      # A stored 4xx would pin the caller's own mistake for 24 hours: they fix the
-      # url, retry with the same key, and get a 409 about a key they never reused.
       assert owner(@key) |> post(@path, %{url: "not-a-url"}) |> json_response(422)
       assert claims() == 0
 
@@ -292,31 +232,12 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
 
   describe "the scope of a key" do
     test "the same key under another account is a different key" do
-      # core: "The same key on a different endpoint or principal is a different
-      # key." Two tenants choosing the same uuid must both get their endpoint.
       assert owner(@key) |> post(@path, %{url: @url}) |> json_response(201)
       assert other(@key) |> post(@path, %{url: @url}) |> json_response(201)
 
-      # COUNTED PER ACCOUNT, and that is the whole point of this assertion now.
-      # A whole-table `Repo.aggregate(..., :count)` is a claim about every other
-      # test in the repository as much as about this one (AGENTS.md, on
-      # `tenancy.yml`'s own entry points), and it is now also a claim about the
-      # RLS `select` policy: this test body runs with the file's identity, so a
-      # whole-table count reads **one** row and the assertion fails with
-      #
-      #     left:  1
-      #     right: 2
-      #
-      # on a test whose two requests both did the right thing. Two rows, each
-      # counted in its own account, is the claim this test is actually about --
-      # and it is the shape that cannot be satisfied by a boundary that refuses
-      # one account to see the other, since neither count can be inflated by
-      # reading across.
       assert endpoints_for(@account) == 1
       assert endpoints_for(@other_account) == 1
 
-      # The same, for the key claims: two accounts, two rows, counted each in its
-      # own account.
       assert claims_for(@account) == 1
       assert claims_for(@other_account) == 1
     end
@@ -324,8 +245,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
     test "the same key on another endpoint is a different key" do
       endpoint = an_endpoint()
 
-      # `@other_url`, not `@url`: `an_endpoint/0` already took `@url`, and a
-      # duplicate url is a 422 for a reason that has nothing to do with this.
       assert owner(@key) |> post(@path, %{url: @other_url}) |> json_response(201)
 
       assert owner(@key)
@@ -336,10 +255,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
 
   describe "a key whose first request is still running" do
     test "is a 409 conflict, which core's reserved list also puts at 409" do
-      # Not `idempotency_key_reused`: the bodies are identical, and telling a
-      # client its key was reused with a different body when it was not is the
-      # kind of lie a retry loop is built on. `conflict` is core's word for a
-      # request that collides with current state, and the detail says to retry.
       seed_in_flight()
 
       conn = owner(@key) |> post(@path, %{url: @url})
@@ -351,11 +266,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
       assert endpoint_count() == 0
     end
 
-    # A row in the state a genuinely concurrent request would leave behind, rather
-    # than two real requests racing: a race needs a scheduler to lose, and a test
-    # that depends on winning one is a flaky test wearing a correctness hat. The
-    # state is the same state the plug reads, so what is under test is the plug's
-    # reading of it.
     defp seed_in_flight do
       assert {:ok, _row} =
                Idempotency.claim(%{
@@ -369,8 +279,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
 
   describe "request_hash/1" do
     test "two bodies differing only in key order are the same request" do
-      # Otherwise a client that reformats its JSON between a call and its retry
-      # gets a 409 it did nothing to cause.
       assert KeyPlug.request_hash(body_conn(%{"a" => 1, "b" => 2})) ==
                KeyPlug.request_hash(body_conn(%{"b" => 2, "a" => 1}))
     end
@@ -386,9 +294,6 @@ defmodule CourierWeb.Plugs.IdempotencyTest do
     end
 
     test "an empty body hashes, rather than crashing" do
-      # `POST /v1/webhook_endpoints/{id}/test` sends no body at all, so the
-      # unfetched case is the one the ping path actually takes. Both conns are on
-      # the same path, so the only thing that can differ is the body.
       no_body = Plug.Test.conn(:post, @path)
       empty_body = body_conn(%{})
 

@@ -26,12 +26,6 @@ defmodule Courier.NotificationPreference do
   import Ecto.Changeset
 
 
-  # Deliberately **not** `account_id`. These are the fields a request's entry may
-  # name, and one a caller must not: it is set from `conn.assigns.current_account`
-  # and never cast, so a body carrying `account_id` is rejected as the unknown key
-  # it is rather than silently discarded. That is a stronger answer than the one
-  # `user_id` gets — which *is* an entry field, deliberately, so an entry that
-  # names its own user is accepted and then overwritten from the path.
   @fields ~w(user_id notification_type email_enabled push_enabled)a
 
   @type t :: %__MODULE__{}

@@ -1,43 +1,4 @@
 #!/usr/bin/env bash
-#
-# Assert a `mix test` run ran what it claims to have run.
-#
-#   bin/assert-suite <log> <label> <floor>
-#
-# PLAN.md §1: "A skipped test proves nothing, so a gate that skips is not
-# green." A suite that exits 0 with tests skipped has run less than it appears
-# to, and the number it skipped is the number of claims nobody checked. This is
-# the check that the claims are still claims.
-#
-# WHAT IT PROVES, AND WHY IT IS A FLOOR RATHER THAN AN EQUALITY
-#
-#   The floors are decrease detectors. 616 today; 615 is a deleted test and this
-#   goes red. They are not targets and they are not read out of the run, so a
-#   run cannot satisfy itself by having fewer tests.
-#
-#   The test is the shape of ExUnit's own summary line, which the 1.20 formatter
-#   builds as (lib/ex_unit/cli_formatter.ex):
-#
-#     Result: 0 tests                        <- nothing ran
-#     Result: N passed                       <- the only acceptable outcome
-#     Result: P/T passed                     <- a failure
-#     ... then, appended to the same line:  ", K skipped", ", K excluded",
-#     ", K invalid", and a " (...)" breakdown when test types differ
-#
-#   So one shape is accepted and every other is a failure, including the ones
-#   that read like success. If the wording ever changes, a red build is the
-#   correct answer and a more forgiving parser would be the bug. The three
-#   shapes above are the ones measured on this suite, not the ones guessed.
-#
-# LOCAL EQUIVALENT
-#
-#   The CI job runs this against the log bin/prime writes. The same two commands
-#   on a laptop are the whole thing:
-#
-#     ./bin/prime > /tmp/prime.log 2>&1 && bin/assert-suite /tmp/prime.log "whole suite" 616
-#
-#   Nothing here is CI-only: the floor is an argument, so a developer can hold a
-#   different tree to a different number without editing this file.
 set -euo pipefail
 
 if [ "$#" -ne 3 ]; then
@@ -59,7 +20,6 @@ if ! printf '%s' "$floor" | grep -Eq '^[0-9]+$'; then
   exit 2
 fi
 
-# The last `Result:` line is the one ExUnit finished on.
 summary="$(grep -E '^Result: ' "$log" | tail -n 1 || true)"
 if [ -z "$summary" ]; then
   echo "assert-suite: $label — no 'Result:' line; the run did not reach a summary" >&2
@@ -67,10 +27,6 @@ if [ -z "$summary" ]; then
   exit 1
 fi
 
-# A trailing " (...)" breakdown is allowed — it is the formatter counting test
-# types, and courier has no properties or doctests to produce one today. A
-# count of skipped, excluded or invalid is not allowed, and neither is a
-# fraction: both mean the run executed less than it reports.
 if ! printf '%s' "$summary" | grep -Eq '^Result: [0-9]+ passed( \([^)]*\))?$'; then
   echo "assert-suite: $label — '$summary'" >&2
   echo "  is not 'Result: N passed'. A fraction is a failure; a skipped, excluded" >&2

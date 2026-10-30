@@ -27,7 +27,6 @@ defmodule Courier.Consumers.SubscriberTest do
       empty list, which is the "no socket, no loop" property
       `Courier.Nats.supervised_child/0` holds on the connection side.
 
-  ## WHY `async: false`
 
   Two reasons, each disqualifying on its own: `Courier.Nats` is a NAMED
   process and `:nats` is VM-global application env (two async tests would
@@ -55,9 +54,6 @@ defmodule Courier.Consumers.SubscriberTest do
 
     Application.put_env(:courier, :nats, url: "nats://127.0.0.1:#{port}")
 
-    # The connection first, the subscriber after it — the order the
-    # application tree uses, because the subscriber subscribes on the
-    # connection it asks for.
     start_supervised!({Nats, []})
     start_supervised!(Subscriber)
 
@@ -66,8 +62,6 @@ defmodule Courier.Consumers.SubscriberTest do
     %{server: server, port: port}
   end
 
-  # The event identity publishes: `NewUserCreated`'s envelope, transcription
-  # not derivation (verified in identity's `internal/outbox/envelope.go`).
   defp envelope do
     %{
       "specversion" => "1.0",
@@ -83,20 +77,12 @@ defmodule Courier.Consumers.SubscriberTest do
     }
   end
 
-  # The bytes a publisher puts on the wire, delivered to the broker as
-  # published. A plain PUB — the envelope reaches core subscribers the same
-  # way a JetStream publish does, and this is the consumer's side.
   defp publish(subject, payload) do
     {:ok, connection} = Nats.connection()
     _ = Gnat.pub(connection, subject, payload)
     :ok
   end
 
-  # The subscription is established from the subscriber's init on the
-  # application's connection, so this waits for the FACT to exist rather than
-  # assuming it. Each poll is a `GenServer.call` on the broker — a barrier on
-  # the process that writes it — and the deadline is generous because the
-  # failure this guards against is a slow machine, not a defect.
   defp await_subscription(server, subject, deadline \\ 2_000) do
     Enum.find_value(1..(deadline |> div(5)), fn _ ->
       subscriptions = NatsServer.subscriptions(server)
@@ -110,13 +96,6 @@ defmodule Courier.Consumers.SubscriberTest do
     end) || flunk("no subscription to #{subject} appeared on the broker")
   end
 
-  # The record is written by the SUBSCRIBER process from its `handle_info/2`,
-  # and the hops between `Gnat.pub/3` returning and that write are a socket,
-  # the connection process and a `Process.send/2` — none of which the caller
-  # can barrier on. So the wait is for the FACT to exist: the row, written on
-  # the test's shared sandbox connection. That is a wait for a positive fact
-  # with a deadline, not an assertion on silence, and the fact is written by
-  # the process under test.
   defp await_record(id, deadline \\ 2_000) do
     Enum.find_value(1..(deadline |> div(5)), fn _ ->
       if Repo.get(ConsumedEvent, id) do
@@ -128,10 +107,6 @@ defmodule Courier.Consumers.SubscriberTest do
     end) || flunk("no consumed_events row for #{id} appeared within #{deadline}ms")
   end
 
-  # Exactly-one-email, drained AFTER the sends have all happened. The sends
-  # run inside `Consumers.consume/0` in this test process, so the mailbox is
-  # settled when it returns and the drain is a count rather than a wait — the
-  # opposite of asserting on silence.
   defp drain_emails(acc \\ [])
 
   defp drain_emails(acc) do
@@ -144,12 +119,6 @@ defmodule Courier.Consumers.SubscriberTest do
 
   describe "the subscription" do
     test "is to every service PREFIX the consumers name, not to the subscribed types", ctx do
-      # The set is DERIVED from `config :courier, :consumers`, and the receipt
-      # consumer is why: `billing.payment.succeeded` was registered while the
-      # subscription still asked the broker for `identity.>` alone, and the
-      # launch stack's first paid charge produced no receipt in mailpit while
-      # every consumer test passed. A type courier registers and does not
-      # subscribe to is a message nobody receives.
       await_subscription(ctx.server, "identity.>")
       await_subscription(ctx.server, "billing.>")
 
@@ -162,10 +131,6 @@ defmodule Courier.Consumers.SubscriberTest do
 
       assert Subscriber.subjects() == ["billing.>", "identity.>"]
 
-      # AND THE DERIVATION IS THE REGISTRY'S. A prefix that names no registered
-      # consumer is a subscription to traffic courier would drop, and a
-      # registered type whose service is missing from the set is the defect
-      # above. Held to `Consumers.subscribed/0` so the two cannot disagree.
       services =
         Consumers.subscribed() |> Enum.map(&(&1 |> String.split(".") |> hd())) |> Enum.uniq()
 
@@ -173,8 +138,6 @@ defmodule Courier.Consumers.SubscriberTest do
     end
 
     test "with no broker there is no subscriber at all" do
-      # The whole of the dark-loop refusal, on the consuming side: an empty
-      # LIST rather than a child the supervisor has to remember to ignore.
       Application.put_env(:courier, :nats, url: nil)
 
       assert Subscriber.supervised_child() == []
@@ -187,10 +150,6 @@ defmodule Courier.Consumers.SubscriberTest do
 
       publish("identity.user.created", Jason.encode!(envelope()))
 
-      # The delivery is recorded before the effect is owed: the row exists
-      # because the BROKER delivered, and the handler's success is what marks
-      # it. That ordering is the crash-recovery property, so it is asserted
-      # rather than assumed.
       await_record(envelope()["id"])
 
       row = Repo.get(ConsumedEvent, envelope()["id"])
@@ -200,14 +159,12 @@ defmodule Courier.Consumers.SubscriberTest do
       assert row.data["email"] == "kaka@example.com"
       assert is_nil(row.consumed_at)
 
-      # The sweep dispatches it, which is where the effect happens.
       summary = Consumers.consume()
       assert summary.handled == 1
 
       handled = Repo.get!(ConsumedEvent, envelope()["id"])
       assert handled.consumed_at
 
-      # One mail, and the outbox row that proves it is one send.
       assert [email] = drain_emails()
       assert [{_name, "kaka@example.com"}] = email.to
       assert email.subject == "Welcome to Anywaye"
@@ -218,12 +175,6 @@ defmodule Courier.Consumers.SubscriberTest do
     test "delivered TWICE with the same event id, produces ONE mail", ctx do
       assert await_subscription(ctx.server, "identity.>")
 
-      # The publisher crashes between publishing and marking the row, or the
-      # broker redelivers after a restart — either way the same envelope id
-      # arrives twice. Delivery is at-least-once; a second welcome mail is
-      # indistinguishable from spam. The unique constraint is the discipline,
-      # so this drives the same id through the real socket twice and asserts
-      # the effect happened once.
       payload = Jason.encode!(envelope())
 
       publish("identity.user.created", payload)
@@ -241,8 +192,6 @@ defmodule Courier.Consumers.SubscriberTest do
       summary = Consumers.consume()
       assert summary.handled == 1
 
-      # Exactly one email, drained after the sends: the second delivery
-      # produced no second effect.
       assert [email] = drain_emails()
       assert [{_name, "kaka@example.com"}] = email.to
 
@@ -252,11 +201,6 @@ defmodule Courier.Consumers.SubscriberTest do
     test "an event for a type courier does not subscribe to is RECORDED and skipped", ctx do
       await_subscription(ctx.server, "identity.>")
 
-      # identity publishes `identity.member.removed` from the same file; the
-      # handler does not exist yet. A subscription to four exact types would
-      # have dropped this on the floor. The prefix records it, the loop
-      # reports it skipped and leaves it claimable for the `consumes:` entry
-      # added later.
       removed =
         envelope()
         |> Map.put("id", "8c9d0e1f-0000-4000-8000-00000000000b")
@@ -280,21 +224,10 @@ defmodule Courier.Consumers.SubscriberTest do
     test "is a warning naming the topic and not the payload, and the subscriber survives", ctx do
       await_subscription(ctx.server, "identity.>")
 
-      # Bytes that are not an envelope: no id to dedupe on, nothing a handler
-      # could ever act on. The refusal is loud — a warning with the topic and
-      # the reason — and silent about the content, which is the redaction
-      # boundary on the consuming side.
-      # Both deliveries go over the ONE connection, so the two `:msg`
-      # callbacks are processed in order: when the good event's row exists,
-      # the bad delivery's refusal has certainly been logged. The wait for
-      # that row is the barrier, inside the capture.
       log =
         capture_log(fn ->
           publish("identity.user.created", "not json at all: kaka@example.com")
 
-          # And it keeps receiving, which is the point of not crashing: a
-          # subscriber callback that raises takes the subscription down for
-          # every subsequent message.
           publish("identity.user.created", Jason.encode!(envelope()))
           await_record(envelope()["id"])
         end)
@@ -303,7 +236,6 @@ defmodule Courier.Consumers.SubscriberTest do
       assert log =~ "could not record"
       refute log =~ "kaka@example.com"
 
-      # The good event after the bad one still arrived.
       assert Repo.get(ConsumedEvent, envelope()["id"])
     end
   end

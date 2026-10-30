@@ -2,7 +2,6 @@ defmodule Courier.ErrorRelay.Sink.Req do
   @moduledoc """
   The shipped sink: a Sentry envelope POSTed to a GlitchTip instance.
 
-  ## The DSN is parsed once, at boot, and the key never appears in a log line
 
   A DSN is `scheme://public_key:secret_key@host:port/project_id`. GlitchTip's
   envelope endpoint is `POST /api/{project_id}/envelope/` and it authenticates
@@ -15,7 +14,6 @@ defmodule Courier.ErrorRelay.Sink.Req do
   its own DSN puts a GlitchTip write key in a log store, which is the exact leak
   this packet is about — committed by the thing built to prevent it.
 
-  ## Nothing here buffers and nothing here retries
 
   `receive_timeout` is set, and there is exactly one attempt. The same rule the
   collector's exporters follow with `sending_queue: {enabled: false}` and
@@ -47,12 +45,10 @@ defmodule Courier.ErrorRelay.Sink.Req do
         post(url, headers, envelope)
 
       {:error, reason} ->
-        # `reason` is a symbol built in `parse_dsn/1`. Never the DSN.
         {:error, reason}
     end
   end
 
-  # --- the DSN ---------------------------------------------------------------
 
   @doc """
   Turn a DSN into the URL and headers the store wants.
@@ -94,29 +90,12 @@ defmodule Courier.ErrorRelay.Sink.Req do
 
   defp fetch_scheme(_uri), do: {:error, :dsn_has_no_scheme}
 
-  # Host **and port**, and reading `%URI{host:}` alone drops the port.
-  #
-  # `URI`'s `host` field excludes it — `URI.parse("http://glitchtip:8000/1").host` is
-  # `"glitchtip"` — so a sink DSN naming a store on anything but port 80 dialled
-  # port 80 and every envelope came back `store_unreachable`. Found at the running
-  # compose stack against GlitchTip on 8000, and it is exactly the defect a unit
-  # test over the parser would have missed: the natural fixture DSN has no port in
-  # it.
-  #
-  # `URI.port/1` **defaults per scheme** rather than returning `nil`, so port 80 is
-  # stated rather than left to be discovered. `URI.to_string/1` on the original URI
-  # is not used, because it would carry the DSN's userinfo — and a URL with the
-  # write key in it is one that belongs in a log line of exactly the kind this
-  # module refuses to emit.
   defp fetch_host(%URI{host: host} = uri) when is_binary(host) and host != "" do
     {:ok, "#{host}:#{uri.port}"}
   end
 
   defp fetch_host(_uri), do: {:error, :dsn_has_no_host}
 
-  # `userinfo` is `public:secret` or just `public`. The **public** key is the
-  # one that authenticates an envelope; the secret half of a DSN is for the
-  # API, not the ingest endpoint, so it is read and discarded rather than used.
   defp fetch_key(%URI{userinfo: userinfo}) when is_binary(userinfo) and userinfo != "" do
     case String.split(userinfo, ":", parts: 2) do
       [key | _rest] when key != "" -> {:ok, key}
@@ -126,14 +105,9 @@ defmodule Courier.ErrorRelay.Sink.Req do
 
   defp fetch_key(_uri), do: {:error, :dsn_has_no_key}
 
-  # The project id is the path, with the Sentry convention that a path of `/0`
-  # or a bare host means "infer it from the key". Only the first form is
-  # supported here, because a relay cannot infer a project id and guessing one
-  # would write every error into whichever project happened to be first.
   defp fetch_project(%URI{path: "/" <> project}) when project != "", do: {:ok, project}
   defp fetch_project(_uri), do: {:error, :dsn_has_no_project}
 
-  # --- the request -----------------------------------------------------------
 
   defp post(url, headers, envelope) do
     case Req.post(url,
@@ -147,9 +121,6 @@ defmodule Courier.ErrorRelay.Sink.Req do
         :ok
 
       {:ok, %{status: status}} ->
-        # The status, not the body. A Sentry store's error body can quote the
-        # event it rejected, and this process logs to the same place courier's
-        # own logs go.
         Logger.warning("[error-relay] the store answered #{status}")
         {:error, :store_refused}
 

@@ -3,7 +3,6 @@ defmodule Courier.TenantSendingDomain do
   One account's claim on a domain it sends mail from, and the provider
   credential that is allowed to send from it.
 
-  ## The credential is sealed, and no read path returns it
 
   `credential` holds `Courier.SecretBox` ciphertext, never the token — the same
   shape `webhook_endpoints.secret` uses, for the same reason: a database dump
@@ -15,7 +14,6 @@ defmodule Courier.TenantSendingDomain do
   could return the token is a read path a later packet will add a caller to,
   and the way to make that impossible is to not write it.
 
-  ## `verified_at` is the usability switch
 
   A row is usable — selectable by `Courier.Deliver` — only when `verified_at`
   is set AND `status` is `:enabled`. Registration alone proves nothing: the
@@ -24,7 +22,6 @@ defmodule Courier.TenantSendingDomain do
   capability, and the send path refuses rather than falls back to the
   deployment credential on a domain somebody claimed.
 
-  ## `account_id` is never cast from a request
 
   It comes from the authenticated principal (`Courier.TenantSendingDomains.
   register/2` takes it as an argument), and the table is protected by the
@@ -35,11 +32,6 @@ defmodule Courier.TenantSendingDomain do
 
   import Ecto.Changeset
 
-  # The providers whose credential shape courier speaks. `cloudflare` is the
-  # only one today: an API token plus the provider account id, which is what
-  # `Courier.Adapters.CloudflareEmail` posts with. A second provider is a row
-  # here plus an adapter builder — the same "the provider set is data" rule
-  # `Courier.Mailers.kinds/0` and `Courier.MailerAdapter.providers/0` follow.
   @providers [:cloudflare]
 
   @statuses [:enabled, :revoked]
@@ -118,15 +110,6 @@ defmodule Courier.TenantSendingDomain do
     change(domain, status: :revoked)
   end
 
-  # A domain is a hostname, lowercased, with no scheme, no path and no
-  # trailing dot. The shape is checked here rather than at the database
-  # because a changeset error names the field and a database error does not.
-  #
-  # Normalisation is a separate step and not something smuggled into the
-  # validator: a validator that also rewrites its field is a validator whose
-  # rewrite nobody can see in the diff, and the next reader will "fix" the
-  # obvious double assignment. Lowercasing matters because DNS is
-  # case-insensitive and the send path matches on the exact string.
   defp validate_domain(changeset) do
     validate_change(changeset, :domain, fn :domain, domain ->
       if domain?(domain), do: [], else: [domain: "is not a domain"]
@@ -150,10 +133,6 @@ defmodule Courier.TenantSendingDomain do
     end
   end
 
-  # A dotted hostname of DNS labels: letters, digits and hyphens, no leading
-  # or trailing hyphen per label, at least two labels, a TLD that is not all
-  # digits. Deliberately stricter than "contains a dot": `not a domain` is a
-  # better error than a row the send path can never match.
   defp domain?(domain) do
     Regex.match?(~r/^(?!-)[a-z0-9-]{1,63}(?<!-)(\.[a-z0-9-]{1,63}(?<!-))+$/i, domain) and
       !Regex.match?(~r/\.[0-9]+$/, domain)

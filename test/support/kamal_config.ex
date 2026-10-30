@@ -16,14 +16,13 @@ defmodule Courier.TestSupport.KamalConfig do
   next service that adopts a backup configuration copies one file and reads it —
   the same decision `Courier.TestSupport.OpenAPIPaths` records for itself.
 
-  ## Why this is not a YAML parser
 
   courier has no YAML dependency and adding one is a decision this repository has
   not made (`AGENTS.md`: "No dependency without approval"). So this reads the
   handful of keys the two contracts are made of, by indentation, and understands
   exactly that. The subset:
 
-    * `#` comments and blank lines are dropped; a `<% … %>` ERB block is dropped
+    * `
       whole. Both are dropped rather than parsed, because neither can change the
       meaning of a key this module reads.
     * a top-level key is a line at column 0 ending in `:`; a nested key is the
@@ -39,7 +38,6 @@ defmodule Courier.TestSupport.KamalConfig do
   that said nothing agree with each other, and a green check over nothing is
   worse than no check.
 
-  ## Every reader refuses rather than under-reads
 
   A missing file, an empty file, a key that is absent, an accessory with no
   `env.secret`, a `databases:` list with no entries — each raises a message
@@ -101,14 +99,6 @@ defmodule Courier.TestSupport.KamalConfig do
     lines = read!(path)
     kept = significant(lines)
 
-    # Scoped to the lines that are NOT comments, and the reason is the same one
-    # that scopes the credential check: this file's own header explains the
-    # unrendered-ERB failure by QUOTING the tag, so a whole-file scan reports an
-    # ERB tag in a document that has none — and the reader that raised on that
-    # would be refusing the file for containing an explanation of itself.
-    #
-    # A tag on a line YAML reads is a real failure; a tag inside a comment is
-    # documentation, and `YAML.safe_load` never sees it.
     erb? = Enum.any?(kept, &erb_tag?/1)
     level = top_level_indent!(path, kept)
 
@@ -176,10 +166,6 @@ defmodule Courier.TestSupport.KamalConfig do
   """
   @spec mounts_backup_config?(deploy(), String.t()) :: boolean()
   def mounts_backup_config?(deploy, container_path \\ "/app/config/kamal-backup.yml") do
-    # `String.trim_leading/2` and NOT `split_mount/1` on the wanted path: a bare
-    # container path has no `:` in it, so `split_mount/1` would hand back `[]` and
-    # every mount would compare against an empty list. The reader comparing
-    # nothing to nothing is the failure mode this module exists to refuse.
     wanted = String.trim_leading(container_path, "/")
 
     Enum.any?(deploy.mounts, fn mount ->
@@ -210,7 +196,6 @@ defmodule Courier.TestSupport.KamalConfig do
     end
   end
 
-  # --- reading ---------------------------------------------------------------
 
   @spec read!(Path.t()) :: [String.t()]
   defp read!(path) do
@@ -227,10 +212,6 @@ defmodule Courier.TestSupport.KamalConfig do
     end
   end
 
-  # An ERB block is a multi-line `<% … %>` region. It is dropped whole rather
-  # than parsed: `config/deploy.yml` opens with one, and every key this module
-  # reads lives after it. A single-line `<%= … %>` is LEFT ALONE, because
-  # `service: <%= service %>` is the one value this module wants to see verbatim.
   defp drop_erb_blocks(lines) do
     {kept, _inside?} =
       Enum.reduce(lines, {[], false}, fn line, {acc, inside?} ->
@@ -268,20 +249,14 @@ defmodule Courier.TestSupport.KamalConfig do
                 "comments is a file nothing reads, and this reader would agree with it."
 
       _ ->
-        # The indent of the first line, so the shape is derived from the file
-        # rather than assumed to be zero.
         lines
         |> Enum.map(&indent/1)
         |> Enum.min()
     end
   end
 
-  # `String.length/1`, not `length/1`: `length/1` is `List.length/1`, so it raises
-  # `ArgumentError` on every line of every file this module reads. It is the kind
-  # of slip that makes a helper look broken rather than wrong.
   defp indent(line), do: String.length(line) - String.length(String.trim_leading(line, " "))
 
-  # A `key: value` line at exactly `level`.
   defp scalar(path, lines, level, wanted) do
     lines
     |> Enum.filter(&(indent(&1) == level and key(&1) == wanted))
@@ -327,17 +302,6 @@ defmodule Courier.TestSupport.KamalConfig do
     depth = indent(key_line)
     block = Enum.drop(lines, start + 1) |> Enum.take_while(&(indent(&1) > depth))
 
-    # ONE ENTRY IS A `- ` LINE PLUS EVERYTHING INDENTED UNDER IT, not just the
-    # line carrying the dash. A database in this format is written as
-    #
-    #     - name: primary
-    #       adapter: postgres
-    #       url:
-    #         secret: DATABASE_URL
-    #
-    # so reading only the dash lines finds `name` and nothing else — and the
-    # reader then reports "no adapter" for a file that declares one. Every
-    # assertion built on a half-read entry is an assertion about the reader.
     entries = split_entries(block, depth)
 
     if entries == [] do
@@ -355,13 +319,6 @@ defmodule Courier.TestSupport.KamalConfig do
     end)
   end
 
-  # Group a block into its sequence entries: a `- ` line opens one, and every
-  # line after it belongs to that entry until the next `- `.
-  #
-  # Accumulating in reverse and reversing twice is deliberate — `Enum.chunk_while/2`
-  # would read better and cannot express "the first line of the block opens an
-  # entry even though it is the one line with no `- ` above it", which is exactly
-  # the case that makes this a function rather than an inline filter.
   @spec split_entries([String.t()], non_neg_integer()) :: [[String.t()]]
   defp split_entries(block, depth) do
     {groups, current} =
@@ -375,11 +332,6 @@ defmodule Courier.TestSupport.KamalConfig do
         end
       end)
 
-    # The LAST group is never pushed by the loop above — a `- ` line pushes the
-    # group it CLOSES, not the one it opens — so it is added here. Forgetting
-    # this is the shape of bug that reads as "the reader drops the final entry",
-    # which on a one-database configuration looks exactly like a file with no
-    # `databases:` in it.
     [current | groups]
     |> Enum.reject(&is_nil/1)
     |> Enum.reverse()

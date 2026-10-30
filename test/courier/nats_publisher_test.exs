@@ -64,8 +64,6 @@ defmodule Courier.NatsPublisherConfigTest do
   end
 
   test "the relay publishes through the configured publisher" do
-    # config/test.exs points this at the stand-in; a later packet points it at
-    # the Gnat client without touching the worker.
     assert NatsPublisher.impl() == NatsPublisher.Noop
   end
 

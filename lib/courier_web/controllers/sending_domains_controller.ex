@@ -8,7 +8,6 @@ defmodule CourierWeb.SendingDomainsController do
   adds no behaviour the context does not already have, and the two constraints
   that matter are both enforced one layer down and are only *not opened* here.
 
-  ## The account comes from the principal, never from the request
 
   Every action reads `conn.assigns.current_account`, which
   `CourierWeb.Plugs.Principal` put there from the caller's token, and never from
@@ -24,7 +23,6 @@ defmodule CourierWeb.SendingDomainsController do
   get/2` answers `nil` for another account's row and for a non-uuid alike, so the
   controller cannot tell those two apart and does not try.
 
-  ## A credential is never in a response
 
   The context has no `token/1` and no `credential/1`; this controller renders a
   fixed set of eight fields that does not include one. The credential crosses
@@ -33,7 +31,6 @@ defmodule CourierWeb.SendingDomainsController do
   it is never rendered anywhere — and it is not a credential, so the point is
   only that the response is a fixed, auditable set rather than the struct.
 
-  ## Verification is the context's two-part proof, unchanged
 
   `POST /:id/verify` calls `Courier.TenantSendingDomains.verify/2` and maps its
   refusals onto statuses a client branches on:
@@ -144,9 +141,6 @@ defmodule CourierWeb.SendingDomainsController do
     end)
   end
 
-  # The domain `id` in the caller's account, or `:error`. The context answers
-  # `nil` for another account's row and for a non-uuid alike, so the two collapse
-  # onto one 404 and the response leaks nothing about which it was.
   defp fetch(conn, id) do
     case TenantSendingDomains.get(id, conn.assigns.current_account) do
       nil -> :error
@@ -154,16 +148,6 @@ defmodule CourierWeb.SendingDomainsController do
     end
   end
 
-  # The whole action runs inside one transaction carrying the caller's account,
-  # so the row-level-security policies on `tenant_sending_domains` have an
-  # identity to key on. A plug cannot hold such a transaction open across the
-  # controller — see `Courier.Tenancy` — so each action opens its own, with the
-  # account `CourierWeb.Plugs.Principal` stashed.
-  #
-  # `{:error, _}` — a `Repo.rollback` that escaped the action — is unreachable by
-  # construction: the context rolls back only inside its own inner transactions.
-  # Handled as a 503 rather than matched away, on the same rule as
-  # `CourierWeb.Plugs.Idempotency`'s own scoping: a refusal the caller retries.
   defp scoped(conn, fun) do
     case Tenancy.with_account(Repo, conn.assigns.current_account, fun) do
       {:ok, conn} -> conn
@@ -171,9 +155,6 @@ defmodule CourierWeb.SendingDomainsController do
     end
   end
 
-  # The eight fields the API promises, and no others. There is no credential here
-  # by construction rather than by omission, and `provider_account_id` is not
-  # rendered either — see the moduledoc.
   defp domain_json(%TenantSendingDomain{} = domain) do
     %{
       id: domain.id,
@@ -191,9 +172,6 @@ defmodule CourierWeb.SendingDomainsController do
     Problem.send(conn, 404, :not_found, "No sending domain with that id.")
   end
 
-  # A refusal from the vocabulary rather than from the changeset: the body named
-  # a field courier does not read. The field is named so a misspelling is
-  # actionable, and `account_id` arrives here exactly as a typo does.
   defp validation_failed_fields(conn, fields) do
     Problem.send(conn, 422, :validation_failed, "The sending domain was not valid.", fields)
   end
@@ -213,10 +191,6 @@ defmodule CourierWeb.SendingDomainsController do
     )
   end
 
-  # A uniqueness refusal reads as `taken` — the code core's conventions and the
-  # webhook endpoints use for the same answer — rather than as a format error.
-  # Both indexes on this table are uniqueness rules: a duplicate registration for
-  # one account, and a domain another account already verified.
   defp code_for(:domain, opts) do
     case opts[:constraint] do
       :unique -> "taken"
@@ -226,9 +200,6 @@ defmodule CourierWeb.SendingDomainsController do
 
   defp code_for(_field, opts), do: Keyword.get(opts, :code, "invalid_format")
 
-  # The proof's refusals, mapped onto the two statuses a client branches on. The
-  # reason a provider gave is logged and never returned: it is the provider's
-  # sentence, and this repository is public.
   defp verification_failed(conn, {:dns_mx_mismatch, _records}) do
     domain_not_proven(
       conn,
@@ -253,9 +224,6 @@ defmodule CourierWeb.SendingDomainsController do
     )
   end
 
-  # A provider that refused the verification send is a fact about the credential
-  # the caller supplied, which is the caller's to fix — the same "the request is
-  # wrong" answer a declined preference gets, and `errors[]` names the field.
   defp verification_failed(conn, {:credential_refused, reason}) do
     Logger.error("sending domain verification refused by the provider: #{inspect(reason)}")
 
@@ -269,9 +237,6 @@ defmodule CourierWeb.SendingDomainsController do
     )
   end
 
-  # A resolver that could not answer is courier's dependency failing, and a
-  # credential courier cannot open is courier's own key having rotated. Both are
-  # 503 rather than 422: nothing about the caller's request is wrong.
   defp verification_failed(conn, {:dns_lookup_failed, reason}) do
     Logger.error("sending domain verification could not resolve DNS: #{inspect(reason)}")
     unavailable(conn)
@@ -282,8 +247,6 @@ defmodule CourierWeb.SendingDomainsController do
     unavailable(conn)
   end
 
-  # A domain another account already verified: the partial unique index refuses
-  # the write, and the changeset names the field.
   defp verification_failed(conn, %Ecto.Changeset{} = changeset),
     do: validation_failed(conn, changeset)
 

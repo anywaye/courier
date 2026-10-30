@@ -22,9 +22,6 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
   alias Courier.OutboxEvent
   alias Courier.Workers.ProcessOutboxWorker
 
-  # The relay's backoff cap, in seconds. Written out here rather than read from
-  # the implementation: a test that reads the constant it is testing proves
-  # nothing.
   @backoff_cap 60
 
   @user_id "6f5d4c3b-2a19-4e8f-9c07-1b2d3e4f5061"
@@ -40,8 +37,6 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
 
   defp undelivered, do: Repo.all(OutboxEvent) |> Enum.reject(& &1.published_at)
 
-  # Produce outbox rows through the real path, so the relay is never tested
-  # against a row shape courier itself would not write.
   defp deliver!(url) do
     {:ok, result} = Deliver.welcome(payload(url))
     Repo.get!(OutboxEvent, result.event_id)
@@ -90,10 +85,6 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
       row = deliver!("https://anywaye.com/verify?token=abc123")
       {:ok, _result} = perform_job(ProcessOutboxWorker, %{})
 
-      # The first run's envelope has to leave the mailbox before the second run's
-      # silence means anything: `refute_received` reads the test process's
-      # mailbox, and an unconsumed message from the first run would be read as a
-      # republish.
       assert_received {:nats_published, _published}
 
       assert {:ok, %{published: 0}} = perform_job(ProcessOutboxWorker, %{})
@@ -126,9 +117,6 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
     test "publishes oldest first, so subscribers see sends in the order they happened" do
       rows = for index <- 1..3, do: deliver!("https://anywaye.com/verify?token=#{index}")
 
-      # Backdate the rows so the relay is ordering on the recorded time rather
-      # than on whatever the database hands back: the first row is three minutes
-      # older than the third, which is the opposite of its insertion order.
       for {row, minutes} <- Enum.zip(rows, [3, 2, 1]) do
         row
         |> Ecto.Changeset.change(occurred_at: DateTime.add(DateTime.utc_now(), -minutes * 60))
@@ -143,10 +131,6 @@ defmodule Courier.Workers.ProcessOutboxWorkerTest do
           envelope["id"]
         end
 
-      # Oldest first, which is `rows` and not the reverse: a subscriber must see
-      # the sends in the order they happened, and core's outbox spec asks for the
-      # same thing ("order by created_at, so a slow batch cannot publish event 2
-      # before event 1").
       assert published == Enum.map(rows, & &1.id)
     end
 

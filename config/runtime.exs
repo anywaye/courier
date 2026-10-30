@@ -1,192 +1,28 @@
 import Config
 
-# config/runtime.exs is executed for all environments, including
-# during releases. It is executed after compilation and before the
-# system starts, so it is typically used to load production configuration
-# and secrets from environment variables or elsewhere. Do not define
-# any compile-time configuration in here, as it won't be applied.
-# The block below contains prod specific runtime configuration.
 
-# ---------------------------------------------------------------------------
-# MIGRATING OR SERVING — this file validates only what the boot in front of it
-# actually needs, and this is the line that decides which boot that is.
-#
-# WHY THE DISTINCTION IS FORCED ON courier. `config/runtime.exs` is evaluated by
-# every release invocation, and a release is invoked for two very different
-# things: **serving** (`bin/server` -> `courier start`, `PHX_SERVER=true`) and a
-# **one-shot command** (`bin/migrate` -> `courier eval
-# Courier.Release.migrate`). The credentials the blocks below raise over —
-# courier's own identity token, the webhook-sealing key, the mail relay, the
-# error-relay token, `SECRET_KEY_BASE` — are the SERVING contract. A migration
-# reads exactly one of them (the owner DSN) and none of the rest.
-#
-# THE BUG THIS FIXES WAS A BOOTSTRAP CYCLE, not a missing check. On a fresh box
-# the substrate runs each service's migrate entrypoint as a one-shot Job BEFORE
-# the stack is up, and mints courier's `COURIER_IDENTITY_TOKEN` in a LATER step,
-# once identity is serving. So the migrate pod booted, evaluated this file, and
-# died on `COURIER_IDENTITY_TOKEN is missing` — a variable that does not exist
-# yet and that a migration never reads. The same file, unchanged, is exactly
-# right for the server, which is why the fix is a distinction and not a
-# deletion.
-#
-# WHERE THE SIGNAL COMES FROM, AND WHY IT IS NOT A NEW VARIABLE courier invents.
-# The release's own `bin/<name>` script sets `RELEASE_COMMAND` from its first
-# argument and exports it before the VM starts (`RELEASE_COMMAND="$1"; export
-# RELEASE_COMMAND` in the generated script). So it is `start` for `bin/server`,
-# `eval` for `bin/migrate`, and — the part that matters — the release script
-# OVERWRITES any inherited value. A deployment cannot set `RELEASE_COMMAND=eval`
-# in front of `bin/server` and have the server skip its contract, because
-# `bin/server` sets it to `start` itself. The gate is therefore the release's own
-# statement that this process is a one-shot command rather than the server, and
-# not a variable a server could carry by accident.
-#
-# `mix` invocations leave `RELEASE_COMMAND` unset, so `serving?` is true for
-# `mix phx.server` and for a `MIX_ENV=prod mix` release task. That is the safe
-# direction: anything that is not the release's own one-shot command is treated
-# as the server, and refuses without the contract.
-#
-# `test/courier/release_migrate_config_test.exs` evaluates THIS file as a boot
-# under both commands and asserts the two answers, so the split is held by a test
-# rather than by this paragraph.
-# ---------------------------------------------------------------------------
 serving? = System.get_env("RELEASE_COMMAND") != "eval"
 
-# ## Using releases
-#
-# If you use `mix release`, you need to explicitly enable the server
-# by passing the PHX_SERVER=true when you start it:
-#
-#     PHX_SERVER=true bin/courier start
-#
-# Alternatively, you can use `mix phx.gen.release` to generate a `bin/server`
-# script that automatically sets the env var above.
 if System.get_env("PHX_SERVER") do
   config :courier, CourierWeb.Endpoint, server: true
 
-  # **Both** endpoints, and the second one is not a copy-paste error. The error
-  # endpoint declares `server: false` in `config/config.exs` so that a
-  # `mix test` run and a `mix phx.server` run do not bind a second listener, which
-  # is the right default; but a release that serves the customer API and does not
-  # serve the ingest surface is a relay with no door.
-  #
-  # This is release-only breakage in the same family as the `Sentry` child-spec
-  # mistake in `Courier.Application`: nothing in the suite runs a release, and the
-  # symptom is a single log line —
-  #
-  #     Configuration :server was not enabled for CourierWeb.ErrorEndpoint,
-  #     http/https services won't start
-  #
-  # — which reads like a notice and leaves the relay silently unreachable. It is
-  # better than a boot crash and worse than a boot failure, which is the worst
-  # combination to debug from a container log.
   config :courier, CourierWeb.ErrorEndpoint, server: true
 end
 
 config :courier, CourierWeb.Endpoint,
   http: [port: String.to_integer(System.get_env("PORT", "4000"))]
 
-# ---------------------------------------------------------------------------
-# THE SSL REDIRECT, AND IT IS OFF UNLESS A DEPLOYER SAYS OTHERWISE.
-#
-# Genuine prod sets `COURIER_FORCE_SSL=true` (or `1`): `CourierWeb.Plugs.ForceSSL`
-# then redirects every plain-HTTP request to https, exactly as compile-time
-# `force_ssl` in `config/prod.exs` used to — except that key is COMPILE-time
-# endpoint configuration and has no effect here, so prod.exs sets nothing and
-# this flag is the whole mechanism. Everything without the signal — local
-# compose, the launch tier, CI — serves plain HTTP, which is what the
-# courier-to-courier traffic inside those networks needs.
-#
-# `true`/`1`, and nothing else counts: an unset or misspelled value is plain
-# HTTP rather than a crash, because the failure direction of a wrong redirect
-# setting is every mail step 307'd, while the failure direction of plain HTTP
-# behind a TLS-terminating proxy is a redirect the proxy already performs.
-# NOT a boot requirement for the same reason: refusing to start over an
-# unset HTTPS preference would take a healthy release down for something no
-# request needs.
-#
-# The probes stay exempt regardless — `/healthz` and `/readyz` answer plain
-# HTTP in every environment, enforced in the plug itself rather than here, so
-# a second setting cannot disagree with this one about what is exempt.
-# ---------------------------------------------------------------------------
 config :courier,
        :force_ssl_enabled,
        System.get_env("COURIER_FORCE_SSL") in ~w(true 1)
 
-# ---------------------------------------------------------------------------
-# OPENTELEMETRY. In every environment, and that is the point.
-#
-# A developer running `mix phx.server` exports into the collector that ships with
-# the stack, and a deployer gets traces without assembling anything. Gating this
-# to :prod would make the default a no-op everywhere it is actually used, which is
-# backwards.
-#
-# The RULES are in `Courier.Telemetry` and this is four lines that call into it —
-# not a second copy of them. The Erlang SDK is configured through the application
-# environment and started by the application controller, which runs before
-# `Courier.Application.start/2`, so there is no code path that could set this
-# earlier; keeping the logic in a module is what makes it testable at all.
-#
-# `<SERVICE>_OTEL_ENDPOINT` is the only contract (core D16). Unset, it is the
-# collector that ships with the stack. Set it to anything speaking OTLP and
-# courier goes there instead — bring-your-own is a supported deployment, not a
-# degraded mode.
-#
-# NOT IN TEST, and the guard is load-bearing rather than fussy. `runtime.exs` runs
-# AFTER every environment's config file, including `test.exs` — so an unguarded
-# line here would replace the suite's in-memory exporter with a real OTLP one.
-# Every redaction test in this repository asserts the ABSENCE of a canary from the
-# exported spans, and a real exporter in a suite with no collector exports
-# nothing: all of them would go green, in about a second, having proved nothing.
-# A guard whose absence produces a green suite is the worst kind of guard to
-# leave to a reader.
 if config_env() != :test do
   config :opentelemetry, Courier.Telemetry.sdk_config()
 end
 
-# ---------------------------------------------------------------------------
-# THE EVENT BUS. Where it is, and what publishes to it.
-#
-# `NATS_URL` is the only variable, and it is OPTIONAL everywhere — the same
-# decision identity makes in `internal/config/config.go`
-# (`NATSURLVar`, "OPTIONAL"), for the same reason. courier with no broker
-# configured must not start a publisher that reports events as delivered:
-#
-#   * `Courier.Nats.supervised_child/0` answers `:ignored`, so the application
-#     starts no connection and no retry loop.
-#   * `Courier.NatsPublisher.Unconfigured` refuses every envelope, so the relay
-#     records `{:error, :nats_url_not_set}` in `last_error` and leaves
-#     `published_at` nil — rows accumulate, which is what an outbox is for.
-#
-# What the unset case deliberately does NOT do is fall through to
-# `Courier.NatsPublisher.Noop`, which is the suite's stand-in and answers `:ok`:
-# that would mark every row published and drain the outbox into nowhere. identity
-# names it in `internal/outbox/publisher.go` — "a promise this process keeps by
-# discarding is not a promise" — and this is the same refusal in courier's config.
-#
-# An empty string counts as unset. `NATS_URL=` in a compose file produces `""`,
-# and a URL that is present and empty is not present.
-#
-# NOT IN TEST, and the guard is load-bearing for the same reason as the
-# OpenTelemetry one above: `config/runtime.exs` runs after `config/test.exs`, so
-# an unguarded line here would replace the suite's `Noop` publisher with either of
-# these two and every relay test in this repository would be asserting against a
-# module no test configured.
-# ---------------------------------------------------------------------------
 if config_env() != :test do
   nats_url = System.get_env("NATS_URL")
 
-  # `Application.get_env(:courier, :nats) || []`, NOT `…, :nats, []`.
-  #
-  # The three-argument form returns its default only when the key is ABSENT, and
-  # `Application.put_env(:courier, :nats, nil)` leaves it PRESENT and nil — which
-  # `Keyword.merge/2` then refuses with `FunctionClauseError: no function clause
-  # matching in Keyword.merge/2`. Measured, and it is not hypothetical: several
-  # test files capture the original value (which is `nil`, because no environment
-  # configures `:nats`) and restore it, so a `Config.Reader` evaluation of this
-  # file that runs after any of them used to die here rather than on anything the
-  # evaluation was about. An explicit `nil` means the same thing an absent key
-  # does — no broker — which is the state `Courier.Nats.supervised_child/0` and
-  # `Courier.NatsPublisher.Unconfigured` already document as supported.
   config :courier,
          :nats,
          Keyword.merge(Application.get_env(:courier, :nats) || [], url: nats_url)
@@ -199,87 +35,15 @@ if config_env() != :test do
          )
 end
 
-# ---------------------------------------------------------------------------
-# WHO IS CALLING. The resolver, its address, and its credential.
-#
-# `Courier.Principal.Introspection` is the module `config :courier, :principal`
-# names outside test, and it asks identity `POST /v1/introspections` about the
-# token an inbound request carries. It replaced `Courier.Principal.Reject`, which
-# authenticated nobody and therefore answered 401 to every authenticated request
-# in a deployed courier.
-#
-# `Courier.Principal.Reject` IS STILL THE FALLBACK and is still correct for the
-# case it answers: `CourierWeb.Plugs.Principal.resolver/0` defaults to it, so a
-# deployment whose configuration lost this line locks rather than opens. The
-# difference the packet makes is that a locked door is now a state you have to
-# configure your way out of rather than the only state there is.
-#
-# IN EVERY ENVIRONMENT EXCEPT TEST, and the guard is the same one the
-# OpenTelemetry block above uses and for the same reason: `runtime.exs` runs AFTER
-# `config/test.exs`, so an unguarded line here would replace the suite's
-# `HeaderResolver` with the real resolver, and every test in the authorization
-# matrix — the ones that assert which account may do what to which endpoint — would
-# be asserting against a dial to a service that is not running.
-# ---------------------------------------------------------------------------
 if config_env() != :test do
   config :courier, :principal, Courier.Principal.Introspection
 
-  # WHERE identity is, and it has a default on purpose.
-  #
-  # The asymmetry with the token below is the whole decision. A wrong URL is a
-  # 503 on every authenticated request: loud, diagnosable, retriable, and it does
-  # not stop the process — so making a dependency's address a boot requirement
-  # would turn "identity moved" into a stop-the-world upgrade gate for a service
-  # that is otherwise fine. `http://identity:8080` is the compose-network name
-  # AND identity's own port: identity's Dockerfile `EXPOSE 8080` and its compose
-  # file sets `PORT: "8080"`. (4000 is courier's OWN Phoenix port — the
-  # copy-paste source of the bug this packet fixes.)
-  #
-  # THIS DEFAULT IS THE SINGLE AUTHORITY, and the other statements of it defer
-  # or agree: `docker-compose.yml` deliberately does not restate it, and
-  # `Courier.Principal.Introspection.url/0`'s own fallback is the same value.
-  # `test/courier/principal/introspection_url_test.exs` holds all of them —
-  # runtime.exs, url/0, the compose file, `config/deploy.yml`, this README's
-  # table — to the one port, and greps the tree for the two wrong values.
   config :courier,
          :identity_url,
          System.get_env("COURIER_IDENTITY_URL", "http://identity:8080")
 end
 
 if config_env() == :prod and serving? do
-  # courier's OWN credential for asking identity about callers, and it is
-  # **required**. A scoped API token, minted by an operator in an identity
-  # account that belongs to courier and to nothing else:
-  #
-  #     POST /v1/accounts/{account_id}/api-keys
-  #
-  # Rotation is identity's, and it is three steps rather than a feature: mint a
-  # new key, redeploy with the new value, revoke the old one. There is no cache
-  # to invalidate — see `Courier.Principal.Introspection`'s moduledoc for why
-  # there is not one, which is a security property and not an oversight.
-  #
-  # THE PROVISIONING REQUIREMENT, AND IT IS THE ONE THING AN OPERATOR CANNOT
-  # INFER FROM THIS REPOSITORY: this variable must hold the SAME identity-issued
-  # API key that identity presents as its own `COURIER_TOKEN` when it calls
-  # courier. identity's introspection endpoint lets a token caller introspect
-  # ONLY ITSELF ("an api key may only introspect itself",
-  # identity/internal/httpapi/apikeys.go), so the seam works when one key is
-  # held by both services: identity presents it outbound, courier presents it
-  # to introspect the inbound request. Two distinct keys produce identity's 403
-  # and courier's 503 — and the failure looks exactly like a network fault.
-  # Tightening identity's rule is identity's decision (packet m65), not
-  # courier's; courier's side of the contract is this sentence.
-  #
-  # IT IS A SECRET AND IT IS HERE, not in `config/config.exs`: a committed
-  # credential is a credential in git, and every deployment which forgot to set
-  # one would authenticate callers with it.
-  #
-  # Required rather than defaulted, for the same reason `COURIER_SECRET_BOX_KEY`
-  # above is: unset, courier cannot authenticate anybody, and a courier that
-  # cannot authenticate anybody is a service that cannot serve — which is the
-  # state this whole packet exists to end. Discovering it at boot is the cheapest
-  # possible way to find out, and it happens before the first customer request
-  # rather than after a support ticket.
   config :courier,
          :identity_token,
          System.get_env("COURIER_IDENTITY_TOKEN") ||
@@ -298,16 +62,6 @@ if config_env() == :prod and serving? do
 end
 
 
-# The From address of every transactional email is deployment configuration:
-# an operator sets MAIL_FROM / MAIL_FROM_NAME and redeploys, nobody commits a
-# changed address. Subjects stay in config/config.exs — they are product copy,
-# not infrastructure. Reading the address from the environment here (rather than
-# in `Courier.Mailers`) is deliberate: runtime.exs runs once at boot.
-#
-# This block, and the adapter below it, are prod-only on purpose. runtime.exs
-# runs in every environment *after* the env-specific files, so anything set
-# outside `if config_env() == :prod` here would silently override test.exs — and
-# a developer's stray MAIL_FROM would change what `mix test` mails.
 if config_env() == :prod and serving? do
   mailing = Application.get_env(:courier, :mailing, [])
   {from_name, from_address} = mailing[:from]
@@ -319,86 +73,19 @@ if config_env() == :prod and serving? do
          :mailing,
          Keyword.merge(mailing,
            from: resolved_from,
-           # The deployment's own domain moves with MAIL_FROM, so "courier's own
-           # mail keeps the deployment credential" keeps meaning the address
-           # courier actually sends its own mail from.
            deployment_domain: Courier.Mailers.domain_of(resolved_from),
-           # Where the payment-failure warning's reader goes to update their
-           # card: the deployment's own billing page. Unset keeps the nil
-           # default, and the template renders the sentence without a link then.
            billing_url: System.get_env("COURIER_BILLING_URL") || mailing[:billing_url]
          )
 
-  # THE PROVIDER ADAPTER, and the refusal is the point.
-  #
-  # This line used to be:
-  #
-  #     config :courier, Courier.Mailer, adapter: Swoosh.Adapters.Local
-  #
-  # which is the failure this packet exists to end. `Local` renders a message
-  # into memory and returns a provider-shaped id without opening a socket, so a
-  # released courier accepted every send, recorded an outbox row for each one,
-  # published a `delivered` event, and mailed nobody. No error and no warning —
-  # the worst failure a paid product can have, because it looks like it works.
-  #
-  # What replaced it is `Courier.MailerAdapter.adapter!/1`, which reads
-  # COURIER_MAIL_ADAPTER and the COURIER_SMTP_* variables and RAISES if they are
-  # unset, if they name an adapter courier does not ship, or if they name one
-  # that cannot deliver. A raise here stops the boot. `Courier.Application`
-  # re-checks the resolved adapter as a second, independent gate.
-  #
-  # Nothing is defaulted. An adapter with a default is an adapter that is wrong
-  # for exactly the deployments nobody is watching, and a required setting is the
-  # only version of this that cannot be forgotten.
-  #
-  # Bound to a variable and called ONCE: `adapter!/1` raises on a misconfigured
-  # deployment, and calling it twice would mean a boot that raised after the
-  # config had already been applied — leaving the process half-configured rather
-  # than cleanly stopped.
   mailer_adapter = Courier.MailerAdapter.adapter!(:prod)
 
   config :courier, Courier.Mailer, mailer_adapter
 
-  # Whether Swoosh's HTTP client is on, and it is a function of the adapter
-  # rather than a second setting an operator could forget. SMTP dials
-  # `gen_smtp` directly and never calls it; Postmark posts through
-  # `Swoosh.ApiClient.Req`. `false` is the same "off" value `config/config.exs`
-  # uses, so the two files agree on what off means — and `nil` from the table
-  # is mapped to it here rather than configured, because `nil` would read as
-  # "unset" to `Application.fetch_env!` and as a crash to whatever calls it.
   config :swoosh,
     api_client: Courier.MailerAdapter.api_client(mailer_adapter[:adapter]) || false
 
-  # The one startup line an operator reads to confirm which relay courier is
-  # pointed at. It names the host, the port and whether auth is on for SMTP, or
-  # the provider and whether its token is set for Postmark — never a
-  # credential, because at SMTP a "username" is very often the API key and a
-  # Postmark token is the whole secret. See `Courier.MailerAdapter.describe/1`
-  # and the credential tests that assert the absence rather than trusting this
-  # comment.
-  #
-  # **COMPOSED HERE AND EMITTED FROM `Courier.Application.start/2`, and the
-  # indirection is the whole fix.** A `Logger.info/1` on this line looks right
-  # and reaches nobody: the release's boot script evaluates this file BEFORE the
-  # `:logger` application is up, so the call has no handler and the line is
-  # dropped with no error. Measured: `kubectl logs | grep -c 'mailer:\|inbound:'`
-  # answered `0` on a fresh install (32 lines) and `0` on a box up for days (544
-  # lines). The notice is built here, where the environment and the resolved
-  # adapter are, and `Courier.StartupNotices.log_startup/0` replays it once the
-  # logger can carry it — the same idiom as `Courier.Nats.log_startup/0` and
-  # `Courier.Telemetry.log_startup/0`.
   mailer_notice = "mailer: #{Courier.MailerAdapter.describe(mailer_adapter)}"
 
-  # The key every webhook signing secret is sealed under (`Courier.SecretBox`).
-  # It is required rather than defaulted, because a default would be a key in
-  # version control and every deployment that forgot to set one would seal its
-  # customers' credentials under it. 32 bytes, base64:
-  #
-  #     openssl rand -base64 32
-  #
-  # Rotating it means every stored secret has to be re-sealed under the new key,
-  # which is why it is a deployment concern and not a courier feature: see
-  # `Courier.SecretBox` for the consequences of losing it.
   config :courier,
          :secret_box_key,
          System.get_env("COURIER_SECRET_BOX_KEY") ||
@@ -409,56 +96,6 @@ if config_env() == :prod and serving? do
            Generate one with: openssl rand -base64 32
            """)
 
-  # The signing secrets courier VERIFIES inbound provider webhooks with — see
-  # `Courier.InboundConfig` for the argument.
-  #
-  # One variable per provider, named for the provider. A single shared variable
-  # would make adding a second provider an edit to the first one's configuration,
-  # and a deployment one keystroke from verifying Postmark's traffic with
-  # Resend's key.
-  #
-  # NOT the outbound secret. Those are generated by courier per endpoint, sealed
-  # under `COURIER_SECRET_BOX_KEY` and stored in the database; this one is
-  # generated by the PROVIDER and pasted here, and the two are for opposite
-  # directions. A deployment that leaked a customer's outbound signing secret
-  # through it must not thereby be able to forge inbound suppressions.
-  #
-  # **Optional in production, and the absence is a supported state rather than a
-  # boot error** — cf-inbound-optional. Unset, `Courier.Inbound.Signature.
-  # verify/4` refuses every inbound request and every hard bounce and every
-  # complaint is DISCARDED — while `POST /v1/messages` goes on mailing addresses
-  # that have permanently refused them, and a sending domain's reputation dies of
-  # a cause no dashboard names. That cost is now stated on a boot log line and
-  # in README's "Hearing back" section instead of in a raise, because a
-  # Cloudflare-only box (COURIER_MAIL_ADAPTER=cloudflare) has no Resend webhook
-  # to configure — its provider answers synchronously and keeps its own
-  # suppression list — and the cheapest, most self-contained mail setup the
-  # platform has cannot be the only one that needs a second vendor's credential.
-  # A default would still be worse: a secret in version control that every
-  # deployment which forgot to set one would accept forged suppressions under,
-  # which is an unauthenticated `POST` that mails nobody.
-  #
-  # In Resend's dashboard this is the webhook endpoint's **Signing Secret**,
-  # copied from the endpoint's page. It is a Svix secret and carries the `whsec_`
-  # prefix, which `Courier.Inbound.Signature` requires — a bare base64 key is
-  # `:invalid_secret` and the route answers 500 naming this variable.
-  #
-  # The `%{…}` and the **string** key are both deliberate, and each for a reason a
-  # test holds. `Courier.InboundConfigTest` asserts the stored shape, because
-  # neither difference is visible in a config file and both are total in
-  # production:
-  #
-  #   * `config :courier, :inbound_secrets, resend: "…"` — the keyword shorthand
-  #     — stores a **keyword list**, and `Application.get_env/2` hands that back
-  #     looking nothing like the map the lookup reads. The route would raise
-  #     `BadMapError` on the request path, which is the one place that must never
-  #     raise: its whole vocabulary is a 401, a 400, a 422 and a 500.
-  #   * the key is a **string** because the lookup key comes from the request's
-  #     path. An atom there would be `String.to_existing_atom/1` on the request
-  #     path of a route, and with `to_atom/1` an unbounded atom table fed by
-  #     whoever finds the URL.
-  # An empty string counts as unset — `COURIER_INBOUND_RESEND_SECRET=` in a
-  # compose file produces `""` and an empty key is as unusable as a missing one.
   inbound_resend_secret =
     case System.get_env("COURIER_INBOUND_RESEND_SECRET") do
       nil ->
@@ -476,17 +113,6 @@ if config_env() == :prod and serving? do
          :inbound_secrets,
          if(inbound_resend_secret, do: %{"resend" => inbound_resend_secret}, else: %{})
 
-  # Which inbound surfaces are live, and never the secrets themselves — the same
-  # rule as the mailer line above, and for a sharper reason: the inbound secret IS
-  # the key. Unset, the cost is named rather than hidden: a hard bounce or a spam
-  # complaint is discarded and courier goes on mailing an address that has said
-  # it is gone. That sentence is the one the previous raise carried, and it now
-  # lives on a boot log line and in README so a deployment that loses bounce
-  # reporting is told.
-  #
-  # Composed here and emitted by `Courier.Application.start/2`, for the same
-  # reason as `mailer_notice` above — and this is the line whose whole safety
-  # argument (`cf-inbound-optional`) depends on somebody being able to read it.
   inbound_notice =
     case inbound_resend_secret do
       nil ->
@@ -498,25 +124,10 @@ if config_env() == :prod and serving? do
          "inbound: verifying #{Enum.join(Courier.InboundConfig.configured_providers(), ", ")}"}
     end
 
-  # The two operator-facing notices, in the order they used to be logged, carried
-  # to `Courier.Application.start/2` where the logger can deliver them. The list
-  # is the whole mechanism: nothing else in courier reads this key, and an empty
-  # list — the state in test and dev, where this block never runs — is a no-op.
   config :courier, :startup_notices, [{:info, mailer_notice}, inbound_notice]
 end
 
 if config_env() == :prod do
-  # THE THREE RAISES IN THIS BLOCK ARE THE SERVING CONTRACT, so each is gated on
-  # `serving?` — a migration evaluates this file too, reads none of them, and on
-  # a fresh box does not have them yet. Everything else in this block is
-  # configuration that is harmless in a one-shot boot, so it is left ungated
-  # rather than wrapped: the smallest gate that removes the false requirement is
-  # the one that is hardest to get wrong.
-  #
-  # `DATABASE_URL` is the first of the three, and a MIGRATION DOES NOT READ IT:
-  # `Courier.Release.migrate/0` runs as `Courier.OwnerRepo` below and never
-  # starts `Courier.Repo`. So the value is allowed to be absent here, and the
-  # refusal moves to the raise, which only the server reaches.
   database_url =
     System.get_env("DATABASE_URL") ||
       if serving? do
@@ -529,39 +140,10 @@ if config_env() == :prod do
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
   config :courier, Courier.Repo,
-    # ssl: true,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
-    # For machines with several cores, consider starting multiple pools of `pool_size`
-    # pool_count: 4,
     socket_options: maybe_ipv6
 
-  # THE OWNER, FOR `bin/migrate` AND NOTHING ELSE.
-  #
-  # `DATABASE_URL` above names `courier_app` — the app login role, which owns
-  # nothing and is a subject of the row-level-security policies. A migration is
-  # DDL, and `courier_app` cannot run one, so `rel/overlays/bin/migrate` needs the
-  # OWNER's DSN. This is a separate variable rather than a flag on
-  # `DATABASE_URL` because one variable cannot be two credentials, and the release
-  # reads `DATABASE_URL` to start the application.
-  #
-  # NOT REQUIRED AT BOOT, and deliberately: the running application never needs
-  # it, and a service that refuses to start because a *migration* credential is
-  # missing has turned an incomplete deploy into an outage. `bin/migrate` is the
-  # thing that fails instead, and it fails by name. That asymmetry is the point
-  # — a boot refusal here would take down a healthy release over a credential
-  # nothing in the request path reads.
-  #
-  # `Courier.OwnerRepo` is not in `:ecto_repos` and not in the supervision tree,
-  # so no running process holds a connection that bypasses every policy courier
-  # installs. See that module.
-  #
-  # OUTSIDE THE `serving?` GATE, and that placement is the whole point: this is
-  # the ONE credential a MIGRATION needs, so it has to be configured in the
-  # one-shot `bin/migrate` boot as well as in the server's. It does not raise —
-  # an absent owner DSN fails later, in `bin/migrate`, with Ecto's own "could not
-  # find Ecto repo config for Courier.OwnerRepo", which names the module an
-  # operator needs to look at.
   if owner_database_url = System.get_env("COURIER_OWNER_DATABASE_URL") do
     config :courier, Courier.OwnerRepo,
       url: owner_database_url,
@@ -569,11 +151,6 @@ if config_env() == :prod do
       socket_options: maybe_ipv6
   end
 
-  # The secret key base is used to sign/encrypt cookies and other secrets.
-  # A default value is used in config/dev.exs and config/test.exs but you
-  # want to use a different value for prod and you most likely don't want
-  # to check this value into version control, so we use an environment
-  # variable instead.
   secret_key_base =
     System.get_env("SECRET_KEY_BASE") ||
       if serving? do
@@ -587,41 +164,6 @@ if config_env() == :prod do
 
   config :courier, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
-  # ---------------------------------------------------------------------------
-  # Error reporting and the error relay. Both are read here, out of the
-  # environment, and **neither is required** — see the reasoning, because a
-  # required-looking omission is the thing that surprises an operator.
-  #
-  # `COURIER_ERROR_REPORTING_DSN` — courier's **own** failures, to its own relay.
-  # Unset, courier does not report its own errors and says nothing at boot; that
-  # is a diagnosable state (`ErrorReporting.enabled?/0` is false, and
-  # `Courier.ErrorRelay.stats/1` shows `forwarded: 0` with nothing arriving
-  # anywhere). It is not required because the error store is an *observability*
-  # control, and a courier that refuses to boot because its error store is
-  # unreachable has turned a missing integration into an outage — see
-  # `Courier.ErrorRelay.Sink.Noop`, which documents the same decision at length.
-  #
-  # `COURIER_ERROR_RELAY_TOKEN` — the shared secret on the **ingest** surface,
-  # and this one **is** required, because with no token the surface has no way to
-  # tell a service from anybody else, and a default would be a shared secret in
-  # version control that every deployment which forgot to set one would accept
-  # error reports from. The same rule as `COURIER_SECRET_BOX_KEY` above, and for
-  # the same reason: a default is a key in git.
-  #
-  # `COURIER_ERROR_SINK_DSN` — the relay's own destination, a GlitchTip DSN. This
-  # is a **credential** (it carries the project's public ingest key) and is never
-  # logged: `Courier.ErrorRelay.Sink.Req` parses it at boot and every refusal it
-  # reports is a symbol. Unset, the relay runs with `Sink.Noop` and counts what it
-  # discards, which is the same diagnosable-not-fatal shape as above.
-  #
-  # `COURIER_RELEASE` and `DEPLOYMENT_ENVIRONMENT` are **not** invented here. The
-  # release is the build's own identity and the environment is deployment
-  # configuration; an operator sets them, and the same value has to reach the
-  # traces, so it is read once and stamped on both. Auto-resolution on deploy
-  # (GlitchTip resolves an issue when a release that contains the fix ships) is
-  # the reason the release is on the event at all: without it the store has no way
-  # to know a crash stopped, and an issue stays open for ever.
-  # ---------------------------------------------------------------------------
   error_reporting_dsn = System.get_env("COURIER_ERROR_REPORTING_DSN")
   error_relay_token = System.get_env("COURIER_ERROR_RELAY_TOKEN")
   error_sink_dsn = System.get_env("COURIER_ERROR_SINK_DSN")
@@ -635,10 +177,6 @@ if config_env() == :prod do
       release: release,
       environment: environment_name
 
-    # The SDK's own configuration, and the DSN is courier's **relay** and not a
-    # third party. `before_send` is the second redaction barrier and it is what
-    # makes a DSN misconfiguration survivable: see
-    # `Courier.ErrorReporting.Filter`, whose moduledoc is the argument.
     config :sentry,
       dsn: error_reporting_dsn,
       environment_name: environment_name,
@@ -670,10 +208,6 @@ if config_env() == :prod do
     name: Courier.ErrorRelay,
     sink: Courier.ErrorRelay.Sink.Req,
     sink_dsn: error_sink_dsn,
-    # A burst of five then one per class per minute. The defaults are small on
-    # purpose: Sentry does not sample errors by design, so this is the volume
-    # control the SDK deliberately does not provide, and the same numbers are set
-    # in each of the three services so one config file describes the fleet.
     burst: 5,
     per_minute: 60,
     capacity: 4_096,
@@ -682,43 +216,8 @@ if config_env() == :prod do
   config :courier, CourierWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
-      # See the documentation on https://bandit.hexdocs.pm/Bandit.html#t:options/0
-      # for details about using IPv6 vs IPv4 and loopback vs public addresses.
       ip: {0, 0, 0, 0, 0, 0, 0, 0}
     ],
     secret_key_base: secret_key_base
 
-  # ## SSL Support
-  #
-  # To get SSL working, you will need to add the `https` key
-  # to your endpoint configuration:
-  #
-  #     config :courier, CourierWeb.Endpoint,
-  #       https: [
-  #         ...,
-  #         port: 443,
-  #         cipher_suite: :strong,
-  #         keyfile: System.get_env("SOME_APP_SSL_KEY_PATH"),
-  #         certfile: System.get_env("SOME_APP_SSL_CERT_PATH")
-  #       ]
-  #
-  # The `cipher_suite` is set to `:strong` to support only the
-  # latest and more secure SSL ciphers. This means old browsers
-  # and clients may not be supported. You can set it to
-  # `:compatible` for wider support.
-  #
-  # `:keyfile` and `:certfile` expect an absolute path to the key
-  # and cert in disk or a relative path inside priv, for example
-  # "priv/ssl/server.key". For all supported SSL configuration
-  # options, see https://plug.hexdocs.pm/Plug.SSL.html#configure/1
-  #
-  # We also recommend setting `force_ssl` in your config/prod.exs,
-  # ensuring no data is ever sent via http, always redirecting to https:
-  #
-  #     config :courier, CourierWeb.Endpoint,
-  #       force_ssl: [hsts: true]
-  #
-  # Check `Plug.SSL` for all available options in `force_ssl`.
 end

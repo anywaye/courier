@@ -16,7 +16,6 @@ defmodule Courier.Suppression do
   operator asks courier why an address is suppressed the useful answer is the
   provider's sentence and not courier's enum.
 
-  ## `state` may be absent, and that is not a third value
 
   The column is `NOT NULL` in the database for every row a **provider** produces,
   and `create_email_suppressions` argues for it at length: "a hard bounce marks the
@@ -33,7 +32,6 @@ defmodule Courier.Suppression do
   to `nil` since before the column was nullable, and `suppressed?/1` and `find/1`
   filter on it already.
 
-  ## The two columns a provider does not fill in
 
   `notification_type` and `user_id` are both nullable and both are set **only** by
   an unsubscribe, which is a report about an address that courier wrote itself
@@ -57,7 +55,6 @@ defmodule Courier.Suppression do
       user as the envelope's subject. It is here so the row is interpretable on its
       own rather than only by joining to a token.
 
-  ## What is deliberately absent
 
   There is no column for the provider's payload. A bounce report carries
   addresses, reasons, and sometimes a message snippet, and the four facts courier
@@ -76,14 +73,6 @@ defmodule Courier.Suppression do
 
   @states [:undeliverable, :suppressed]
 
-  # Bounded on the three free-text columns, and the bound is HERE rather than in a
-  # `size:` on the column. A provider's reason is a sentence and a provider's
-  # event id is an opaque identifier, but neither is courier's to size: a provider
-  # that puts a payload in the reason should not be able to write a megabyte into
-  # a table the send path reads, and a provider whose event id is 300 characters
-  # should be refused by a changeset error rather than by a `varchar(255)`
-  # truncation at runtime. Both columns are `text` in the migration so that this
-  # is the only bound — see its moduledoc.
   @reason_length 500
   @message_id_length 512
   @provider_event_id_length 512
@@ -108,8 +97,6 @@ defmodule Courier.Suppression do
     field :message_id, :string
     field :occurred_at, :utc_datetime_usec
 
-    # The two an unsubscribe fills in and a provider never can. See the moduledoc;
-    # `state` staying nil on such a row is the load-bearing half.
     field :notification_type, :string
     field :user_id, Ecto.UUID
 
@@ -151,9 +138,6 @@ defmodule Courier.Suppression do
     |> validate_length(:reason, max: @reason_length)
     |> validate_length(:message_id, max: @message_id_length)
     |> validate_length(:provider_event_id, max: @provider_event_id_length)
-    # Matched BY NAME rather than on `:unique`, for the reason
-    # `Courier.Idempotency.refusal/1` gives: a future unique index on this table
-    # must not be able to silently become a refusal courier is asking about.
     |> unique_constraint([:provider, :provider_event_id],
       name: :email_suppressions_provider_idempotency_index
     )
@@ -193,10 +177,6 @@ defmodule Courier.Suppression do
     |> validate_email()
     |> validate_length(:reason, max: @reason_length)
     |> validate_length(:provider_event_id, max: @provider_event_id_length)
-    # The SAME index and matched by the SAME name. The unsubscribe is idempotent
-    # because of this constraint and nothing else, exactly as a redelivered report
-    # is — and a second index or a second name would be two mechanisms for one
-    # property.
     |> unique_constraint([:provider, :provider_event_id],
       name: :email_suppressions_provider_idempotency_index
     )
@@ -205,19 +185,6 @@ defmodule Courier.Suppression do
   defp normalize_email(%{email: email}), do: Suppressions.normalize(email)
   defp normalize_email(_attrs), do: nil
 
-  # RFC 5322 §3.6.4's angle brackets are HEADER syntax, not part of the identifier.
-  # `Courier.Deliver.tag/2` writes `<courier-<uuid>@anywaye.com>` on the wire, and
-  # providers quote that value back in whichever form their own parser hands them:
-  # Postmark's `MessageID` carries the brackets, SES's `originalHeaders` carries
-  # them, and a raw SMTP bounce's `In-Reply-To` sometimes does not. Storing the two
-  # spellings as two rows would make "did this bounce tie back to that send" a
-  # question about the provider rather than about the send.
-  #
-  # The `@anywaye.com` suffix is left in place, and that is deliberate: it is part of
-  # the identifier, and stripping it would be a heuristic that collapses
-  # `courier-x@anywaye.com` and `courier-x@elsewhere.test` into one value. The
-  # bounce ties back through `outbox_events.message_id`, which courier stores
-  # bracket-free, so the bracket is the only difference courier has to absorb.
   defp normalize_message_id(%{message_id: "<" <> rest = id}) do
     if String.ends_with?(rest, ">"), do: String.trim(rest, ">") |> String.trim(), else: id
   end
@@ -227,9 +194,6 @@ defmodule Courier.Suppression do
 
   defp validate_email(changeset) do
     validate_change(changeset, :email, fn :email, email ->
-      # The same shape `Courier.Mailers` validates a recipient with, and for the
-      # same reason: one definition of "an address courier can send to", so the
-      # ingest boundary and the compose boundary cannot disagree about it.
       if Regex.match?(~r/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/, email),
         do: [],
         else: [email: "is not an email address"]

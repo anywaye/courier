@@ -6,14 +6,12 @@ defmodule Courier.TestSupport.IntrospectionTransport do
   resolver's tests are assertions about courier's decision and not about a
   socket: what courier sends, what it does with each answer, and what it refuses.
 
-  ## The tables are process-local and need no reset, because ExUnit runs each
   test in a fresh process. A test that stubs nothing therefore reads "no request
   was made" rather than inheriting an earlier test's answer — which is the way a
   table of recorded requests quietly becomes a table of the previous test's
   requests. A shared ETS table would need an `on_exit` and would reintroduce the
   problem it was meant to solve.
 
-  ## The requests are recorded, because "courier sent the credential" is a claim
 
   `requests/0` returns every request the resolver has made **in this process**.
   Process-local rather than an ETS table on purpose: the resolver is called on the
@@ -69,9 +67,6 @@ defmodule Courier.TestSupport.IntrospectionTransport do
     case Process.get(key()) do
       {:answer, status, response} -> {:ok, status, response}
       {:failure, reason} -> {:error, reason}
-      # A missing answer is an error rather than a default 200. A test that forgot
-      # to stub would otherwise get an empty document, be told the token is
-      # inactive, and pass an assertion it did not mean to make.
       nil -> {:error, :unstubbed}
     end
   end

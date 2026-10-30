@@ -2,7 +2,6 @@ defmodule Courier.TestSupport.SentryTestClient do
   @moduledoc """
   A `Sentry.HTTPClient` that hands the envelope to the test instead of a socket.
 
-  ## Why this exists, and why it is not a mock
 
   The brief requires a **failing-if-broken** test that no secret reaches a stored
   error, and the only version of that test worth having runs the *real* SDK: real
@@ -22,14 +21,12 @@ defmodule Courier.TestSupport.SentryTestClient do
   headers and the bytes. A test that stubbed the SDK's return value could not
   assert on the bytes, which is the whole assertion.
 
-  ## No new dependency
 
   `sentry`'s default client is `Sentry.FinchClient`, which needs `finch` — a
   package this repository does not have and this packet is not adding. Naming a
   client here is the SDK's supported seam for exactly that situation, and it is
   why this file is forty lines instead of a Gemfile line.
 
-  ## The DSN is the relay's, and that is deliberate
 
   The tests configure `COURIER_ERROR_REPORTING_DSN`-shaped DSNs pointing at
   `http://public@relay.test/1`. A DSN pointed at a real third party is the
@@ -41,18 +38,11 @@ defmodule Courier.TestSupport.SentryTestClient do
 
   @impl Sentry.HTTPClient
   def post(url, headers, body) do
-    # A **named** target rather than an argument: the SDK calls `post/3` with no
-    # place to pass one, and the process that has to receive the bytes is the one
-    # that called `capture/2`. `:persistent_term` rather than application env
-    # because application env is the whole VM and a test that set it would change
-    # it for every other test running concurrently.
     case :persistent_term.get({__MODULE__, :target}, nil) do
       pid when is_pid(pid) -> send(pid, {:sentry_envelope, url, headers, body})
       _absent -> :ok
     end
 
-    # A real Sentry response, so the SDK's own success path runs and the
-    # `after_send` callbacks a deployment might configure still get an event.
     {:ok, 200, [], ~s({"id":"00000000000000000000000000000000"})}
   end
 

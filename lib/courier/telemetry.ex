@@ -2,7 +2,6 @@ defmodule Courier.Telemetry do
   @moduledoc """
   The endpoint contract, the resource, and the SDK configuration courier runs on.
 
-  ## What this module is, and why the wiring is not in it
 
   The Erlang OpenTelemetry SDK is configured through the `:opentelemetry`
   application environment and started by the application controller, which runs
@@ -17,7 +16,6 @@ defmodule Courier.Telemetry do
   the rules. `test/courier/telemetry_test.exs` asserts on this module directly,
   which is only possible because the logic is here.
 
-  ## The contract, and it is one variable
 
   `<SERVICE>_OTEL_ENDPOINT` is the WHOLE of it (core D16):
 
@@ -32,7 +30,6 @@ defmodule Courier.Telemetry do
   That precedence is written down here rather than discovered later, because a
   contract with an undocumented precedence order is a bug report.
 
-  ## The kill switches are the SPEC'S, and courier does not reimplement them
 
   `OTEL_SDK_DISABLED` and `<SIGNAL>_EXPORTER=none` are the OpenTelemetry
   specification's own, and the Erlang SDK reads both from the environment
@@ -54,7 +51,6 @@ defmodule Courier.Telemetry do
   out is worse than no telemetry support at all, so the no-op is the ABSENCE of
   the exporter rather than the exporter aimed at nothing.
 
-  ## Why there is no meter here
 
   courier emits **traces**, and the fleet's metrics are derived from them by the
   `spanmetrics` connector in kit's collector, which runs AFTER the redaction
@@ -115,7 +111,6 @@ defmodule Courier.Telemetry do
   @doc """
   courier's tracer, with courier's own span processor installed.
 
-  ## Why this rebuilds the SDK's tracer record
 
   The SDK cannot start a span processor at all — see `Courier.SpanCollector` for
   the reproduction, which is two commands and applies to every published version of
@@ -123,7 +118,7 @@ defmodule Courier.Telemetry do
   them, and then destroys them on `end_span`, and courier's startup line would say
   telemetry is on.
 
-  `#tracer{}` carries `on_end_processors :: fun((span()) -> boolean() | …)`, and
+  `
   `get_tracer/3` hands that record back, so the fix is to rebuild it with
   `Courier.SpanCollector.on_end/1` in that field. One function, one place, and a
   loud failure at boot if the record's shape ever changes.
@@ -175,7 +170,7 @@ defmodule Courier.Telemetry do
   against itself.
 
   See the moduledoc's seventh defect. When `OTEL_SDK_DISABLED=true`,
-  `opentelemetry_sup:init/1` returns `{ok, {#{}, []}}` — no children, no tracer
+  `opentelemetry_sup:init/1` returns `{ok, {
   provider — and `:otel_tracer_provider.get_tracer/4` catches its own
   `exit:{noproc, _}` and answers this. `[]` is `:otel_tracer_noop`'s own tracer
   context, and the module implements the whole `otel_tracer` behaviour over it, so
@@ -191,7 +186,6 @@ defmodule Courier.Telemetry do
   @doc """
   The exporter, INITIALIZED, and ready to be handed spans.
 
-  ## Why this exists at all
 
   The Erlang SDK initializes an exporter by calling `Exporter.init(Config)` and
   keeps the returned state, and `export/4` then takes that state as its fourth
@@ -200,7 +194,7 @@ defmodule Courier.Telemetry do
       :opentelemetry_exporter.export(:traces, tab, resource, %{})
 
   — passing `%{}` where the state belongs. That argument is an Erlang RECORD and
-  `otel_exporter_traces_otlp:export/3` pattern-matches four `#state{}` fields in
+  `otel_exporter_traces_otlp:export/3` pattern-matches four `
   each of its three real clauses. `%{}` matches none of them, so every clause
   fell through to the catch-all and the exporter answered `{:error,
   :unimplemented}`, on every flush, for the life of the service.
@@ -208,7 +202,6 @@ defmodule Courier.Telemetry do
   This is not a hypothetical. `test/courier/otel_export_test.exs` drives the real
   module and records the answer.
 
-  ## Why the endpoint is passed HERE rather than left to the environment
 
   `:opentelemetry_exporter.init/1` reads `OTEL_EXPORTER_OTLP_ENDPOINT` from the
   OS environment and gives it PRECEDENCE over the `endpoints:` option
@@ -231,10 +224,6 @@ defmodule Courier.Telemetry do
         :opentelemetry_exporter.init(config || %{endpoints: [endpoint()]})
 
       module ->
-        # `:otel_exporter` behaviour: `init/1` must answer `{:ok, state}` or
-        # `:ignore`, and there is no catch-all, so a bare `:ok` is a TryClauseError
-        # inside the SDK's gen_statem and the processor is dropped with a log at
-        # `info`. `Courier.TestSpanExporter` says so in its own moduledoc.
         module.init(config || %{endpoints: [endpoint()]})
     end
   end
@@ -293,35 +282,6 @@ defmodule Courier.Telemetry do
   def normalize_tracer(tracer) do
     noop = tracer_noop()
 
-    # THE SEVENTH DEFECT, and it is here because of one SDK fact.
-    #
-    # `OTEL_SDK_DISABLED=true` does not merely configure away the processors.
-    # `opentelemetry_sup:init/1` has a clause for `#{sdk_disabled := true}` that
-    # returns `{ok, {#{}, []}}` — NO CHILDREN — so `otel_tracer_provider_sup` is
-    # never started, and `get_tracer/4` catches its own `exit:{noproc, _}` and
-    # answers the no-op tracer:
-    #
-    #     handle_call({get_tracer, _Name, _Vsn, _SchemaUrl}, _From,
-    #                 State=#state{shared_tracer=undefined}) ->
-    #         {reply, {otel_tracer_noop, []}, State};
-    #
-    # which is a correct, working answer: `otel_tracer_noop` implements the whole
-    # `otel_tracer` behaviour over a `[]` context and opens non-recording spans.
-    #
-    # The `Tuple.to_list/1` below assumed a `#tracer{}` record, so courier raised
-    # `ArgumentError` — in the REQUEST path, on every request — and a courier
-    # booted with telemetry off answered **500 to everything including
-    # `/healthz`**. The kill switch was an outage, on the deployment that turned
-    # telemetry off precisely because something had already gone wrong with it.
-    #
-    # So: the no-op tracer is passed through UNTOUCHED. It needs no span
-    # processor, because a span it opens is not recorded and so has nothing to
-    # hand one, and it must not be rebuilt, because there is no record to rebuild.
-    # What it must do is keep answering `start_span/4` so the request is served.
-    #
-    # The `raise` below stays for the reason it was written: an SDK whose
-    # `#tracer{}` record has genuinely changed shape. The no-op tracer is the SDK
-    # saying "there is no SDK, and that is fine", which is not a broken record.
     case tracer do
       ^noop ->
         tracer
@@ -340,9 +300,8 @@ defmodule Courier.Telemetry do
       raise """
       the OpenTelemetry SDK's tracer record is not the shape courier expects.
 
-      expected the record :tracer with #{length(@tracer_fields)} fields \
-      #{inspect(@tracer_fields)}, got tag #{inspect(tag)} with #{length(fields)} and \
-      on_end_processors = #{inspect(Enum.at(fields, on_end_index))}
+      expected the record :tracer with
+      on_end_processors =
 
       courier rebuilds that record to install its own span processor, because the SDK \
       cannot start one itself (see Courier.SpanCollector for the reproduction). If the \
@@ -379,16 +338,6 @@ defmodule Courier.Telemetry do
   discovered by a customer's invoice rather than by a test.
   """
   def enabled? do
-    # NOT `disabled_by_sdk?() or Enum.any?(...)` — which is what the first version
-    # said, and which reads as plausible at a glance because both sides are about
-    # switches. It means "enabled when the SDK is DISABLED or a signal is OFF", so
-    # with a completely clean environment `enabled?/0` returned FALSE and courier
-    # shipped with telemetry off and a startup line saying so.
-    #
-    # The suite caught it: `sdk_config/0` built `:otel_simple_processor` on a clean
-    # environment, and the test that asserts a CLEAN environment gets a batch
-    # processor pointed at the endpoint is the one that failed. A default that is
-    # quietly off is invisible to every test that only checks the off path.
     not (disabled_by_sdk?() or Enum.any?(@per_signal, &exporter_off?/1))
   end
 
@@ -407,17 +356,6 @@ defmodule Courier.Telemetry do
     else
       off = Enum.filter(@per_signal, &exporter_off?/1)
 
-      # `if` and NOT a `cond` clause with an inline guard, and this is the second
-      # time this function has been wrong in a way that only a test caught.
-      #
-      # The first version was `cond do ... off = Enum.filter(...) -> ... ; true -> "" end`,
-      # and in Elixir `[]` is TRUTHY, so the `=none` clause matched on the ENABLED
-      # path and every request in a healthy deployment logged "telemetry off
-      # (=none)". The second attempt put the emptiness test INSIDE the clause body,
-      # which changes nothing: a `cond` clause matches on the truthiness of its
-      # VALUE, and this clause's value is the joined string, which is always truthy.
-      #
-      # So: an `if`, with the emptiness decided before anything is built.
       if off == [], do: "", else: Enum.join(off, ",") <> "=none"
     end
   end
@@ -450,14 +388,13 @@ defmodule Courier.Telemetry do
   @doc """
   `resource/0` in the shape the OTLP EXPORTER accepts.
 
-  ## Why this is a second function and not a change to `resource/0`
 
   `resource/0` is courier's declaration of identity and it is tested as a nested
   map. It is what a human reads. This is what
   `:opentelemetry_exporter` can encode, and the two differ in two ways that
   between them dropped everything courier emitted:
 
-    * `otel_resource:attributes/1` matches an `#opentelemetry_resource{}` record
+    * `otel_resource:attributes/1` matches an `
       and returns `undefined` for anything else — so a plain map produced
       `undefined` attributes and a resource with no `service.name` on it;
     * OpenTelemetry attribute names are FLAT dotted strings. courier's
@@ -466,7 +403,6 @@ defmodule Courier.Telemetry do
       string-valued attribute. HyperDX groups by `service.name`, so the group
       this packet exists to create would not have existed.
 
-  ## The name mapping, and why it is written out rather than derived
 
   | courier | OpenTelemetry |
   |---------|---------------|
@@ -525,7 +461,6 @@ defmodule Courier.Telemetry do
       — courier names its own tracer, so the SDK's per-application tracers are two
       mechanisms for one thing and every span would be recorded twice.
 
-    ## The DISABLED path is an EMPTY processor list, and that is the sixth defect
 
     It used to be `:otel_simple_processor`, which reads like "export nowhere,
     cheaply" and is a BARE ATOM. `otel_configuration:processors/2` maps over the
@@ -570,26 +505,6 @@ defmodule Courier.Telemetry do
     else
       [
         text_map_propagators: [:trace_context, :baggage],
-        # `processors: []`, and `span_processor` OMITTED rather than set. Both
-        # halves are load-bearing, and the reasons are the same one:
-        # `otel_configuration:processors/2` takes `span_processor` first, wraps
-        # whatever it finds in a single-element list, and maps `{Name, Opts}` pairs
-        # over it — so ANY value for that key is either a pair (fine) or a crash.
-        # Measured on the two shapes this tried:
-        #
-        #     span_processor: :otel_simple_processor
-        #       ** (FunctionClauseError) ... :otel_configuration.processors/2
-        #           anonymous fn(:otel_simple_processor) ... otel_configuration.erl:179
-        #     span_processor: []
-        #       ** (FunctionClauseError) ... :otel_configuration.processors/2
-        #           anonymous fn([]) ... otel_configuration.erl:179
-        #
-        # Omitting the key entirely is the third option and the only one that
-        # boots: `transform/2` answers `undefined`, so the SDK falls through to
-        # `processors`, and an empty list there starts no processor at all. No
-        # queue, no dial, no process — and `Courier.SpanCollector.on_end/1`, which
-        # is what actually installs courier's processor, is a function on the
-        # tracer record rather than something the SDK starts, so it is unaffected.
         processors: [],
         register_loaded_applications: false,
         create_application_tracers: false
@@ -628,11 +543,6 @@ defmodule Courier.Telemetry do
   Missing it loses the last batch, which is usually the batch containing the error
   you were restarting to look at.
   """
-  # Not `@impl true`: `terminate/2` is a GenServer callback and this is a
-  # Supervisor, whose callback set is `init/1`. Supervisor does call `terminate/2`
-  # on its children on shutdown, so the flush happens — but claiming a callback the
-  # behaviour does not declare is a warning that would eventually be a real
-  # mismatch if the two ever diverged.
   def terminate(_reason, _state) do
     Courier.SpanCollector.flush()
     :ok
@@ -640,14 +550,8 @@ defmodule Courier.Telemetry do
 
   @impl true
   def init(_opts) do
-    # The exception handler, attached from HERE rather than from the request plug's
-    # own `init/1`: this supervisor starts once, and an endpoint plug re-runs
-    # `init/1` on every code reload.
     CourierWeb.Plugs.Telemetry.attach_exception_handler()
 
-    # The span collector, which is courier's span processor. The SDK cannot start
-    # one itself, so this is the process that makes courier export anything at all;
-    # see `Courier.SpanCollector` for the reproduction.
     children = [Courier.SpanCollector]
     Supervisor.init(children, strategy: :one_for_one)
   end
@@ -669,25 +573,14 @@ defmodule Courier.Telemetry do
   defp presence(value, _fallback) when is_binary(value) and value != "", do: value
   defp presence(_value, fallback), do: fallback
 
-  # The keys are OpenTelemetry's, and they are the dotted names core's resource
-  # schema uses. `deployment.environment` is an ENUM there
-  # (development/test/staging/production), so `local` is not a legal value.
   defp maybe_put(attributes, _key, nil), do: attributes
   defp maybe_put(attributes, _key, ""), do: attributes
   defp maybe_put(attributes, key, value), do: Map.put(attributes, key, value)
 
-  # Drops the nil and the empty string, and nothing else. An attribute present
-  # with an empty value is an attribute an operator filters on and gets nothing
-  # back, and `service.name=""` is a second courier row in the store rather than a
-  # tidier name — see the tests in `telemetry_test.exs` that assert absence.
   defp compact(map) do
     :maps.filter(fn _key, value -> value not in [nil, ""] end, map)
   end
 
-  # An endpoint in a log line is a hostname and a port, or — for a bring-your-own
-  # backend — an API KEY in the path or the query string. Redact the query and the
-  # fragment and print the rest, so a self-hoster can confirm which backend their
-  # service is pointed at without their key landing in a log store.
   defp redact_endpoint(target) do
     target
     |> String.split(["?", "#"], parts: 2)

@@ -18,7 +18,6 @@ defmodule Courier.TestSupport.NatsServer do
     * `PUB <subject> [reply-to] <bytes>` — recorded, and answered with the
       JetStream publish ack when the message carries a reply-to.
 
-  ## Why the ack is a real JetStream publish ack
 
   Because that ack is the whole argument of the packet. `published_at` is set
   from the publisher's answer, and this server answers with the body the broker
@@ -31,7 +30,6 @@ defmodule Courier.TestSupport.NatsServer do
   `Broker refuses the publish` test is driving the publisher against the bytes a
   broker in that state sends rather than against a symbol this suite invented.
 
-  ## What it deliberately is not
 
   It is not a JetStream implementation. No stream is checked, no retention is
   enforced and no message is stored: `published/1` is the store. A second
@@ -111,12 +109,6 @@ defmodule Courier.TestSupport.NatsServer do
 
   @impl GenServer
   def init(opts) do
-    # `active: false` on the LISTENING socket: the accept is done by a task, and
-    # the connection socket is set active by that task before ownership moves
-    # here. Doing the accept in a task rather than in `handle_info/2` is what
-    # keeps this process answering `published/1` while a connection is being
-    # established — a blocked `:gen_tcp.accept/1` in the server is a server that
-    # cannot answer the assertion that follows it.
     {:ok, listen} =
       :gen_tcp.listen(0, [
         :binary,
@@ -126,9 +118,6 @@ defmodule Courier.TestSupport.NatsServer do
         ip: {127, 0, 0, 1}
       ])
 
-    # `{:ok, port}` and not `port`: `:inet.port/1` answers a tuple, and a port
-    # interpolated as one is a `Protocol.UndefinedError` on the URL the test
-    # builds. Measured, in the setup, four tests at a time.
     {:ok, port} = :inet.port(listen)
 
     send(self(), :accept)
@@ -156,10 +145,6 @@ defmodule Courier.TestSupport.NatsServer do
 
   @impl GenServer
   def handle_info(:accept, %{listen: listen} = state) do
-    # Non-blocking accept, re-armed on a 10 ms timer. A blocking accept in this
-    # process would be a server that cannot answer `published/1` while a
-    # connection is being established — and it would also never re-arm, because
-    # the accept consumes the `:accept` message that was going to schedule it.
     case :gen_tcp.accept(listen, 0) do
       {:ok, socket} ->
         {:noreply, connect(socket, state)}
@@ -170,9 +155,6 @@ defmodule Courier.TestSupport.NatsServer do
     end
   end
 
-  # `active: :once` is re-armed after every chunk, so a client that sends faster
-  # than this process reads cannot fill the mailbox — the same flow control a
-  # real broker is obliged to have.
   @impl GenServer
   def handle_info({:tcp, socket, data}, %{socket: socket} = state) do
     :inet.setopts(socket, active: :once)
@@ -193,9 +175,6 @@ defmodule Courier.TestSupport.NatsServer do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  # The broker's half of the handshake, sent before anything is read: gnat waits
-  # for `INFO` first and sends `CONNECT` in reply, so a connection that is not
-  # greeted never gets as far as a publish.
   defp connect(socket, state) do
     :inet.setopts(socket, active: :once)
 
@@ -203,20 +182,13 @@ defmodule Courier.TestSupport.NatsServer do
       :gen_tcp.send(
         socket,
         ~s(INFO {"server_id":"courier-test-nats","server_name":"courier-test",) <>
-          ~s("version":"2.10.24","host":"127.0.0.1","port":#{state.port},) <>
+          ~s("version":"2.10.24","host":"127.0.0.1","port":
           ~s("headers":true,"max_payload":1048576,"proto":1,"client_id":1}) <> "\r\n"
       )
 
     %{state | socket: socket, buffer: ""}
   end
 
-  # Protocol parsing, in one recursive pass over the buffer.
-  #
-  # A `PUB` op's payload is length-prefixed and is NOT delimited: it may itself
-  # contain `\r\n` and any envelope it likes. So the buffer is split on lines
-  # only for the op itself, and the payload is taken by size from whatever
-  # follows. A buffer that ends mid-payload is kept and re-read when the rest
-  # arrives, which is what the `incomplete` return is for.
   defp parse(buffer, state), do: parse(buffer, [], state)
 
   defp parse("", publishes, state), do: {Enum.reverse(publishes), state}
@@ -224,8 +196,6 @@ defmodule Courier.TestSupport.NatsServer do
   defp parse(buffer, publishes, state) do
     case String.split(buffer, "\r\n", parts: 2) do
       [_incomplete] ->
-        # No complete op yet. For `PUB` the op line arrived but its payload has
-        # not, and the buffer must be kept whole.
         {Enum.reverse(publishes), %{state | buffer: buffer}}
 
       [line, rest] ->
@@ -253,16 +223,6 @@ defmodule Courier.TestSupport.NatsServer do
 
   defp handle_op("CONNECT" <> _connect, rest, state), do: {:ok, rest, state}
 
-  # gnat's one-shot reply inbox, subscribed for the length of one request. A real
-  # broker answers with `+OK`; gnat ignores the answer and so does this, because
-  # a subscription the client does not need confirmed is not one this server has
-  # to get right.
-  #
-  # SUBSCRIBER SUBS ARE RECORDED. A real broker answers a `SUB` with `+OK` and
-  # then delivers `MSG` frames to it; the consumer packet needs the second half,
-  # because the subscriber's whole job is to receive one. What is recorded is
-  # `{sid, subject}` keyed the way gnat's own subscription is, and
-  # `subscriptions/1` is the store.
   defp handle_op("SUB " <> sub, rest, state) do
     case String.split(sub, " ") do
       [subject, sid] ->
@@ -279,16 +239,6 @@ defmodule Courier.TestSupport.NatsServer do
 
   defp handle_op("UNSUB" <> _unsub, rest, state), do: {:ok, rest, state}
 
-  # The op this file exists for.
-  #
-  # Two shapes, and the difference is the reply-to:
-  #
-  #     PUB courier.email.delivered 312            (no reply)
-  #     PUB courier.email.delivered _INBOX.a.b 312 (with reply)
-  #
-  # The one with a reply is a JetStream publish, and it is answered with the
-  # stream's ack on the reply subject — which is what `Gnat.request/4` returns
-  # and therefore what `Courier.NatsPublisher.Bus` marks the row from.
   defp handle_op("PUB " <> args, rest, state) do
     case String.split(args, " ") do
       [subject, reply_to, size] when reply_to != "" ->
@@ -332,20 +282,10 @@ defmodule Courier.TestSupport.NatsServer do
     end
   end
 
-  # `MSG <subject> <sid> <bytes>` — sid 0 is gnat's request subscription, and it
-  # is what routes the reply to the caller waiting in `Gnat.request/4` rather
-  # than to some other subscriber.
   defp send_ack(state, reply_to, body) do
     :ok = :gen_tcp.send(state.socket, "MSG #{reply_to} 0 #{byte_size(body)}\r\n#{body}\r\n")
   end
 
-  # The consumer packet's half of the protocol. A `PUB` to a subject a
-  # subscription claims — with the NATS wildcard grammar, so `identity.>`
-  # claims `identity.user.created` — is delivered to that subscriber as a `MSG`
-  # on the subscription's sid, which is what gnat routes to the pid that asked.
-  #
-  # Every matching subscription gets a copy, which is core NATS' fan-out rule
-  # (a queue group is not modelled here and nothing in courier uses one).
   defp deliver(state, subject, payload) do
     for sub <- state.subscriptions, matches?(sub.subject, subject) do
       sid = sub.sid
@@ -360,10 +300,6 @@ defmodule Courier.TestSupport.NatsServer do
     state
   end
 
-  # The subject-grammar half of the wildcard, and the reason this is a function
-  # rather than `String.starts_with?/2`: `>` is anchored to the END and matches
-  # one or more tokens, so `identity.>` claims `identity.user.created` and
-  # nothing else, while `identity.user.created` itself claims only itself.
   defp matches?(subscribed, subject) do
     match_tokens(String.split(subscribed, "."), String.split(subject, "."))
   end
