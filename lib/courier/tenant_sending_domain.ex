@@ -48,6 +48,7 @@ defmodule Courier.TenantSendingDomain do
 
   schema "tenant_sending_domains" do
     field :account_id, Ecto.UUID
+    field :application_key, :string
     field :domain, :string
     field :provider, Ecto.Enum, values: @providers
     field :provider_account_id, :string
@@ -70,7 +71,7 @@ defmodule Courier.TenantSendingDomain do
   """
   def changeset(domain, attrs) do
     domain
-    |> cast(attrs, [:domain, :provider, :provider_account_id])
+    |> cast(attrs, [:domain, :provider, :provider_account_id, :application_key])
     |> normalize_domain()
     |> validate_required([:domain, :provider, :provider_account_id])
     |> validate_domain()

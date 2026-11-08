@@ -32,7 +32,7 @@ defmodule CourierWeb.SendingDomains do
   with it, and this module is where the first of those is spelled.
   """
 
-  @wire_fields ~w(domain provider provider_account_id credential)
+  @wire_fields ~w(domain provider provider_account_id credential application_key)
 
   @doc """
   The fields a body may carry, in the order the document lists them.
@@ -75,7 +75,8 @@ defmodule CourierWeb.SendingDomains do
       domain: params["domain"],
       provider: params["provider"],
       provider_account_id: params["provider_account_id"],
-      credential: params["credential"]
+      credential: params["credential"],
+      application_key: params["application_key"]
     }
   end
 end
