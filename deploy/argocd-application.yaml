@@ -10,7 +10,7 @@ spec:
   source:
     repoURL: oci://ghcr.io/anywaye/charts/courier
     chart: courier
-    targetRevision: 0.1.2
+    targetRevision: 0.1.5
   destination:
     server: https://kubernetes.default.svc
     namespace: courier
